@@ -404,18 +404,18 @@ describe('WorkspaceList 可折叠行列表', () => {
     expect(screen.queryByTestId('workspace-detail-table-100')).not.toBeInTheDocument()
   })
 
-  it('收藏的工作区分成「已收藏」组并排在最前', async () => {
+  it('收藏的工作区分成「收藏工作区」组并排在最前', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>
         HttpResponse.json([
           makeWs({ id: 10, name: '普通工作区' }),
-          makeWs({ id: 11, name: '收藏工作区', pinned: true }),
+          makeWs({ id: 11, name: '星标工作区', pinned: true }),
         ])),
     )
     renderWorkspaceList()
 
     const starred = await screen.findByTestId('workspace-group-starred')
-    expect(within(starred).getByText('收藏工作区')).toBeInTheDocument()
+    expect(within(starred).getByText('星标工作区')).toBeInTheDocument()
     expect(within(starred).queryByText('普通工作区')).not.toBeInTheDocument()
 
     const others = screen.getByTestId('workspace-group-others')
@@ -424,7 +424,7 @@ describe('WorkspaceList 可折叠行列表', () => {
     expect(screen.getByTestId('star-btn-10')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('「已收藏」组跨团队扁平展示时补团队归属，普通团队分组内不重复（需求 0160 补充）', async () => {
+  it('「收藏工作区」组跨团队扁平展示时补团队归属，普通团队分组内不重复（需求 0160 补充）', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>
         HttpResponse.json([

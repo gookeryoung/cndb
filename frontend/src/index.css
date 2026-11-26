@@ -593,6 +593,9 @@ body {
   /* 桌面基准留白与控件间距；移动端在「移动端全局适配」分节统一收窄（ADR 0123 C7） */
   gap: var(--cn-space-md);
   padding: 0 var(--cn-space-lg);
+  /* 中间宽度两区内容仍可能超出总宽：顶栏裁掉溢出而非把行挤变形（下拉 / 气泡都渲染在 body，不受影响） */
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* 顶栏控件（搜索框 / 图标按钮）统一线条：1px + 小圆角 + 中性描边，
@@ -651,6 +654,16 @@ body {
   padding-inline: 0;
 }
 
+/* 右区固定控件不参与 flex 收缩：图标按钮被压扁会变形、头像会被裁圆，
+ * 收缩空间让给可伸缩的搜索框（.cn-header-search 自带 flex: 0 1 360px） */
+.cn-header-right > * {
+  flex-shrink: 0;
+}
+
+.cn-header-right > .cn-header-search {
+  flex-shrink: 1;
+}
+
 /* 顶栏紧凑档（宽度 <1280，由 MainLayout 按实际视口宽度加 class）：
  * 品牌字 / 版本 / 团队面包屑 / 导航文字 / 大模型与帮助按钮收起，
  * 保留 logo、工作区切换、模块图标、搜索与头像，避免窄宽度互相挤压。 */
@@ -701,6 +714,20 @@ body {
   font-size: var(--cn-text-sm);
   cursor: pointer;
   transition: color 0.15s ease, box-shadow 0.15s ease;
+  /* 受挤时标签单行省略而非竖向折行；图标不收缩避免被裁成半格 */
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.cn-header-nav-item .anticon {
+  flex: 0 0 auto;
+}
+
+.cn-header-nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cn-header-nav-item:hover {
@@ -1275,6 +1302,14 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   gap: var(--cn-space-xl);
 }
 
+/* 分区之间加分隔线：与组头文字对齐，不满铺整卡 */
+.cn-ws-group + .cn-ws-group::before {
+  content: '';
+  display: block;
+  margin: 0 var(--cn-space-hairline) var(--cn-space-lg);
+  border-top: 1px dashed var(--cn-border);
+}
+
 .cn-ws-group-head {
   display: flex;
   align-items: center;
@@ -1659,14 +1694,14 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   white-space: nowrap;
 }
 
-/* 「已收藏」条目图标：颜色（琥珀）由行内 style 给，这里只把尺寸钉在 Menu 图标档，
+/* 「收藏工作区」条目图标：颜色（琥珀）由行内 style 给，这里只把尺寸钉在 Menu 图标档，
  * 避免 Filled 星形比同排线性图标显得更大（需求 0160 补充） */
 .cn-home-nav-star.anticon {
   font-size: var(--cn-text-md);
   vertical-align: 0;
 }
 
-/* 右侧次要信息：最近访问=相对时间、已收藏=所属团队 */
+/* 右侧次要信息：最近访问=相对时间、收藏工作区=所属团队 */
 .cn-home-nav-row-hint {
   flex: 0 1 auto;
   max-width: 45%;
@@ -1690,6 +1725,11 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 
 .cn-home-nav-mobile {
   padding-top: var(--cn-space-sm);
+}
+
+/* 分区分隔线：与菜单项文字对齐（itemMarginInline 4px + itemPaddingInline 16px = 20px），不满铺 */
+.cn-home-nav .ant-menu-item-divider {
+  margin-inline: var(--cn-space-2xl);
 }
 
 .cn-home-split {
@@ -1754,7 +1794,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 /* 侧栏「我的视图」深链定位（/w#my-views）：短暂描边高亮后回落 */
 .cn-myviews-panel.is-targeted {
   border-color: var(--cn-primary, #2563eb);
-  box-shadow: 0 0 0 3px var(--cn-mix-primary-10, rgba(37, 99, 235, 0.1));
+  box-shadow: 0 0 0 3px var(--cn-mix-primary-10-transparent, rgba(37, 99, 235, 0.1));
 }
 
 /* ── 主页「我的团队」板块：与「我的视图」面板同款卡片外观，独占一行 ── */
@@ -1794,7 +1834,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 }
 
 .cn-home-teams-name {
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text);
 }
 
@@ -3951,6 +3991,8 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-weight: var(--cn-weight-bold);
   letter-spacing: 0;
   color: var(--cn-text-primary);
+  /* 中间宽度左右两区同时受挤时保持单行，不允许竖向折行叠成两行 */
+  white-space: nowrap;
 }
 
 /* 顶栏版本小字：跟随品牌字右侧，只做次要信息呈现，不继承品牌字字重 / 负字距 */

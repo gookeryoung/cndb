@@ -56,7 +56,7 @@ test.describe("主页「我的视图」收藏面板", () => {
         timeout: 10000,
       });
       // 成功后端写入才跳转，避免主页读到旧偏好
-      await expect(page.getByText(/已收藏/).first()).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/收藏工作区/).first()).toBeVisible({ timeout: 10000 });
 
       // 2. 主页右侧面板出现该收藏
       await page.goto("/w");

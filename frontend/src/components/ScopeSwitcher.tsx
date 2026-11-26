@@ -121,7 +121,7 @@ export function ScopeSwitcherPanel({
           <section className="cn-scope-section" data-testid="scope-group-starred">
             <div className="cn-scope-section-head">
               <StarFilled style={{ color: '#f59e0b' }} />
-              <span>已收藏</span>
+              <span>收藏工作区</span>
               <span className="cn-scope-count">{pinned.length}</span>
             </div>
             {pinned.map(renderRow)}

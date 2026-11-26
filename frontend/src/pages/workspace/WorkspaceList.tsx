@@ -309,7 +309,7 @@ export default function WorkspaceList() {
             <div>
               <Title level={3} style={{ margin: 0 }}><FolderOpenOutlined style={{ marginRight: 8 }} />我的工作区</Title>
               <Text type="secondary">
-                {showTeamGrouping ? '按团队分组浏览；已收藏置顶，团队内工作区平铺' : '选择或创建一个工作区开始协作'}
+                {showTeamGrouping ? '按团队分组浏览；收藏工作区置顶，团队内工作区平铺' : '选择或创建一个工作区开始协作'}
               </Text>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -423,7 +423,7 @@ export default function WorkspaceList() {
                   <section className="cn-ws-group" data-testid="workspace-group-starred">
                     <div className="cn-ws-group-head">
                       <StarFilled style={{ color: '#f59e0b' }} />
-                      <span>已收藏</span>
+                      <span>收藏工作区</span>
                       <span className="cn-ws-group-count">{starred.length}</span>
                     </div>
                     <SortableContext
