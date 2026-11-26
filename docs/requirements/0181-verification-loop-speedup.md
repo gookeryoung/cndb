@@ -81,7 +81,7 @@
 | C4 | `pytest.ini` 默认 `-q --tb=short --no-header`；`scripts/retest.py` + `make retest` | `--lf` 空缓存场景显式回退全量并打印原因 |
 | C5 | `frontend/vite.config.ts` 的 `pure` / `dom` project；`frontend/scripts/pure-tests.mjs`、`src/test/pure-tests.json`、`src/test/setup.pure.ts`；`pnpm test:pure:check` 进 `pnpm check` | 纯逻辑 61 文件 1055 例 793ms；全量 293 文件 3610 例 85.6s（原 101s）；覆盖率核心集合 lines 97.66% / branches 100%、全局 83.85%（与拆分前一致） |
 | C6 | `frontend/playwright.config.ts` 的 `reuseExistingServer: CNDB_E2E_REUSE === "1"`；`make e2e-reuse` | 默认仍每次重建；复用需显式开关 + 显式端口 |
-| C7 | `frontend/scripts/e2e-affected.mjs` 重写 | `--dry-run` 实测：base=HEAD~1 → 1 spec、HEAD~3 → 9 spec、HEAD~6/10 → 22 spec；未跟踪新 spec 纳入变更集 |
+| C7 | `frontend/scripts/e2e-affected.mjs` 重写 | `--dry-run` 实测：base=HEAD~1 → 1 spec、HEAD~3 → 9 spec、HEAD~6/10 → 22 spec；未跟踪新 spec 纳入变更集。`make e2e-affected` 真跑（base=HEAD~1，命中 8 spec）：13 passed / 1 skipped，34.3s 用例时间、51.5s 含构建与 webServer；顺带修掉 `spawnSync("playwright")` 在 Windows 上 ENOENT 且静默退出 1 的缺陷（改为 `node` 直接执行 `@playwright/test/cli` 并把 spawn 错误打到 stderr） |
 
 ## 未决问题
 
