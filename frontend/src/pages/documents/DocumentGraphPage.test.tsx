@@ -18,8 +18,9 @@ const echartsMock = vi.hoisted(() => {
   const resize = vi.fn()
   const dispose = vi.fn()
   const dispatchAction = vi.fn()
-  const init = vi.fn(() => ({ setOption, on, resize, dispose, dispatchAction }))
-  return { init, setOption, on, resize, dispose, dispatchAction }
+  const getOption = vi.fn(() => ({ series: [{ zoom: 1 }] }))
+  const init = vi.fn(() => ({ setOption, on, resize, dispose, dispatchAction, getOption }))
+  return { init, setOption, on, resize, dispose, dispatchAction, getOption }
 })
 
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: echartsMock.init }))
@@ -65,6 +66,8 @@ describe('知识图谱页（需求 0168）', () => {
     echartsMock.on.mockClear()
     echartsMock.dispose.mockClear()
     echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
     server.use(
       http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(graphPayload)),
     )
@@ -166,4 +169,97 @@ describe('知识图谱页（需求 0168）', () => {
     expect(await screen.findByText(/仅展示最近更新的 500 个/)).toBeInTheDocument()
     expect(screen.getByText(/共 612 个/)).toBeInTheDocument()
   })
+
+  /**
+   * 缩放语义回归（H12）：
+   * echarts 的 graphRoam 是相对增量，且缺 originX/originY 时以左上角为锚点，
+   * 曾导致点「放大」整张图飞出画布、SVG 里出现 NaN。
+   */
+  it('缩放动作以画布中心为锚点，并限制在 0.25×–4× 区间', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    // jsdom 不做布局，显式给出画布尺寸，锚点应等于其中心
+    const canvas = screen.getByTestId('document-graph-canvas')
+    Object.defineProperty(canvas, 'clientWidth', { configurable: true, value: 800 })
+    Object.defineProperty(canvas, 'clientHeight', { configurable: true, value: 600 })
+
+    fireEvent.click(screen.getByTestId('graph-zoom-in'))
+    const zoomIn = echartsMock.dispatchAction.mock.calls.at(-1)?.[0]
+    expect(zoomIn).toMatchObject({ type: 'graphRoam', zoom: 1.25, originX: 400, originY: 300 })
+    expect(Number.isNaN(zoomIn.originX)).toBe(false)
+    expect(Number.isNaN(zoomIn.originY)).toBe(false)
+    expect(screen.getByTestId('graph-zoom-pct')).toHaveTextContent('125%')
+
+    fireEvent.click(screen.getByTestId('graph-zoom-out'))
+    expect(echartsMock.dispatchAction.mock.calls.at(-1)?.[0]).toMatchObject({ zoom: 0.8, originX: 400, originY: 300 })
+    expect(screen.getByTestId('graph-zoom-pct')).toHaveTextContent('100%')
+  })
+
+  it('到达缩放上下限时停止派发并禁用按钮', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const zoomIn = screen.getByTestId('graph-zoom-in')
+    const zoomOut = screen.getByTestId('graph-zoom-out')
+
+    // 连点放大到 4×：19 次 ×1.25 ≈ 4.0 后停住
+    for (let i = 0; i < 25; i += 1) fireEvent.click(zoomIn)
+    const pct = screen.getByTestId('graph-zoom-pct')
+    expect(pct).toHaveTextContent('400%')
+    expect(zoomIn).toBeDisabled()
+    const callsAtMax = echartsMock.dispatchAction.mock.calls.length
+    fireEvent.click(zoomIn)
+    expect(echartsMock.dispatchAction.mock.calls.length).toBe(callsAtMax)
+
+    // 反向到 0.25×
+    for (let i = 0; i < 40; i += 1) fireEvent.click(zoomOut)
+    expect(pct).toHaveTextContent('25%')
+    expect(zoomOut).toBeDisabled()
+  })
+
+  it('视图 option 具备同类图谱应用的显示要素：缩放上下限、标签避让、方向箭头、度数分级', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const series = echartsMock.setOption.mock.calls[0][0].series[0]
+    expect(series.roam).toBe(true)
+    expect(series.scaleLimit).toEqual({ min: 0.25, max: 4 })
+    expect(series.labelLayout.hideOverlap).toBe(true)
+    expect(series.edgeSymbol).toEqual(['none', 'arrow'])
+    // 缩放时节点不完全跟随倍数膨胀，避免放大后节点糊住标签
+    expect(series.nodeScaleRatio).toBeLessThan(1)
+    // 悬停只高亮邻接
+    expect(series.emphasis.focus).toBe('adjacency')
+    expect(series.blur.itemStyle.opacity).toBeLessThan(0.5)
+
+    // 度数分级：甲连了 2 条边，孤立文件夹 0 条，前者必须更大
+    expect(series.data[0].symbolSize).toBeGreaterThan(series.data[2].symbolSize)
+    expect(series.data[2].symbolSize).toBe(14)
+    expect(series.data.every((d: { symbolSize: number }) => d.symbolSize <= 40)).toBe(true)
+  })
+
+  it('滚轮缩放后倍率读数跟随视图（graphroam 事件）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    const roamHandler = echartsMock.on.mock.calls.find((c: unknown[]) => c[0] === 'graphroam')?.[1] as
+      | (() => void)
+      | undefined
+    expect(roamHandler).toBeTypeOf('function')
+
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 2.5 }] })
+    act(() => roamHandler?.())
+    expect(screen.getByTestId('graph-zoom-pct')).toHaveTextContent('250%')
+
+    // 越界的视图倍率按上下限夹住，读数不出现 0% 或 1000%
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 100 }] })
+    act(() => roamHandler?.())
+    expect(screen.getByTestId('graph-zoom-pct')).toHaveTextContent('400%')
+  })
+
 })

@@ -76,3 +76,12 @@
   - 前端 `api/documents.ts`（`LinkGraph` 类型 + `linkGraph`）、`pages/documents/DocumentGraphPage.tsx`（echarts graph/force，独立 lazy chunk；配色经 `getComputedStyle` 读取 `--cn-*` 并用 `useTheme` 触发重建）、文档区二级页签「图谱」与路由。
 - 测试：后端 `tests/test_documents_link_graph.py` 5 例（节点/边/断链、自环去重、歧义、可见性、截断与缓存）；前端 `DocumentGraphPage.test.tsx` 3 例（option 结构 / 点击跳转 / 截断提示）。`pnpm build` + `pnpm bundle:budget` 全绿，`DocumentGraphPage` 独立 chunk（H31）。
 - 提交 sha：432c771e。
+
+## 补充：交互与显示修复（2026-11-26）
+
+C4 只规定了「echarts graph + layout=force」，没约束缩放锚点与可读性细节，上线后暴露为「缩放不正常、显示效果差」：
+
+- 根因：echarts 6.1.0 的 `graphRoam` 是相对增量、默认以画布 (0,0) 为锚点（`coord/View.js::applyRoamPayloadToOverallTrans`），原工具栏只派发 `zoom` 不派发 `originX/originY`，导致图往左上角飞出且 roam transform 出现 `null`（SVG 里是 `NaN`）。
+- 修复：`zoomBy()` 以容器中心为锚点派发；补 `scaleLimit 0.25–4`、`nodeScaleRatio 0.4`、`labelLayout.hideOverlap`（需 `echarts/features` 的 `LabelLayout`）、`edgeSymbol ['none','arrow']`、度数分级节点尺寸、`emphasis.focus:'adjacency'` + `blur`、tooltip `confine`。
+- 测试：`DocumentGraphPage.test.tsx` 3 → 9 例，覆盖锚点坐标、上下限夹取与按钮禁用、option 显示要素、`graphroam` 倍率读数同步。
+- 改动文件：`frontend/src/pages/documents/DocumentGraphPage.tsx`、`frontend/src/pages/documents/DocumentGraphPage.test.tsx`。C7 的 token 口径（只用 `--cn-*`）未破。
