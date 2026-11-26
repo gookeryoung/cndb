@@ -156,9 +156,9 @@ detectAutoOrientation(input: {
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/preview/pdf_rotation.py`、`src/cndb/plugins/documents/routers/documents.py`、`pyproject.toml`（pypdf） | `tests/test_document_asset_rotation.py` | 未提交 |
-| P1 | 已落地 | `frontend/src/pages/documents/assetOrientation.ts`、`frontend/src/pages/documents/AssetRotationControls.tsx`、`frontend/src/pages/documents/RotatableImage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/assetOrientation.test.ts` | 未提交 |
-| P2 | 已落地 | `frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/DocumentAssetView.test.tsx` | 未提交 |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/preview/pdf_rotation.py`、`src/cndb/plugins/documents/routers/documents.py`、`pyproject.toml`（pypdf） | `tests/test_document_asset_rotation.py` | `9fe1980` |
+| P1 | 已落地 | `frontend/src/pages/documents/assetOrientation.ts`、`frontend/src/pages/documents/AssetRotationControls.tsx`、`frontend/src/pages/documents/RotatableImage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/assetOrientation.test.ts`、`frontend/src/pages/documents/RotatableImage.test.tsx` | `9fe1980` |
+| P2 | 已落地 | `frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/DocumentAssetView.test.tsx` | `9fe1980` |
 
 ## 交接（会话结束更新）
 
@@ -166,4 +166,4 @@ detectAutoOrientation(input: {
 - 已完成：pypdf 派生副本模块（旋转 / 镜像 / 进程内 LRU）、`/asset/orientation` 与 `/asset/rotated` 端点（权限 / 异常 / 参数校验）；前端判定纯函数与 EXIF 解析、右侧方向控件条、可旋转图片舞台、PDF 派生副本接入与失败回退、切文档重置
 - 下一步：无（如需 OCR 级方向识别另立 ADR）
 - 已知坑：浏览器默认已应用 EXIF 与 PDF `/Rotate`，必须按 I2 关闭 / 烘焙，避免双重方向；pypdf 7 要求页面先挂在 `PdfWriter(clone_from=...)` 上再改，直接改 `PdfReader` 的页会抛 `DeprecationError`；镜像矩阵与页面既有旋转的叠加顺序由几何断言守住
-- 最近一次全绿：`make flow` @ 待回填（2026-11-26）
+- 最近一次全绿：`make check-fast` 全绿、`make test` 7721 passed、前端方向相关 46 例通过（2026-11-26，`9fe1980`）
