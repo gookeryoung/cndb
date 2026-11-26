@@ -31,18 +31,25 @@ test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
 
 async function openDocuments(page: Page) {
   await page.goto(`/w/${wid}/documents`);
-  await expect(page.getByTestId("doc-file-import")).toBeVisible({ timeout: 20_000 });
+  // 需求 0162 起「导入」收进桌面工具栏「更多」下拉，菜单项不在 DOM 里常驻；
+  // 先等工具栏就绪，再按入口路径打开（直接断言菜单项会因未展开菜单而恒失败）
+  await expect(page.getByTestId("doc-toolbar-more-desktop")).toBeVisible({ timeout: 20_000 });
+}
+
+/** 打开导入弹窗：桌面「更多 → 导入」 */
+async function openImportModal(page: Page) {
+  await page.getByTestId("doc-toolbar-more-desktop").click();
+  await page.getByTestId("doc-file-import").click();
+  // antd Modal 的 data-testid 落在无布局的 .ant-modal-root 包裹层上，恒判 hidden；
+  // 断言弹窗内控件可见才是"弹窗已打开"的可靠证据（同 documents-visibility 用例口径）
+  await expect(page.getByTestId("file-import-pick")).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe("文档文件导入", () => {
   test("单文件：导入 md → 新文档按内嵌标题命名且正文已规整", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
     await openDocuments(page);
-
-    await page.getByTestId("doc-file-import").click();
-    // antd Modal 的 data-testid 落在无布局的 .ant-modal-root 包裹层上，恒判 hidden；
-    // 断言弹窗内控件可见才是"弹窗已打开"的可靠证据（同 documents-visibility 用例口径）
-    await expect(page.getByTestId("file-import-pick")).toBeVisible({ timeout: 15_000 });
+    await openImportModal(page);
 
     // 单文件模式（默认）：原生 filechooser 只能通过先注册等待、再点击触发
     const chooserPromise = page.waitForEvent("filechooser", { timeout: 10_000 });
@@ -80,9 +87,7 @@ test.describe("文档文件导入", () => {
   test("压缩包：上传 zip → 层级文件夹 + 文档，正文原样保留", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
     await openDocuments(page);
-
-    await page.getByTestId("doc-file-import").click();
-    await expect(page.getByTestId("file-import-pick")).toBeVisible({ timeout: 15_000 });
+    await openImportModal(page);
     // 切到压缩包模式（需求 0088：文件夹方式移除，改为上传 zip 按包内路径还原层级）
     await page.getByTestId("file-import-mode").getByText("压缩包", { exact: true }).click();
     await expect(page.getByTestId("vault-import-pick")).toBeVisible({ timeout: 10_000 });
