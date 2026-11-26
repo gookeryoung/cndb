@@ -50,4 +50,4 @@
 - 代码落点：`services/content.py::duplicate_document` / `_duplicate_node`（递归子树、标题递增、最新正文、标签、原件文件复制）、`routers/documents.py::POST /{doc_id}/duplicate`、`schemas.DocumentDuplicateRequest`；前端 `api/documents.ts::duplicate` + 行操作「创建副本」。
 - 测试：`tests/test_documents_duplicate.py` 6 例（正文/标签/v1、标题递增、文件夹子树、跨区 404、viewer 403、原件文件新 key）；前端 `DocumentsPageDuplicate.test.tsx` 1 例。相关 70 例全绿。
 - 已知边界：逐节点 `create_document` 落库，极端失败会留下部分副本（无跨节点事务）；需要严格原子时后续再收口。
-- 提交 sha：待提交。
+- 提交 sha：52403b88。

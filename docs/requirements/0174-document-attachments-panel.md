@@ -50,4 +50,4 @@
 
 - 代码落点：`services/attachments.py`（列表 / 体检 / 回收，孤儿=零引用且无 `FileOwner`）、`routers/attachments.py`（`GET ""`、`POST /scan` editor+、`POST /purge` owner，注册在 `/{doc_id}` 之前）；前端 `pages/documents/DocumentAttachmentsPage.tsx` + 文档区二级页「附件」。
 - 测试：`tests/test_document_attachments.py` 3 例（列表/搜索/归属、体检与回收不误删、viewer 403）；前端 `DocumentAttachmentsPage.test.tsx` 2 例（体检+回收、viewer 无回收入口）。
-- 提交 sha：待提交。
+- 提交 sha：52403b88。

@@ -46,4 +46,4 @@
 
 - 代码落点：`routers/documents.py::_audit_document`（创建 / 改正文 / 删除 / 恢复 / 回滚 / 复制、跨区移动各一条 `document.*` 事件），复用 `core/events.record_event` 与既有事件查询；`detail` 只含版本号 / 大小 / 目标工作区等定位信息。
 - 测试：`tests/test_documents_event_audit.py` 3 例（增改事件且不含正文、删除/恢复/回滚/复制的动作、审计失败不阻断 201）。
-- 提交 sha：待提交。
+- 提交 sha：52403b88。
