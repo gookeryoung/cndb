@@ -5572,6 +5572,225 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* ─────────────── 侧栏拖拽把手（需求 0162 C5）───────────────
+ * 悬停在 Sider 右缘时给出可拖拽提示；静态不画线，避免多一条竖边。 */
+.cn-sider-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--cn-space-sm);
+  transform: translateX(-50%);
+  z-index: 20;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+.cn-sider-resizer::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  background: transparent;
+}
+
+.cn-sider-resizer:hover::after,
+.cn-sider-resizer:focus-visible::after {
+  background: var(--cn-brand-color);
+}
+
+/* ─────────────── 文档页头（需求 0162）───────────────
+ * 桌面单行：左侧面包屑 / 上一级，右侧排序、搜索、筛选、回收站、视图切换、新建与更多。
+ * 不再使用 Space wrap，避免 1024px 下次级操作折到第二行左侧。 */
+.cn-doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  margin-bottom: var(--cn-space-lg);
+  min-width: 0;
+}
+
+.cn-doc-head-left {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.cn-doc-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  flex: 0 0 auto;
+}
+
+/* 窄桌面：标签 / 状态收进气泡，纵向排列保持可读 */
+.cn-doc-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+  width: 200px;
+}
+
+/* ─────────────── 文档列表分块（文件夹 / 文档）─────────────── */
+.cn-doc-section {
+  margin-bottom: var(--cn-space-lg);
+}
+
+.cn-doc-section:last-child {
+  margin-bottom: 0;
+}
+
+/* ─────────────── 文档表格（复用 antd Table，需求 0162 C2）───────────────
+ * 行高对齐数据表目录页：上下 6px + 20px 行高；表头用弱底色，
+ * 数字列等宽右对齐；名称列单行省略，文件夹副标题再给一行递归统计。 */
+.cn-doc-table-card {
+  overflow: hidden;
+}
+
+.cn-doc-table .ant-table {
+  background: transparent;
+  font-size: var(--cn-text-sm);
+}
+
+.cn-doc-table .ant-table-thead > tr > th {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  background: var(--cn-bg-subtle);
+  border-color: var(--cn-border);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-doc-table .ant-table-tbody > tr > td {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border-color: var(--cn-border);
+}
+
+.cn-doc-table .ant-table-tbody > tr:hover > td {
+  background: var(--cn-bg-subtle);
+}
+
+.cn-doc-table-name {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-doc-table-name-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cn-doc-table-sub {
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-doc-table-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-xs) var(--cn-space-sm);
+}
+
+.cn-doc-table-status .ant-badge-status-text {
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-doc-table-muted {
+  font-size: var(--cn-text-xs);
+}
+
+.cn-doc-table-num {
+  font-size: var(--cn-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ─────────────── 系列详情单行工具条（需求 0162 C4）─────────────── */
+.cn-doc-series-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-lg);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+}
+
+.cn-doc-series-icon {
+  color: var(--cn-warning);
+  font-size: var(--cn-text-lg);
+  flex-shrink: 0;
+}
+
+.cn-doc-series-name {
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-md);
+}
+
+.cn-doc-series-tag.ant-tag {
+  margin-inline-end: 0;
+  font-size: var(--cn-text-xs);
+  flex-shrink: 0;
+}
+
+.cn-doc-series-meta {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--cn-space-sm);
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-doc-series-meta > span {
+  flex-shrink: 0;
+}
+
+.cn-doc-series-actions {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+
+@media (max-width: 767.98px) {
+  .cn-doc-series-bar {
+    flex-wrap: wrap;
+    gap: var(--cn-space-xs);
+    padding: var(--cn-space-xs) var(--cn-space-sm);
+  }
+
+  .cn-doc-series-name {
+    max-width: 100%;
+  }
+
+  .cn-doc-series-meta {
+    flex-basis: 100%;
+  }
+}
+
 /* ── 窄屏（< 768px）：文档列表行紧凑化 ──
  * 操作图标收进单枚「更多」后，行内留白再收紧一档，把宽度让给单行省略标题，
  * 同时保持 24px 的图标点击区。 */

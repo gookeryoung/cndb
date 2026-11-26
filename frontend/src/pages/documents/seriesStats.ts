@@ -57,6 +57,38 @@ export function buildFolderStatusCounts(items: DocumentItem[]): Map<number, Reco
   return result
 }
 
+/** 文件夹行的紧凑摘要（列表副标题用）：递归文档数 / 子文件夹数 / 标签去重数 */
+export interface FolderSummary {
+  docCount: number
+  subFolderCount: number
+  tagCount: number
+}
+
+/** 全部文件夹 → 紧凑摘要；文件夹列表行与卡片共用同一递归口径 */
+export function buildFolderSummaries(items: DocumentItem[]): Map<number, FolderSummary> {
+  const result = new Map<number, FolderSummary>()
+  const walk = (node: DocTreeNode): FolderSummary & { tags: Set<number> } => {
+    let docCount = 0
+    let subFolderCount = 0
+    const tags = new Set<number>()
+    for (const child of node.children) {
+      if (child.is_folder) {
+        const childSummary = walk(child)
+        docCount += childSummary.docCount
+        subFolderCount += childSummary.subFolderCount + 1
+        for (const tag of childSummary.tags) tags.add(tag)
+      } else {
+        docCount += 1
+        for (const tag of child.tag_ids) tags.add(tag)
+      }
+    }
+    if (node.is_folder) result.set(node.id, { docCount, subFolderCount, tagCount: tags.size })
+    return { docCount, subFolderCount, tagCount: tags.size, tags }
+  }
+  for (const root of buildDocTree(items)) walk(root)
+  return result
+}
+
 /** 单个文件夹的系列聚合统计（递归子孙；系列详情头部复用） */
 export function seriesStatsOf(folder: DocTreeNode): SeriesSummary {
   const descendants: DocumentItem[] = []

@@ -10,6 +10,7 @@ import { Routes, Route } from 'react-router-dom'
 import { message } from 'antd'
 import { http, HttpResponse } from 'msw'
 import DocumentsPage, { buildFolderStatusCounts, buildSeriesStats } from './DocumentsPage'
+import { buildFolderSummaries } from './seriesStats'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
 import type { DocumentItem } from '@/api/documents'
@@ -88,8 +89,26 @@ describe('buildFolderStatusCounts 纯函数', () => {
   })
 })
 
-describe('DocumentsPage 顶层系列卡片总览', () => {
-  it('顶层渲染系列卡片（统计齐全），不渲染 Empty', async () => {
+describe('buildFolderSummaries 纯函数', () => {
+  it('递归汇总文档数 / 子文件夹数 / 标签去重数', () => {
+    const items: DocumentItem[] = [
+      { ...mockDocuments[0], id: 1, parent_id: null, is_folder: true },
+      { ...mockDocuments[1], id: 2, parent_id: 1, is_folder: false, tag_ids: [7, 8] },
+      { ...mockDocuments[0], id: 3, parent_id: 1, is_folder: true },
+      { ...mockDocuments[1], id: 4, parent_id: 3, is_folder: false, tag_ids: [8, 9] },
+      { ...mockDocuments[1], id: 5, parent_id: null, is_folder: false },
+    ]
+
+    const summaries = buildFolderSummaries(items)
+    expect(summaries.get(1)).toEqual({ docCount: 2, subFolderCount: 1, tagCount: 3 })
+    expect(summaries.get(3)).toEqual({ docCount: 1, subFolderCount: 0, tagCount: 2 })
+    // 根级散文档不属于任何文件夹
+    expect(summaries.has(5)).toBe(false)
+  })
+})
+
+describe('DocumentsPage 顶层列表总览', () => {
+  it('桌面默认列表：文件夹行在前，递归统计齐全，不渲染 Empty', async () => {
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
@@ -97,22 +116,35 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
       { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
     )
 
-    const card = await screen.findByTestId('doc-series-card-1')
-    expect(card).toBeVisible()
-    expect(screen.getByText('产品文档')).toBeInTheDocument()
-    expect(screen.getByText('1 篇文档')).toBeInTheDocument()
-    expect(screen.getByText('1 个子文件夹')).toBeInTheDocument()
-    expect(screen.getByText('草稿 1')).toBeInTheDocument()
-    // 文件夹卡片压成两行：元信息（计数 / 状态 / 更新日期）合并到同一行容器
-    const cardMeta = card.querySelector('.cn-folder-card-meta')
-    expect(cardMeta).not.toBeNull()
-    expect(cardMeta).toHaveTextContent('1 篇文档')
-    expect(card.querySelector('.cn-folder-card-date')).toHaveTextContent(/\d{4}-\d{2}-\d{2}/)
+    const table = await screen.findByTestId('doc-folder-table')
+    expect(within(table).getByText('产品文档')).toBeInTheDocument()
+    expect(within(table).getByText('1 篇文档')).toBeInTheDocument()
+    expect(within(table).getByText('1 个子文件夹')).toBeInTheDocument()
+    expect(within(table).getByText('草稿 1')).toBeInTheDocument()
     // 树中「需求说明」为子级文档，不进顶层列表（mock 无根级散文档）
     expect(screen.queryByText('需求说明')).toBeNull()
     // 文件夹与文档分块：顶层只有文件夹块（无根级散文档）
     expect(screen.getByTestId('doc-folder-block')).toBeInTheDocument()
     expect(screen.queryByTestId('doc-file-block')).toBeNull()
+    // 需求 0162：列表为默认视图，网格默认不渲染；工具栏提供视图切换
+    expect(screen.queryByTestId('doc-series-grid')).toBeNull()
+    expect(screen.getByTestId('doc-view-toggle')).toBeInTheDocument()
+  })
+
+  it('切到网格视图后恢复系列卡片，列表表格退场', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    const toggle = await screen.findByTestId('doc-view-toggle')
+    fireEvent.click(within(toggle).getAllByRole('radio')[1])
+
+    expect(await screen.findByTestId('doc-series-grid')).toBeInTheDocument()
+    expect(screen.getByTestId('doc-series-card-1')).toBeVisible()
+    expect(screen.queryByTestId('doc-folder-table')).toBeNull()
   })
 
   it('父文件夹列表中的子文件夹状态按子孙聚合，与进入该文件夹后口径一致', async () => {
@@ -143,7 +175,7 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
     expect(within(folderBlock).getByTestId('doc-list-visibility-2')).toBeInTheDocument()
   })
 
-  it('点击系列卡片进入文件夹：列表展示子项', async () => {
+  it('点击文件夹行进入文件夹：列表展示子项', async () => {
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
@@ -151,7 +183,7 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
       { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
     )
 
-    fireEvent.click(await screen.findByTestId('doc-series-card-1'))
+    fireEvent.click(await screen.findByTestId('doc-row-1'))
 
     // 子级列表渲染（list 端点按 parent_id=1 过滤），文件夹 / 文档分块展示
     expect(await screen.findByText('需求说明')).toBeInTheDocument()
@@ -167,6 +199,8 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
     expect(within(fileBlock).getByText('文档')).toBeInTheDocument()
     // 系列卡片网格退场
     expect(screen.queryByTestId('doc-series-card-1')).toBeNull()
+    // 桌面列表：文件夹与文档各自成表（需求 0162）
+    expect(screen.getByTestId('doc-subfolder-table')).toBeInTheDocument()
   })
 })
 
@@ -180,9 +214,9 @@ describe('DocumentsPage 系列详情视图', () => {
     )
   }
 
-  /** 进入「产品文档」系列详情 */
+  /** 进入「产品文档」文件夹（桌面默认列表：点击文件夹行） */
   async function enterSeries() {
-    fireEvent.click(await screen.findByTestId('doc-series-card-1'))
+    fireEvent.click(await screen.findByTestId('doc-row-1'))
     await screen.findByTestId('doc-series-detail')
   }
 
@@ -261,9 +295,9 @@ describe('DocumentsPage 系列详情视图', () => {
     await waitFor(() => {
       expect(deleted).toEqual(['1'])
     })
-    // 当前层级已删，回退总览：系列网格（刷新后仍由 tree 数据驱动）重新出现
+    // 当前层级已删，回退总览：列表刷新后重新出现
     await waitFor(() => {
-      expect(screen.getByTestId('doc-series-grid')).toBeInTheDocument()
+      expect(screen.getByTestId('doc-folder-table')).toBeInTheDocument()
     })
   })
 })
@@ -490,7 +524,7 @@ describe('DocumentsPage 最近打开与置顶标识', () => {
 
     it('无历史时不渲染最近打开条', async () => {
         renderPage()
-        await screen.findByTestId('doc-series-card-1')
+        await screen.findByTestId('doc-folder-table')
         expect(screen.queryByTestId('doc-recent')).toBeNull()
     })
 
@@ -520,7 +554,7 @@ describe('DocumentsPage 最近打开与置顶标识', () => {
         )
         renderPage()
 
-        await screen.findByTestId('doc-series-card-1')
+        await screen.findByTestId('doc-folder-table')
         expect(screen.getByTestId('doc-pinned-tag-1')).toHaveAttribute('aria-label', '置顶')
     })
 })
@@ -805,7 +839,7 @@ describe('文档列表边缘线与行操作', () => {
     expect(wrapper.querySelector('.cn-doc-list')).not.toBeNull()
   })
 
-  it('桌面端列表行为单行紧凑布局：标题单行省略，时间与大小收进右侧列', async () => {
+  it('桌面端列表：标题单行省略，大小与更新时间分列右对齐', async () => {
     renderPage()
     // 标题单行省略：完整文件名保留在 title 悬停提示
     const title = (await screen.findByText('需求说明')).closest('.ant-typography')
@@ -813,11 +847,12 @@ describe('文档列表边缘线与行操作', () => {
     expect(title).toHaveClass('cn-doc-title-single')
     expect(title).toHaveAttribute('title', '需求说明')
 
-    // 右侧 meta 列：大小与更新时间右对齐；文件夹大小留空占位
-    const meta = screen.getByTestId('doc-row-meta-2')
-    expect(meta.querySelector('.cn-doc-meta-size')).toHaveTextContent('128 B')
-    expect(meta.querySelector('.cn-doc-meta-date')).toHaveTextContent('2026-01-02')
-    expect(screen.getByTestId('doc-row-meta-3').querySelector('.cn-doc-meta-size')?.textContent?.trim()).toBe('')
+    // 需求 0162：大小 / 更新时间各自成列；文件夹大小用占位符对齐
+    const row = screen.getByTestId('doc-row-2')
+    expect(within(row).getByText('128 B')).toBeInTheDocument()
+    expect(within(row).getByText('2026-01-02')).toBeInTheDocument()
+    const folderRow = screen.getByTestId('doc-row-3')
+    expect(within(folderRow).getAllByText('—').length).toBeGreaterThan(0)
 
     // 状态圆点 + 文本仍在行内；摘要与版本号不再进入列表行
     expect(screen.getAllByText('草稿').length).toBeGreaterThan(0)
@@ -897,7 +932,7 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
 
   /** 进入「产品文档」系列详情（导出按钮在详情工具栏） */
   async function enterSeries() {
-    fireEvent.click(await screen.findByTestId('doc-series-card-1'))
+    fireEvent.click(await screen.findByTestId('doc-row-1'))
     await screen.findByTestId('doc-series-detail')
   }
 
@@ -936,6 +971,7 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
     renderPage()
     await enterSeries()
 
+    fireEvent.click(await screen.findByTestId('doc-toolbar-more-desktop'))
     fireEvent.click(await screen.findByTestId('doc-vault-export'))
     await screen.findByTestId('doc-export-style')
     // 需求 0088：默认选中「压缩文档」；两种方式都是 .zip
@@ -955,6 +991,7 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
     renderPage()
     await enterSeries()
 
+    fireEvent.click(await screen.findByTestId('doc-toolbar-more-desktop'))
     fireEvent.click(await screen.findByTestId('doc-vault-export'))
     fireEvent.click(await screen.findByText('Obsidian 库（.zip）'))
     fireEvent.click(screen.getByTestId('doc-export-confirm'))
@@ -962,4 +999,35 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
     await waitFor(() => expect(requests).toEqual(['obsidian']))
   })
 })
+})
+
+describe('桌面窄屏工具栏（需求 0162 C3）', () => {
+  it('900–1100px：标签 / 状态收进筛选气泡，打开后仍可操作', async () => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1000, height: 800,
+    }
+    try {
+      renderProviders(
+        <Routes>
+          <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+        </Routes>,
+        { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+      )
+
+      await screen.findByTestId('doc-folder-table')
+      // 窄桌面：两个下拉收进气泡，避免工具栏折行
+      expect(screen.queryByTestId('doc-tag-filter')).toBeNull()
+      expect(screen.queryByTestId('doc-status-filter')).toBeNull()
+
+      fireEvent.click(screen.getByTestId('doc-filter-menu'))
+      expect(await screen.findByTestId('doc-tag-filter')).toBeInTheDocument()
+      expect(screen.getByTestId('doc-status-filter')).toBeInTheDocument()
+    } finally {
+      responsiveState = {
+        deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+        width: 1280, height: 800,
+      }
+    }
+  })
 })

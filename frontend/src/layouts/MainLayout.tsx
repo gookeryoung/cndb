@@ -67,6 +67,16 @@ function ModalFallback() {
   return null
 }
 
+/** 侧栏宽度约束（需求 0162 C5）：默认 260，可拖拽范围 200–420，越界夹取 */
+export const SIDER_WIDTH_DEFAULT = 260
+export const SIDER_WIDTH_MIN = 200
+export const SIDER_WIDTH_MAX = 420
+
+export function clampSiderWidth(width: number): number {
+  if (!Number.isFinite(width)) return SIDER_WIDTH_DEFAULT
+  return Math.min(SIDER_WIDTH_MAX, Math.max(SIDER_WIDTH_MIN, Math.round(width)))
+}
+
 /** 数据表模块工作区级页签 → 路由段（其余页签 key 即路由段） */
 const TABLE_LEVEL_TAB_PATHS: Record<string, string> = {
   'change-requests': 'tables/change-requests',
@@ -172,6 +182,29 @@ export default function MainLayout() {
   const queryClient = useQueryClient()
   // 侧栏折叠态：本地偏好持久化，刷新 / 重新进入后保持用户最后一次选择
   const [collapsed, setCollapsed] = usePersistedState('cndb_sider_collapsed', false)
+  // 侧栏宽度：桌面端可拖拽并记忆（需求 0162 C5），默认 260
+  const [siderWidth, setSiderWidth] = usePersistedState<number>('cndb_sider_width_v1', SIDER_WIDTH_DEFAULT)
+  const siderResizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  /** 拖拽侧栏右边缘：按下后跟随鼠标更新宽度，松手解绑（需求 0162 C5） */
+  const startSiderResize = useCallback((event: React.MouseEvent) => {
+    event.preventDefault()
+    siderResizeRef.current = { startX: event.clientX, startWidth: siderWidth }
+    const handleMove = (moveEvent: MouseEvent) => {
+      const origin = siderResizeRef.current
+      if (!origin) return
+      setSiderWidth(clampSiderWidth(origin.startWidth + (moveEvent.clientX - origin.startX)))
+    }
+    const handleUp = () => {
+      siderResizeRef.current = null
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+      document.body.style.cursor = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+  }, [siderWidth, setSiderWidth])
   const settingsOpen = useUiStore(s => s.settingsOpen)
   const settingsTab = useUiStore(s => s.settingsTab)
   const openSettings = useUiStore(s => s.openSettings)
@@ -1340,7 +1373,7 @@ export default function MainLayout() {
         </div>
       </Header>
 
-      <Layout style={{ flex: 1, minHeight: 0 }}>
+      <Layout style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
             侧栏形态随功能段切换（需求 0065 / ADR 0084 / ADR 0109 D8）：文档段=文档导航，
@@ -1356,7 +1389,7 @@ export default function MainLayout() {
             collapsible={siderMode !== 'home'}
             collapsed={siderMode === 'home' ? false : collapsed}
             onCollapse={setCollapsed}
-            width={240} collapsedWidth={60}
+            width={siderWidth} collapsedWidth={60}
             style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
           >
             {siderMode === 'admin'
@@ -1373,6 +1406,19 @@ export default function MainLayout() {
                       ? renderStatsNav(false, collapsed)
                       : renderTableNav(false, collapsed)}
           </Sider>
+        )}
+        {/* 侧栏拖拽把手（需求 0162 C5）：绝对定位在 Sider 右缘，双击恢复默认宽度 */}
+        {!isMobile && !inHelpDocs && siderMode !== 'hidden' && (
+          <div
+            className="cn-sider-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整侧栏宽度"
+            data-testid="sider-resizer"
+            style={{ left: collapsed && siderMode !== 'home' ? 60 : siderWidth }}
+            onMouseDown={startSiderResize}
+            onDoubleClick={() => setSiderWidth(SIDER_WIDTH_DEFAULT)}
+          />
         )}
 
         <Layout style={{ flex: 1, minHeight: 0 }}>

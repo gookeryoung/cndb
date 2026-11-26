@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import MainLayout from './MainLayout'
+import MainLayout, { clampSiderWidth } from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockTeam, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { UserResponse, WorkspaceModule } from '@/api'
@@ -1787,5 +1787,29 @@ describe('MainLayout 顶栏紧凑档（宽度不足）', () => {
                 width: 1280, height: 800,
             }
         }
+    })
+})
+
+describe('侧栏宽度拖拽（需求 0162 C5）', () => {
+    it('拖动把手更新宽度并写入本地偏好，双击恢复默认', async () => {
+        window.localStorage.removeItem('cndb_sider_width_v1')
+        renderLayout(mockUser, '/w/10/documents')
+
+        const handle = await screen.findByTestId('sider-resizer')
+        fireEvent.mouseDown(handle, { clientX: 260 })
+        fireEvent.mouseMove(window, { clientX: 340 })
+        fireEvent.mouseUp(window)
+
+        await waitFor(() => expect(window.localStorage.getItem('cndb_sider_width_v1')).toBe('340'))
+
+        fireEvent.doubleClick(handle)
+        await waitFor(() => expect(window.localStorage.getItem('cndb_sider_width_v1')).toBe('260'))
+    })
+
+    it('clampSiderWidth 夹取越界宽度并回退非法值', () => {
+        expect(clampSiderWidth(120)).toBe(200)
+        expect(clampSiderWidth(999)).toBe(420)
+        expect(clampSiderWidth(300)).toBe(300)
+        expect(clampSiderWidth(Number.NaN)).toBe(260)
     })
 })

@@ -15,7 +15,9 @@ import {
   Listy,
   Modal,
   Popconfirm,
+  Popover,
   Radio,
+  Segmented,
   Select,
   Skeleton,
   Space,
@@ -30,6 +32,7 @@ import type { MenuProps } from 'antd'
 import MoveDocumentModal, { moveSummary } from './MoveDocumentModal'
 import {
   ApartmentOutlined,
+  AppstoreOutlined,
   ArrowLeftOutlined,
   ClockCircleOutlined,
   DeleteOutlined,
@@ -45,6 +48,7 @@ import {
   PushpinOutlined,
   SearchOutlined,
   SortAscendingOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -57,7 +61,9 @@ import type { DocumentItem, VaultExportStyle } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
-import { buildFolderStatusCounts, buildSeriesStats, seriesStatsOf } from './seriesStats'
+import { buildFolderStatusCounts, buildFolderSummaries, buildSeriesStats, seriesStatsOf } from './seriesStats'
+import DocumentTable from './DocumentTable'
+import { usePersistedState } from '@/utils/persistedState'
 import { formatDate, formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import { formatMeta } from '@/components/Document/docFormat'
 import CnListMeta from '@/components/CnListMeta'
@@ -100,7 +106,9 @@ export default function DocumentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const qc = useQueryClient()
   const workspaceId = Number(wid)
-  const { isMobile } = useResponsive()
+  const { isMobile, width } = useResponsive()
+  // 窄桌面（如 900px 且侧栏展开）：标签 / 状态收进「筛选」气泡，保证页头仍为单行
+  const isNarrowDesktop = !isMobile && width < 1100
 
   // 桌面端悬停 PPTX 行时防抖预取渲染库与原件；移出 / 卸载即取消（需求 0128 C5）
   const pptxPrefetcher = useMemo(
@@ -124,6 +132,8 @@ export default function DocumentsPage() {
     : undefined
   // 排序口径：与侧栏树共享同一本地偏好（docTreeSort），两处 UI 实时同步（需求 0065 三次修订）
   const [docSort, setDocSort] = useDocSortPref()
+  // 视图偏好（需求 0162）：列表为主，网格保留为可选；本地偏好跨文件夹共享
+  const [docView, setDocView] = usePersistedState<'list' | 'grid'>('cndb_doc_view_v1', 'list')
 
   const updateParams = useCallback((patch: { parent?: number | null; tag?: number | null; status?: string | null }) => {
     setSearchParams(prev => {
@@ -201,6 +211,11 @@ export default function DocumentsPage() {
   // 「已发布」统计不一致。
   const folderStatusCounts = useMemo(
     () => buildFolderStatusCounts(treeQuery.data ?? []),
+    [treeQuery.data],
+  )
+  // 文件夹行副标题：递归文档数 / 子文件夹数 / 标签数（与卡片同口径）
+  const folderSummaries = useMemo(
+    () => buildFolderSummaries(treeQuery.data ?? []),
     [treeQuery.data],
   )
 
@@ -447,6 +462,12 @@ export default function DocumentsPage() {
     setCreateOpen(true)
   }
 
+  /** 列表行打开：文件夹下钻当前层级，文档进编辑器（网格卡片与列表共用） */
+  const openDoc = (doc: DocumentItem) => {
+    if (doc.is_folder) setParentId(doc.id)
+    else navigate(`/w/${workspaceId}/documents/${doc.id}`)
+  }
+
   // 命令面板「新建文档」经 URL ?create=1 触发（0067 C3）
   useCreateParam(() => openCreate('doc'))
 
@@ -606,6 +627,22 @@ export default function DocumentsPage() {
     { key: 'export', icon: <ExportOutlined />, label: '导出', onClick: () => setExportOpen(true) },
     { type: 'divider' },
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
+  ]
+
+  /** 桌面「更多」：导入 / 导出收进下拉，给工具栏让出横向空间（需求 0162 C3） */
+  const desktopMoreMenu: MenuProps['items'] = [
+    {
+      key: 'import',
+      icon: <ImportOutlined />,
+      label: <span data-testid="doc-file-import">导入</span>,
+      onClick: () => setFileImportOpen(true),
+    },
+    {
+      key: 'export',
+      icon: <ExportOutlined />,
+      label: <span data-testid="doc-vault-export">导出</span>,
+      onClick: () => setExportOpen(true),
+    },
   ]
 
   /** 移动端筛选按钮：标签 / 状态是低频筛选，收起后用计数徽标 + aria-label 保留「已应用」感知 */
@@ -874,43 +911,76 @@ export default function DocumentsPage() {
           )}
         </div>
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-          <Space wrap>
+        <div className="cn-doc-head" data-testid="doc-toolbar-desktop">
+          <div className="cn-doc-head-left">
             {upButton}
             {breadcrumbNode}
-          </Space>
-          <Space wrap>
+          </div>
+          <div className="cn-doc-head-actions">
             {renderSortButton('doc-content-sort')}
-            {renderSearchInput({ width: 180 })}
-            {renderTagSelect({ width: 130 })}
-            {renderStatusSelect({ width: 110 })}
-            <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
-              回收站
-            </Button>
-            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
-            <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
-            {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
-            <Space.Compact>
-              <Tooltip title="导入：本地文件（Markdown / Word / HTML 等）可一次选多个，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
+            {renderSearchInput({ width: isNarrowDesktop ? 132 : 160 })}
+            {isNarrowDesktop ? (
+              <Popover
+                trigger="click"
+                placement="bottomRight"
+                title="筛选"
+                content={
+                  <div className="cn-doc-filter-panel">
+                    {renderTagSelect({ width: '100%' })}
+                    {renderStatusSelect({ width: '100%' })}
+                  </div>
+                }
+              >
                 <Button
-                  icon={<ImportOutlined />}
-                  data-testid="doc-file-import"
-                  onClick={() => setFileImportOpen(true)}
+                  icon={<FilterOutlined />}
+                  data-testid="doc-filter-menu"
+                  aria-label="筛选标签或状态"
                 >
-                  导入
+                  {tagFilter !== undefined || statusFilter ? '筛选 ·' : '筛选'}
                 </Button>
-              </Tooltip>
-              <Tooltip title="导出当前工作区文档树为 .zip 压缩包：压缩文档（默认）或 Obsidian 库，原件按原文件导出">
-                <Button
-                  icon={<ExportOutlined />}
-                  data-testid="doc-vault-export"
-                  onClick={() => setExportOpen(true)}
-                >
-                  导出
-                </Button>
-              </Tooltip>
-            </Space.Compact>
-          </Space>
+              </Popover>
+            ) : (
+              <>
+                {renderTagSelect({ width: 110 })}
+                {renderStatusSelect({ width: 96 })}
+              </>
+            )}
+            <Tooltip title="回收站">
+              <Button
+                icon={<DeleteOutlined />}
+                aria-label="回收站"
+                data-testid="doc-trash-open"
+                onClick={() => setTrashOpen(true)}
+              />
+            </Tooltip>
+            {parentId === null && (
+              <Segmented
+                size="small"
+                value={docView}
+                onChange={value => setDocView(value as 'list' | 'grid')}
+                data-testid="doc-view-toggle"
+                options={[
+                  { value: 'list', label: <Tooltip title="列表视图"><UnorderedListOutlined /></Tooltip> },
+                  { value: 'grid', label: <Tooltip title="网格视图"><AppstoreOutlined /></Tooltip> },
+                ]}
+              />
+            )}
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'doc', icon: <FileAddOutlined />, label: '新建文档', onClick: () => openCreate('doc') },
+                  { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
+                ],
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Button type="primary" icon={<FileAddOutlined />} data-testid="doc-create-menu">新建</Button>
+            </Dropdown>
+            <Dropdown menu={{ items: desktopMoreMenu }} trigger={['click']} placement="bottomRight">
+              <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more-desktop" />
+            </Dropdown>
+          </div>
         </div>
       )}
 
@@ -1008,10 +1078,8 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {/* 顶层：系列卡片网格（顶层文件夹即系列）；按标签筛选时隐藏——文件夹本身没有标签，
-          与后端 list 端点按 tag_id 过滤后不含文件夹的口径保持一致 */}
-      {/* auto-fill 自适应列数：按容器宽度连续增减，不再固定 3 列 */}
-      {parentId === null && tagFilter === undefined && seriesList.length > 0 && (
+      {/* 顶层网格视图：桌面仅在切到网格时渲染；移动端沿用卡片（需求 0162 C1/C6） */}
+      {parentId === null && (isMobile || docView === 'grid') && tagFilter === undefined && seriesList.length > 0 && (
         <section data-testid="doc-folder-block" style={{ marginBottom: isMobile ? 10 : 16 }}>
         <SectionTitle label="文件夹" count={seriesList.length} compact={isMobile} />
         <div
@@ -1074,83 +1142,69 @@ export default function DocumentsPage() {
         </section>
       )}
 
-      {/* 系列详情头部：图标 + 名称 + 递归统计 + 系列级操作（重命名/移动/删除） */}
+      {/* 系列详情头部（需求 0162 C4）：压缩为单行工具条，名称 / 统计 / 操作保持原能力 */}
       {parentId !== null && currentSeries && (
-        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 10 : 16 } }} style={{ marginBottom: isMobile ? 10 : 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
-            <FolderOutlined style={{ fontSize: isMobile ? 20 : 24, color: 'var(--cn-warning, #faad14)' }} />
-            <div style={{ flex: 1, minWidth: isMobile ? 140 : 180 }}>
-              <Space size={isMobile ? 4 : 8} wrap>
-                <Text strong style={{ fontSize: isMobile ? 15 : 16 }}>{currentSeries.folder.title}</Text>
-                {Object.entries(currentSeries.statusCounts).map(([st, n]) => (
-                  <Tag
-                    key={st}
-                    color={STATUS_COLORS[st] ?? 'default'}
-                    style={{ marginRight: 0, fontSize: isMobile ? 10 : 12, lineHeight: isMobile ? '16px' : undefined }}
-                  >
-                    {STATUS_LABELS[st] ?? st} {n}
-                  </Tag>
-                ))}
-              </Space>
-              <div style={{ fontSize: isMobile ? 11 : 12, color: 'var(--cn-text-secondary, #666)', marginTop: 4 }}>
-                {currentSeries.docCount} 篇文档 · {currentSeries.subFolderCount} 个子文件夹
-                {currentSeries.tagCount > 0 && ` · ${currentSeries.tagCount} 个标签`}
-                {' · '}更新 {formatTime(currentSeries.latestUpdate)}
-              </div>
-            </div>
-            {/* 窄屏图标化：系列级操作只占一行，不再把标题区挤成两行 */}
-            <Space size={isMobile ? 4 : 8} wrap>
-              <Tooltip title="重命名系列">
-                <Button
-                  size="small"
-                  icon={<EditOutlined />}
-                  aria-label="重命名系列"
-                  data-testid="doc-series-rename"
-                  onClick={() => {
-                    setRenameValue(currentSeries.folder.title)
-                    setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
-                  }}
-                >
-                  {!isMobile && '重命名'}
-                </Button>
-              </Tooltip>
-              <Tooltip title="移动系列">
-                <Button
-                  size="small"
-                  icon={<ApartmentOutlined />}
-                  aria-label="移动系列"
-                  data-testid="doc-series-move"
-                  onClick={() => {
-                    setMoveTarget(currentSeries.folder.parent_id ?? 0)
-                    setMoveOpen(true)
-                  }}
-                >
-                  {!isMobile && '移动'}
-                </Button>
-              </Tooltip>
-              <Popconfirm
-                title="删除系列将同时删除其中全部文档与子文件夹，确认？"
-                okType="danger"
-                okText="删除"
-                cancelText="取消"
-                onConfirm={() => deleteMut.mutate(currentSeries.folder.id)}
-              >
-                <Button
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label="删除系列"
-                  data-testid="doc-series-delete"
-                >
-                  {!isMobile && '删除'}
-                </Button>
-              </Popconfirm>
-            </Space>
-          </div>
-        </Card>
+        <div className="cn-doc-series-bar" data-testid="doc-series-detail">
+          <FolderOutlined className="cn-doc-series-icon" />
+          <Text strong className="cn-doc-series-name" title={currentSeries.folder.title}>
+            {currentSeries.folder.title}
+          </Text>
+          {Object.entries(currentSeries.statusCounts).map(([st, n]) => (
+            <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} className="cn-doc-series-tag">
+              {STATUS_LABELS[st] ?? st} {n}
+            </Tag>
+          ))}
+          <span className="cn-doc-series-meta">
+            <span>{currentSeries.docCount} 篇文档</span>
+            <span>{currentSeries.subFolderCount} 个子文件夹</span>
+            {currentSeries.tagCount > 0 && <span>{currentSeries.tagCount} 个标签</span>}
+            <span title={formatTime(currentSeries.latestUpdate)}>更新 {formatDate(currentSeries.latestUpdate)}</span>
+          </span>
+          <Space size={4} className="cn-doc-series-actions">
+            <Tooltip title="重命名系列">
+              <Button
+                size="small"
+                icon={<EditOutlined />}
+                aria-label="重命名系列"
+                data-testid="doc-series-rename"
+                onClick={() => {
+                  setRenameValue(currentSeries.folder.title)
+                  setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
+                }}
+              />
+            </Tooltip>
+            <Tooltip title="移动系列">
+              <Button
+                size="small"
+                icon={<ApartmentOutlined />}
+                aria-label="移动系列"
+                data-testid="doc-series-move"
+                onClick={() => {
+                  setMoveTarget(currentSeries.folder.parent_id ?? 0)
+                  setMoveOpen(true)
+                }}
+              />
+            </Tooltip>
+            <Popconfirm
+              title="删除系列将同时删除其中全部文档与子文件夹，确认？"
+              okType="danger"
+              okText="删除"
+              cancelText="取消"
+              onConfirm={() => deleteMut.mutate(currentSeries.folder.id)}
+            >
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                aria-label="删除系列"
+                data-testid="doc-series-delete"
+              />
+            </Popconfirm>
+          </Space>
+        </div>
       )}
 
-      {/* 列表：顶层散文档 / 子级文件夹与文档分块展示 */}
+      {/* 列表：桌面默认列对齐表格（需求 0162）；移动端沿用原两行列表，信息架构不变 */}
       {docsQuery.isLoading ? (
         // antd List 弃用（ADR 0074）：加载态用 Skeleton 占位（v5 List loading 同为骨架行）
         <div className="cn-doc-list" aria-busy="true">
@@ -1166,28 +1220,101 @@ export default function DocumentsPage() {
         </Empty>
       ) : (
         <div data-testid="doc-list">
-          {/* 子级：文件夹块在前、文档块在后；顶层文件夹已由上方系列卡片承载 */}
-          {parentId !== null && subFolders.length > 0 && (
-            <section data-testid="doc-subfolder-block" style={{ marginBottom: isMobile ? 8 : 16 }}>
-              <SectionTitle label="文件夹" count={subFolders.length} compact={isMobile} />
-              <Listy
-                className="cn-doc-list"
-                items={subFolders}
-                rowKey={doc => doc.id}
-                itemRender={renderDocRow}
-              />
-            </section>
-          )}
-          {fileItems.length > 0 && (
-            <section data-testid="doc-file-block">
-              <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
-              <Listy
-                className="cn-doc-list"
-                items={fileItems}
-                rowKey={doc => doc.id}
-                itemRender={renderDocRow}
-              />
-            </section>
+          {parentId === null ? (
+            <>
+              {/* 根层：文件夹行在前（列表视图；网格视图由上方卡片承载） */}
+              {!isMobile && docView === 'list' && tagFilter === undefined && seriesList.length > 0 && (
+                <section data-testid="doc-folder-block" className="cn-doc-section">
+                  <SectionTitle label="文件夹" count={seriesList.length} />
+                  <DocumentTable
+                    testId="doc-folder-table"
+                    items={seriesList.map(series => series.folder)}
+                    folderStatusCounts={folderStatusCounts}
+                    folderSummaries={folderSummaries}
+                    selectedIds={selectedIds}
+                    onToggleSelected={toggleSelected}
+                    onOpen={openDoc}
+                    renderRowActions={renderRowActions}
+                  />
+                </section>
+              )}
+              {fileItems.length > 0 && (
+                <section data-testid="doc-file-block">
+                  <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
+                  {isMobile ? (
+                    <Listy
+                      className="cn-doc-list"
+                      items={fileItems}
+                      rowKey={doc => doc.id}
+                      itemRender={renderDocRow}
+                    />
+                  ) : (
+                    <DocumentTable
+                      testId="doc-file-table"
+                      items={fileItems}
+                      folderStatusCounts={folderStatusCounts}
+                      folderSummaries={folderSummaries}
+                      selectedIds={selectedIds}
+                      onToggleSelected={toggleSelected}
+                      onOpen={openDoc}
+                      renderRowActions={renderRowActions}
+                    />
+                  )}
+                </section>
+              )}
+            </>
+          ) : (
+            <>
+              {/* 子级：文件夹块在前、文档块在后 */}
+              {subFolders.length > 0 && (
+                <section data-testid="doc-subfolder-block" className="cn-doc-section">
+                  <SectionTitle label="文件夹" count={subFolders.length} compact={isMobile} />
+                  {isMobile ? (
+                    <Listy
+                      className="cn-doc-list"
+                      items={subFolders}
+                      rowKey={doc => doc.id}
+                      itemRender={renderDocRow}
+                    />
+                  ) : (
+                    <DocumentTable
+                      testId="doc-subfolder-table"
+                      items={subFolders}
+                      folderStatusCounts={folderStatusCounts}
+                      folderSummaries={folderSummaries}
+                      selectedIds={selectedIds}
+                      onToggleSelected={toggleSelected}
+                      onOpen={openDoc}
+                      renderRowActions={renderRowActions}
+                    />
+                  )}
+                </section>
+              )}
+              {fileItems.length > 0 && (
+                <section data-testid="doc-file-block">
+                  <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
+                  {isMobile ? (
+                    <Listy
+                      className="cn-doc-list"
+                      items={fileItems}
+                      rowKey={doc => doc.id}
+                      itemRender={renderDocRow}
+                    />
+                  ) : (
+                    <DocumentTable
+                      testId="doc-file-table"
+                      items={fileItems}
+                      folderStatusCounts={folderStatusCounts}
+                      folderSummaries={folderSummaries}
+                      selectedIds={selectedIds}
+                      onToggleSelected={toggleSelected}
+                      onOpen={openDoc}
+                      renderRowActions={renderRowActions}
+                    />
+                  )}
+                </section>
+              )}
+            </>
           )}
         </div>
       )}
