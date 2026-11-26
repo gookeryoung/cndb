@@ -196,7 +196,7 @@ def require_workspace_write(user, workspace, db) -> Capabilities: ...
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/plugins/workspaces/routers/workspaces.py` | `tests/test_workspace_permission_hardening.py`（21 例） | 330b644 |
-| P1 | 已落地 | `src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py` | `tests/test_workspace_permission_hardening.py`（34 例） | 见 CHANGELOG |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py` | `tests/test_workspace_permission_hardening.py`（34 例） | 22453ac |
 | P2 | 未开始 | `analytics/`、`datasource/`、`issues/`、`change_requests/`、`pipeline/`、`frontend/src/` | 同上 + `frontend/tests/e2e/critical/workspace-permissions.spec.ts` | — |
 
 ## 交接（会话结束更新）
