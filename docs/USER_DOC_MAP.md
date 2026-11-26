@@ -49,6 +49,7 @@
 | 上传 PDF / Office / 图片与格式图标 | `/help/tutorials/documents#help-upload` | 0025 |
 | PPTX 异步高清预览 | `/help/tutorials/documents#help-pptx-pdf-preview` | 0129 |
 | 导出模板（文档区页签「导出模板」） | `/help/tutorials/documents#help-export-view--templates` | 0152、0177 |
+| 本文档默认排版模板（单篇指定导出模板） | `/help/tutorials/documents#help-export-view--template-bind` | 0177 |
 | 内容模板与从模板新建（文档区页签「内容模板」） | `/help/tutorials/documents#help-content-templates` | 0169、0177 |
 | 知识图谱（双链关系图） | `/help/tutorials/documents#help-graph` | 0168 |
 | 创建副本 | `/help/tutorials/documents#help-duplicate` | 0172 |
