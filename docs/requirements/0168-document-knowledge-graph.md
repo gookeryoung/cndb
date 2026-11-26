@@ -75,4 +75,4 @@
   - 后端 `services/content.py::build_link_graph`（复用 `parse.iter_wikilinks`，30s 缓存 + 256 条上限（过期即清理），节点上限 500，H33 可见性过滤含「存在但不可见不建断链节点」防泄漏）、`routers/documents.py::GET /{wid}/documents/links/graph`；节点载荷含 `is_folder`（前端据此决定跳编辑器还是目录列表）与 `broken`。
   - 前端 `api/documents.ts`（`LinkGraph` 类型 + `linkGraph`）、`pages/documents/DocumentGraphPage.tsx`（echarts graph/force，独立 lazy chunk；配色经 `getComputedStyle` 读取 `--cn-*` 并用 `useTheme` 触发重建）、文档区二级页签「图谱」与路由。
 - 测试：后端 `tests/test_documents_link_graph.py` 5 例（节点/边/断链、自环去重、歧义、可见性、截断与缓存）；前端 `DocumentGraphPage.test.tsx` 3 例（option 结构 / 点击跳转 / 截断提示）。`pnpm build` + `pnpm bundle:budget` 全绿，`DocumentGraphPage` 独立 chunk（H31）。
-- 提交 sha：待提交。
+- 提交 sha：432c771e。

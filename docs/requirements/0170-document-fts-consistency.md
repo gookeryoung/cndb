@@ -70,4 +70,4 @@
 
 - 代码落点：`services/search.py::verify_fts_index` / `rebuild_fts_index`（主表 + trigram 影子表；校验只读标题/正文长度/前 64 字符指纹，不加载完整正文）、`core/fts_refresh.py` 后台校验线程、`cli/docs.py::docs fts-verify|fts-rebuild`、`core/config.py` 三个 FTS 开关、`app.py` lifespan 接入；备份恢复同步两表。trigram 影子表本身的迁移 `c8d9e0f1a2b4` 属需求 0171。
 - 测试：`tests/test_documents_fts_consistency.py`（含 0171 用例）；`tests/conftest.py` 补 FTS 虚表清理（裸 SQL 建表不在 `Base.metadata`，不清会跨用例污染）。`make check-fast`、`make test` 全绿。
-- 提交 sha：待提交。
+- 提交 sha：432c771e。

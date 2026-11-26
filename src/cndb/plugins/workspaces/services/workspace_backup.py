@@ -890,6 +890,7 @@ def build_manifest(
             "documents": len(backup.get("documents", [])),
             "document_versions": len(backup.get("document_versions", [])),
             "templates": len(backup.get("templates", [])),
+            "content_templates": len(backup.get("content_templates", [])),
             "sync_jobs": len(backup.get("sync_jobs", [])),
             "pipelines": len(backup.get("pipelines", [])),
             "designs": len(backup.get("designs", [])),

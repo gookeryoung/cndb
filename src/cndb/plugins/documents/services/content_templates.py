@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError, NotFoundError
@@ -65,7 +66,7 @@ def create_content_template(
         created_by_id=user.id,
     )
     db.add(row)
-    db.commit()
+    _commit_or_conflict(db, name)
     db.refresh(row)
     return _serialize(row)
 
@@ -104,7 +105,7 @@ def update_content_template(
         row.icon = icon.strip()
     if sort_order is not None:
         row.sort_order = sort_order
-    db.commit()
+    _commit_or_conflict(db, row.name)
     db.refresh(row)
     return _serialize(row)
 
@@ -118,6 +119,15 @@ def delete_content_template(db: Session, workspace_id: int, template_id: int) ->
 def resolve_template_content(db: Session, workspace_id: int, template_id: int) -> str:
     """取模板正文（供「从模板新建文档」）；跨工作区按 404。"""
     return _get(db, workspace_id, template_id).content_markdown
+
+
+def _commit_or_conflict(db: Session, name: str) -> None:
+    """并发创建 / 改名撞 ``(workspace_id, name)`` 唯一约束时转 400 而非 500."""
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BadRequestError(f"模板名称「{name}」已存在") from exc
 
 
 def _get(db: Session, workspace_id: int, template_id: int) -> ContentTemplate:

@@ -15,6 +15,7 @@ import {
   Button,
   Empty,
   Input,
+  Modal,
   Popconfirm,
   Segmented,
   Space,
@@ -73,6 +74,8 @@ export default function DocumentContentTemplatesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [editorMode, setEditorMode] = useState<MarkdownEditorMode>('live')
+  // 切换模板时若有未保存修改，先挂起目标条目并弹确认（受控 Modal，便于测试）
+  const [pendingSwitch, setPendingSwitch] = useState<ContentTemplateItem | null>(null)
 
   const templatesQuery = useQuery({
     queryKey: ['content-templates', workspaceId],
@@ -94,9 +97,31 @@ export default function DocumentContentTemplatesPage() {
     }
   }, [items, selectedId])
 
-  const select = (item: ContentTemplateItem) => {
+  const dirty = selectedId != null && items.some(it => {
+    if (it.id !== selectedId) return false
+    return (
+      it.name !== draft.name ||
+      it.description !== draft.description ||
+      it.icon !== draft.icon ||
+      it.sort_order !== draft.sort_order ||
+      it.content_markdown !== draft.content_markdown
+    )
+  })
+
+  const applySwitch = (item: ContentTemplateItem) => {
     setSelectedId(item.id)
     setDraft(toDraft(item))
+    setPendingSwitch(null)
+  }
+
+  /** 切换模板：有未保存修改时先确认，避免静默丢弃 */
+  const select = (item: ContentTemplateItem) => {
+    if (item.id === selectedId) return
+    if (dirty) {
+      setPendingSwitch(item)
+      return
+    }
+    applySwitch(item)
   }
 
   /** 新建时生成工作区内唯一默认名：未命名模板 / 未命名模板 2 …（避免第二个必 400） */
@@ -144,17 +169,6 @@ export default function DocumentContentTemplatesPage() {
       message.success('已删除')
     },
     onError: () => message.error('删除失败'),
-  })
-
-  const dirty = selectedId != null && items.some(it => {
-    if (it.id !== selectedId) return false
-    return (
-      it.name !== draft.name ||
-      it.description !== draft.description ||
-      it.icon !== draft.icon ||
-      it.sort_order !== draft.sort_order ||
-      it.content_markdown !== draft.content_markdown
-    )
   })
 
   return (
@@ -329,6 +343,18 @@ export default function DocumentContentTemplatesPage() {
           </SectionBox>
         </div>
       </div>
+
+      <Modal
+        open={pendingSwitch != null}
+        title="放弃未保存的修改？"
+        okText="放弃并切换"
+        cancelText="继续编辑"
+        onOk={() => pendingSwitch && applySwitch(pendingSwitch)}
+        onCancel={() => setPendingSwitch(null)}
+        destroyOnHidden
+      >
+        切换模板后，当前未保存的名称与正文不会保留。
+      </Modal>
     </div>
   )
 }

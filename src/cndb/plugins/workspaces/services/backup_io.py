@@ -156,6 +156,7 @@ def import_backup_into_workspace(
     imported_sync_jobs = 0
     imported_charts = 0
     imported_templates = 0
+    imported_content_templates = 0
     imported_pipelines = 0
     imported_designs = 0
     errors: list[str] = []
@@ -533,7 +534,7 @@ def import_backup_into_workspace(
         content_template_imported, content_template_errors = _import_content_templates(
             workspace_id, json_data, current_user, db
         )
-        imported_templates += content_template_imported
+        imported_content_templates += content_template_imported
         errors.extend(content_template_errors)
 
         # ── v10（ADR 0076）：流水线定义（运行 / 发现物属流水，不进备份） ──
@@ -576,6 +577,7 @@ def import_backup_into_workspace(
         imported_sync_jobs=imported_sync_jobs,
         imported_charts=imported_charts,
         imported_templates=imported_templates,
+        imported_content_templates=imported_content_templates,
         imported_pipelines=imported_pipelines,
         imported_designs=imported_designs,
         errors=errors,

@@ -49,6 +49,8 @@
 | 上传 PDF / Office / 图片与格式图标 | `/help/tutorials/documents#help-upload` | 0025 |
 | PPTX 异步高清预览 | `/help/tutorials/documents#help-pptx-pdf-preview` | 0129 |
 | 导出模板 | `/help/tutorials/documents#help-export-view--templates` | 0152 |
+| 内容模板与从模板新建 | `/help/tutorials/documents#help-content-templates` | 0169 |
+| 知识图谱（双链关系图） | `/help/tutorials/documents#help-graph` | 0168 |
 | PDF / 图片方向与镜像纠偏 | `/help/tutorials/documents#help-export-view--rotation` | 0164 |
 | 游客只读分享 | `/help/tutorials/documents#help-share` | 0017 |
 | 敏感内容质量检查 | `/help/tutorials/quality-checks` | 0102 |

@@ -79,6 +79,6 @@
   - `services/content_templates.py`（CRUD + `resolve_template_content`）、`routers/content_templates.py`（`GET/POST/PATCH/DELETE /{wid}/document-content-templates`）、`plugin.py` 挂载、schemas 两枚；
   - 备份 `workspace_backup.py` 增 `content_templates[]`、`backup_io.py::_import_content_templates`、`workspace_restore.py::clear_workspace_content` 清表；
   - 前端 `api/contentTemplates.ts`、`pages/documents/DocumentContentTemplatesPage.tsx`（文档区二级页签「内容模板」）、`DocumentsPage.tsx` 新建下拉「从模板新建」+ 模板选择弹层。
-- 测试：后端 `tests/test_documents_content_templates.py` 8 例（CRUD / 重名 / 跨区 / 非成员 / 备份往返 / 旧包兼容 / 覆盖恢复 / 正文解析）；前端 `DocumentContentTemplatesPage.test.tsx` 5 例 + `DocumentsPageContentTemplate.test.tsx` 3 例（含「先开新建文件夹再取消」残留回归）；`make check-fast` 与 `pnpm check` 全绿。
-- 体验补充：新建模板按现有清单生成唯一默认名（未命名模板 / 未命名模板 2…），删除走 Popconfirm 二次确认；从模板新建弹层支持按名称/说明搜索，接口失败显示错误与重试而非空态。
-- 提交 sha：待提交。
+- 测试：后端 `tests/test_documents_content_templates.py` 8 例（CRUD / 重名 / 跨区 / 非成员 / 备份往返 / 旧包兼容 / 覆盖恢复 / 正文解析）；前端 `DocumentContentTemplatesPage.test.tsx` 6 例 + `DocumentsPageContentTemplate.test.tsx` 3 例（含「先开新建文件夹再取消」残留回归）；`make check-fast` 与 `pnpm check` 全绿。
+- 体验补充：新建模板按现有清单生成唯一默认名（未命名模板 / 未命名模板 2…），删除走 Popconfirm 二次确认、切换未保存时弹确认；从模板新建弹层支持按名称/说明搜索，接口失败显示错误与重试而非空态。
+- 提交 sha：432c771e。

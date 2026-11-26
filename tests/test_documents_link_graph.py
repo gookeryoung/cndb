@@ -123,3 +123,14 @@ class TestLinkGraph:
         third = build_link_graph(db, wid, owner, max_nodes=2)
         assert third is not first
         assert third["total"] == 4
+
+    def test_folder_node_marked(self, client, auth_headers):
+        """文件夹也是节点（链接目标可为文件夹），前端据此跳目录列表而非编辑器."""
+        wid = _ws(client, auth_headers, "图谱文件夹")
+        _create(client, wid, auth_headers, "资料夹", is_folder=True)
+        _create(client, wid, auth_headers, "正文文档", "[[资料夹]]")
+        _reset_cache()
+        payload = client.get(API.format(wid=wid) + "/links/graph", headers=auth_headers).json()
+        folder = next(node for node in payload["nodes"] if node["title"] == "资料夹")
+        assert folder["is_folder"] is True
+        assert folder["content_type"] == "folder"

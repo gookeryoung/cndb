@@ -1267,8 +1267,21 @@ def build_link_graph(
     broken_ids: set[int] = set()
     edges: list[dict[str, Any]] = []
     seen_edges: set[tuple[int, int]] = set()
+    # 批量取每个文档的最新版本（id 单调递增，取 max(id) 等价最新版），
+    # 避免 500 节点逐文档 latest_version 的 N+1 查询。
+    versions: dict[int, DocumentVersion] = {}
+    if docs:
+        latest_ids = (
+            select(func.max(DocumentVersion.id))
+            .where(DocumentVersion.document_id.in_([doc.id for doc in docs]))
+            .group_by(DocumentVersion.document_id)
+        )
+        versions = {
+            row.document_id: row
+            for row in db.execute(select(DocumentVersion).where(DocumentVersion.id.in_(latest_ids))).scalars()
+        }
     for doc in docs:
-        version = latest_version(db, doc.id)
+        version = versions.get(doc.id)
         for link in parse.iter_wikilinks(load_content(version, doc)):
             target_title = link["target"]
             if not target_title:

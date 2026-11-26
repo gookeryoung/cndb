@@ -82,4 +82,4 @@
 - 代码落点：`services/search.py`（`documents_fts_tri` trigram 表、`_longest_cjk_term` / `_trigram_candidate_ids`、`_search_by_substring` 候选收窄；≥3 字符走索引、2 字短词仍 LIKE 兜底）、`services/content.py::sync_fts` 双表同步、迁移 `c8d9e0f1a2b4`、备份恢复双表清理。
 - 关键取舍：SQLite trigram 实测最少 3 字符（`销售`→0、`销售管`→1），纯 trigram 无法覆盖 2 字中文，故采用「LIKE 兜底 + 长词索引候选收窄」混合方案，命中集合只增不减。
 - 测试：`tests/test_documents_fts_consistency.py` 与 `tests/test_documents_search_cjk.py` 全绿（既有 CJK 用例断言未改即通过）。
-- 提交 sha：待提交。
+- 提交 sha：432c771e。

@@ -102,6 +102,18 @@ describe('文档内容模板页（需求 0169）', () => {
     await waitFor(() => expect(deletedId).toBe(2))
   })
 
+  it('有未保存修改时切换模板先确认，确认后切换', async () => {
+    renderPage()
+    expect(await screen.findByTestId('content-template-row-1')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('template-markdown'), { target: { value: '# 未保存改动' } })
+
+    fireEvent.click(screen.getByTestId('content-template-row-2'))
+    expect(await screen.findByText('放弃未保存的修改？')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '放弃并切换' }))
+
+    await waitFor(() => expect(screen.getByTestId('template-markdown')).toHaveValue('# 周报'))
+  })
+
   it('新建模板调用 POST 并选中新模板', async () => {
     renderPage()
     expect(await screen.findByTestId('content-template-row-1')).toBeInTheDocument()
