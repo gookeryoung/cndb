@@ -44,7 +44,7 @@
 | `src/cndb/plugins/documents/services/obsidian.py` | 1691 | 现为全仓最大源码文件，按导入 / 导出 / 库（vault）操作三族拆 `obsidian/{import_,export,vault}.py`；导出族与 `export/` 目录职责重叠，需先收口 |
 | `src/cndb/plugins/tables/services/core/records.py` | 1357 | 拆 `core/{row_values,row_crud,row_bulk}.py`；**本项循环导入风险最高**（与 `query.py`/`ddl.py` 互依，现靠函数内延迟 import 规避，拆分须保留） |
 | `src/cndb/plugins/tables/services/importing/importer.py` | 1207 | `Importer` 类单类超大，可按方法族拆 mixin |
-| `src/cndb/plugins/documents/services/content.py` | 1156 | 拆 `content/{crud,trash,links,tags,fts,serialize}.py`；FTS/软删子树/标签计数高耦合，成本较高 |
+| `src/cndb/plugins/documents/services/content.py` | 1493 | **已立项（ADR 0180，Proposed 待评审）**：按 AST 实测调用图拆 `content/{storage,access,write,trash,links,tags,fts,serialize,graph,duplicate}.py` 十个内聚模块 + `__init__.py` 显式 `__all__`；原「`crud` 一段」经评估过粗（约 700 行），原 6 段口径缺 `graph` / `duplicate`。FTS / 软删子树 / 标签计数的高耦合改为「分层单向依赖 + 6 个横切点显式化」处理 |
 | `src/cndb/gui/main_window.py` | 1060 | 按 Tab 拆 `gui/tabs/{serve,backup,info}.py`；**`main` 必须留在 `main_window.py`**（`pyproject` 的 `cndbw` entry point 指向它）。coverage 已 omit `gui/**`，无覆盖率风险，也没有 gui 测试（缺少回归网，拆分后务必手工冒烟 `cndbw info`） |
 
 ### 前端
