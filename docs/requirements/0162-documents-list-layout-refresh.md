@@ -39,4 +39,5 @@ Related: `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/
 - C4：系列头部改为 `cn-doc-series-bar` 单行工具条，操作改图标 + tooltip。
 - C5：`MainLayout` 新增拖拽把手与 `clampSiderWidth`，宽度写入 `cndb_sider_width_v1`。
 - C6：移动端沿用 `Listy` 两行列表与卡片，既有移动端用例全绿。
+- 门禁补丁（2026-11-26）：桌面改为 `Table` 后，`perf/journeys.spec.ts` 与 `perf/document-open.spec.ts` 仍用旧选择器 `.cn-list-item`（只存在于移动端），且表格里文件夹行也带 `doc-list-format-*` 图标；改由 `docFixtures.publishedDocRow` 限定在文档块 `doc-file-table` 内取行，两条 @perf 用例本地实测通过。
 - 门禁：`make flow` 全绿；前端全量 285 文件 / 3533 passed；覆盖率双门槛达标。

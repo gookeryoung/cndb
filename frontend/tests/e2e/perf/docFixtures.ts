@@ -5,7 +5,7 @@
  * `?parent=&status=published` 深链进入，保证用例测的是查看态。
  */
 
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 interface TreeDoc {
   id: number
@@ -31,4 +31,13 @@ export async function publishedDocUrl(page: Page, wid: number): Promise<string> 
   if (!hit) throw new Error("种子数据没有已发布文档，无法验证查看态")
   const parent = hit.parent_id != null ? `&parent=${hit.parent_id}` : ""
   return `/w/${wid}/documents?status=published${parent}`
+}
+
+/** 列表视图（需求 0162）里的文档行：文件夹与文档分块，文档块 testId 为 doc-file-table.
+ *
+ * 旧选择器 `.cn-list-item` 只存在于移动端两行列表，桌面端已改为 antd Table，
+ * 且表格里文件夹行也带 `doc-list-format-*` 图标，所以必须限定在文档块内取行。
+ */
+export function publishedDocRow(page: Page): Locator {
+  return page.getByTestId('doc-file-table').locator('[data-testid^="doc-row-"]').first()
 }

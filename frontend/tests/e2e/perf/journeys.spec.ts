@@ -14,7 +14,7 @@ import { test, expect } from "../fixtures/auth"
 import type { Page } from "@playwright/test"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { publishedDocUrl } from "./docFixtures"
+import { publishedDocRow, publishedDocUrl } from "./docFixtures"
 
 const ANON = ["setup", "chromium-anon"]
 const TOLERANCE = 0.15
@@ -195,7 +195,9 @@ test.describe("性能旅程基线（ADR 0116 C1）", () => {
     await page.goto(await publishedDocUrl(page, 1))
 
     // 已发布文档（草稿默认进编辑态，不是查看态）
-    await page.locator('.cn-list-item:has([data-testid^="doc-list-format-"])').first().click()
+    const published = publishedDocRow(page)
+    await expect(published, "未找到已发布文档，无法验证查看态").toBeVisible({ timeout: 15000 })
+    await published.click()
     await page.waitForURL(/\/documents\/\d+/)
     // 查看态渲染完成信号
     await expect(page.getByTestId("doc-mode-switch")).toBeVisible({ timeout: 15000 })
