@@ -321,7 +321,8 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(runBtn).toBeEnabled())
     fireEvent.click(runBtn)
 
-    const summary = await screen.findByTestId('analytics-summary-table')
+    // 计算链路要等模板回填 + compute + 分块渲染；全量门禁并发下 1s 默认等待会偶发超时
+    const summary = await screen.findByTestId('analytics-summary-table', {}, { timeout: 5000 })
     expect(summary).toHaveTextContent('平均合格率')
     expect(summary).toHaveTextContent('96')
 
@@ -350,7 +351,7 @@ describe('AnalyticsPage', () => {
     await waitTemplateLoaded()
     await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
     fireEvent.click(screen.getByTestId('analytics-run-btn'))
-    await screen.findByTestId('analytics-summary-table')
+    await screen.findByTestId('analytics-summary-table', {}, { timeout: 5000 })
 
     // 计算模板段 → 描述统计 + 派生数据；可视化段 → 图表；分组汇总段 → 汇总表
     const formulaBand = screen.getByTestId('analytics-band-formula')
@@ -568,7 +569,7 @@ describe('AnalyticsPage', () => {
     await waitTemplateLoaded()
     await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
     fireEvent.click(screen.getByTestId('analytics-run-btn'))
-    await screen.findByTestId('analytics-stats-table')
+    await screen.findByTestId('analytics-stats-table', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByTestId('analytics-export-stats'))
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
@@ -758,7 +759,7 @@ describe('AnalyticsPage', () => {
     await waitTemplateLoaded()
     await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
     fireEvent.click(screen.getByTestId('analytics-run-btn'))
-    await screen.findByTestId('analytics-summary-table')
+    await screen.findByTestId('analytics-summary-table', {}, { timeout: 5000 })
 
     fireEvent.click(screen.getByTestId('analytics-ai-explain'))
 
@@ -788,7 +789,7 @@ describe('AnalyticsPage', () => {
     await waitTemplateLoaded()
     await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
     fireEvent.click(screen.getByTestId('analytics-run-btn'))
-    await screen.findByTestId('analytics-summary-table')
+    await screen.findByTestId('analytics-summary-table', {}, { timeout: 5000 })
 
     server.use(
       http.post('/api/v1/workspaces/1/analytics/ai/explain', () =>
