@@ -11,4 +11,5 @@ allowBuilds:
 patchedDependencies:
   '@rc-component/form@1.8.6': patches/@rc-component__form@1.8.6.patch
   '@rc-component/util': patches/@rc-component__util.patch
+  pptx-preview@1.0.7: patches/pptx-preview@1.0.7.patch
   react-dom@19.3.1: patches/react-dom@19.3.1.patch
