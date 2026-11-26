@@ -22,6 +22,12 @@ class DocumentCreate(BaseModel):
     sort_order: int = 0
 
 
+class DocumentDuplicateRequest(BaseModel):
+    """创建文档副本（需求 0172）：默认同级副本，可指定同工作区的目标文件夹."""
+
+    parent_id: int | None = None
+
+
 class DocumentUpdate(BaseModel):
     """更新文档元数据（不含内容；内容走 PUT content）."""
 
@@ -431,6 +437,7 @@ __all__ = [
     "DocumentCreate",
     "DocumentDetail",
     "DocumentDraftSave",
+    "DocumentDuplicateRequest",
     "DocumentIssueCommentCreate",
     "DocumentIssueCreate",
     "DocumentMoveRequest",

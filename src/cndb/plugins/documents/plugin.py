@@ -27,6 +27,7 @@ class DocumentsPlugin(PluginBase):
     def register_routes(self, router: APIRouter) -> None:
         """挂载 documents 路由."""
         from cndb.plugins.documents.routers import router as documents_router
+        from cndb.plugins.documents.routers.attachments import router as attachments_router
         from cndb.plugins.documents.routers.change_requests import router as change_requests_router
         from cndb.plugins.documents.routers.charts import router as charts_router
         from cndb.plugins.documents.routers.content_templates import router as content_templates_router
@@ -43,6 +44,8 @@ class DocumentsPlugin(PluginBase):
         router.include_router(file_import_router)
         router.include_router(templates_router)
         router.include_router(content_templates_router)
+        # /attachments 同样必须先于 /{doc_id}
+        router.include_router(attachments_router)
         router.include_router(documents_router)
         router.include_router(charts_router)
         router.include_router(share_router)

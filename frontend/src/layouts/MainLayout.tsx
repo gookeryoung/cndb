@@ -12,7 +12,7 @@ import {
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
   SafetyCertificateOutlined, ToolOutlined,
-  RobotOutlined, SnippetsOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
+  RobotOutlined, SnippetsOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined, PaperClipOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined, ApartmentOutlined, HolderOutlined,
 } from '@ant-design/icons'
@@ -95,6 +95,8 @@ const DOCUMENT_SUBPAGES = [
   { key: 'templates', label: '模板', icon: <SnippetsOutlined />, to: 'templates' },
   // 内容模板（需求 0169）：从模板新建文档的正文骨架，与导出模板独立
   { key: 'content-templates', label: '内容模板', icon: <FileTextOutlined />, to: 'content-templates' },
+  // 附件（需求 0174）：工作区上传文件与孤儿回收
+  { key: 'attachments', label: '附件', icon: <PaperClipOutlined />, to: 'attachments' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
   { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined />, to: 'issues' },
 ] as const
@@ -568,6 +570,8 @@ export default function MainLayout() {
         ? 'graph'
       : location.startsWith(`/w/${wid}/documents/content-templates`)
         ? 'content-templates'
+        : location.startsWith(`/w/${wid}/documents/attachments`)
+          ? 'attachments'
         : location.startsWith(`/w/${wid}/documents/pipelines`)
         ? 'pipelines'
         : location.includes('/change-requests')

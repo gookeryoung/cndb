@@ -39,6 +39,7 @@ import {
   CheckSquareOutlined,
   ClockCircleOutlined,
   CloseOutlined,
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
@@ -345,6 +346,15 @@ export default function DocumentsPage() {
         (item.description ?? '').toLowerCase().includes(keyword),
     )
   }, [contentTemplatesQuery.data, templateKeyword])
+
+  const duplicateMut = useMutation({
+    mutationFn: (id: number) => documentsApi.duplicate(workspaceId, id),
+    onSuccess: doc => {
+      message.success(`已创建副本「${doc.title}」`)
+      invalidate()
+    },
+    onError: () => message.error('创建副本失败'),
+  })
 
   const deleteMut = useMutation({
     mutationFn: (docId: number) => documentsApi.remove(workspaceId, docId),
@@ -811,6 +821,15 @@ export default function DocumentsPage() {
         onClick: ({ domEvent }) => {
           domEvent.stopPropagation()
           pinMut.mutate(doc)
+        },
+      },
+      {
+        key: 'duplicate',
+        icon: <CopyOutlined />,
+        label: <span data-testid={`doc-row-duplicate-${doc.id}`}>创建副本</span>,
+        onClick: ({ domEvent }) => {
+          domEvent.stopPropagation()
+          duplicateMut.mutate(doc.id)
         },
       },
       { type: 'divider' },

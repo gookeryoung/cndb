@@ -46,6 +46,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, CndbError, ConflictError, NotFoundError
+from cndb.core.events import record_event
 from cndb.core.textdiff import unified_diff
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
@@ -56,6 +57,7 @@ from cndb.plugins.documents.schemas import (
     DocumentBatchRequest,
     DocumentCreate,
     DocumentDraftSave,
+    DocumentDuplicateRequest,
     DocumentMoveRequest,
     DocumentSubmit,
     DocumentUpdate,
@@ -117,6 +119,33 @@ def _require_member(db: Session, workspace_id: int, user: User) -> None:
     if workspace_data_role(user, ws, db) is None:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
         raise_permission_denied(db, ws, user)
+
+
+def _audit_document(
+    db: Session,
+    workspace_id: int,
+    user: User,
+    action: str,
+    doc: Document,
+    *,
+    summary: str | None = None,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """文档域审计（需求 0173）：只记定位信息，不落正文；任何异常都不阻断主流程."""
+    try:
+        record_event(
+            db,
+            action,
+            summary=summary or doc.title,
+            target_type="document",
+            target_id=doc.id,
+            workspace_id=workspace_id,
+            actor_id=user.id,
+            actor_name=user.username,
+            detail=detail or {},
+        )
+    except Exception:  # pragma: no cover - 审计失败不得影响文档写操作
+        logging.getLogger(__name__).warning("文档审计事件写入失败 action=%s", action, exc_info=True)
 
 
 # ── 跨工作区移动（ADR 0155）──
@@ -212,6 +241,20 @@ def move_documents_to_workspace(
     )
     invalidate_document_tree_cache(workspace_id)
     invalidate_document_tree_cache(payload.target_workspace_id)
+    record_event(
+        db,
+        "document.move",
+        summary=f"跨工作区移动 {len(result.document_ids)} 个文档",
+        target_type="document",
+        target_id=result.document_ids[0] if result.document_ids else None,
+        workspace_id=workspace_id,
+        actor_id=current_user.id,
+        actor_name=current_user.username,
+        detail={
+            "document_ids": list(result.document_ids),
+            "target_workspace_id": payload.target_workspace_id,
+        },
+    )
     payload_out = result.as_payload()
     # 引用修复（ADR 0156）：发生在移动提交之后；失败不回滚移动（用户可再点一次「修复引用」，幂等）
     if payload.repair_strategy != "none":
@@ -258,6 +301,15 @@ def create_document(
         status=payload.status,
         tag_ids=payload.tag_ids,
         sort_order=payload.sort_order,
+    )
+    _audit_document(
+        db,
+        workspace_id,
+        current_user,
+        "document.create",
+        doc,
+        summary=f"创建文档：{doc.title}",
+        detail={"is_folder": doc.is_folder, "status": doc.status},
     )
     return services.content.serialize_document(db, doc)
 
@@ -465,6 +517,37 @@ def list_trash(
     return {"items": items, "total": total}
 
 
+@router.post("/{doc_id}/duplicate", status_code=201)
+def duplicate_document(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    payload: DocumentDuplicateRequest | None = None,
+) -> dict[str, Any]:
+    """创建文档 / 文件夹子树副本（需求 0172，owner/editor）."""
+    services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    doc = services.content.duplicate_document(
+        db,
+        workspace_id,
+        doc_id,
+        current_user,
+        parent_id=payload.parent_id if payload else None,
+    )
+    record_event(
+        db,
+        "document.duplicate",
+        summary=f"创建副本：{doc.title}",
+        target_type="document",
+        target_id=doc.id,
+        workspace_id=workspace_id,
+        actor_id=current_user.id,
+        actor_name=current_user.username,
+        detail={"source_document_id": doc_id},
+    )
+    return services.content.serialize_document(db, doc)
+
+
 @router.get("/{doc_id}")
 def get_document(
     workspace_id: int,
@@ -592,6 +675,15 @@ def update_document_content(
     v = services.content.latest_version(db, doc.id)
     data["content"] = payload.content
     data["version_number"] = v.version_number if v else 0
+    _audit_document(
+        db,
+        workspace_id,
+        current_user,
+        "document.update_content",
+        doc,
+        summary=f"更新正文：{doc.title}",
+        detail={"version_number": data["version_number"], "content_size": doc.content_size},
+    )
     return data
 
 
@@ -1286,6 +1378,7 @@ def delete_document(
 ) -> dict[str, Any]:
     """软删除（文件夹递归删除子节点）。"""
     doc = services.content.soft_delete_document(db, workspace_id, doc_id, current_user)
+    _audit_document(db, workspace_id, current_user, "document.delete", doc, summary=f"删除文档：{doc.title}")
     return {"id": doc.id, "deleted": True}
 
 
@@ -1298,6 +1391,15 @@ def restore_document(
 ) -> dict[str, Any]:
     """从回收站恢复（editor+）：文件夹连同同一删除批次的子项一起恢复。"""
     doc, restored_count, reparented = services.content.restore_document(db, workspace_id, doc_id, current_user)
+    _audit_document(
+        db,
+        workspace_id,
+        current_user,
+        "document.restore",
+        doc,
+        summary=f"恢复文档：{doc.title}",
+        detail={"restored_count": restored_count, "reparented_to_root": reparented},
+    )
     data = services.content.serialize_document(db, doc)
     data["restored_count"] = restored_count
     data["reparented_to_root"] = reparented
@@ -1437,6 +1539,15 @@ def rollback(
 ) -> dict[str, Any]:
     """回滚到指定版本（创建 rollback 类型新版本）。"""
     doc = services.content.rollback_version(db, workspace_id, doc_id, current_user, payload.target_version)
+    _audit_document(
+        db,
+        workspace_id,
+        current_user,
+        "document.rollback",
+        doc,
+        summary=f"回滚文档：{doc.title}",
+        detail={"target_version": payload.target_version},
+    )
     return services.content.serialize_document(db, doc)
 
 

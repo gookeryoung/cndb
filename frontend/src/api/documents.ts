@@ -175,6 +175,40 @@ export interface LinkGraph {
   total: number
 }
 
+/** 工作区附件（需求 0174） */
+export interface AttachmentItem {
+  file_key: string
+  name: string
+  size: number
+  uploaded_at: number
+  document_id: number | null
+  document_title: string | null
+  has_owner: boolean
+}
+
+export interface AttachmentScanItem {
+  file_key: string
+  name: string
+  size: number
+  ref_count: number
+  orphan: boolean
+}
+
+export interface AttachmentScanResult {
+  items: AttachmentScanItem[]
+  total: number
+  orphan_count: number
+  orphan_bytes: number
+}
+
+export interface AttachmentPurgeResult {
+  dry_run: boolean
+  orphan_count: number
+  orphan_bytes: number
+  removed_files: number
+  removed_bytes: number
+}
+
 /** 断链修复结果 */
 export interface LinkRepairResult {
   document_id: number
@@ -868,6 +902,28 @@ export const documentsApi = {
       .get<{ items: SearchHitItem[]; total: number; query: string }>(`${base(wid)}/search`, {
         params: { q, ...params },
       })
+      .then(r => r.data),
+
+  /** 创建文档 / 文件夹子树副本（需求 0172） */
+  duplicate: (wid: number | string, docId: number | string, parentId?: number | null) =>
+    api
+      .post<DocumentItem>(`${base(wid)}/${docId}/duplicate`, { parent_id: parentId ?? null })
+      .then(r => r.data),
+
+  /** 工作区附件列表（需求 0174，editor+） */
+  listAttachments: (wid: number | string, params?: { q?: string; limit?: number; offset?: number }) =>
+    api
+      .get<{ items: AttachmentItem[]; total: number }>(`${base(wid)}/attachments`, { params })
+      .then(r => r.data),
+
+  /** 附件体检（editor+，只读） */
+  scanAttachments: (wid: number | string) =>
+    api.post<AttachmentScanResult>(`${base(wid)}/attachments/scan`).then(r => r.data),
+
+  /** 回收孤儿附件（owner；dry_run 默认 true） */
+  purgeAttachments: (wid: number | string, dryRun = true) =>
+    api
+      .post<AttachmentPurgeResult>(`${base(wid)}/attachments/purge`, { dry_run: dryRun })
       .then(r => r.data),
 
   // 知识图谱聚合（需求 0168）：可见文档为节点、双链为边，30s 缓存

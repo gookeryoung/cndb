@@ -37,6 +37,7 @@ const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
 const DocumentTemplatesPage = lazy(() => import('@/pages/documents/DocumentTemplatesPage'))
 const DocumentContentTemplatesPage = lazy(() => import('@/pages/documents/DocumentContentTemplatesPage'))
 const DocumentGraphPage = lazy(() => import('@/pages/documents/DocumentGraphPage'))
+const DocumentAttachmentsPage = lazy(() => import('@/pages/documents/DocumentAttachmentsPage'))
 const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/DocumentsChangeRequestsPage'))
 const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssuesPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
@@ -190,6 +191,10 @@ function AuthenticatedApp() {
             {/* 内容模板（需求 0169）：从模板新建文档用的 Markdown 正文骨架 */}
             <Route path="content-templates" element={
               <Suspense fallback={<PageFallback />}><DocumentContentTemplatesPage /></Suspense>
+            } />
+            {/* 附件（需求 0174）：工作区上传文件与孤儿回收 */}
+            <Route path="attachments" element={
+              <Suspense fallback={<PageFallback />}><DocumentAttachmentsPage /></Suspense>
             } />
             {/* 知识图谱（需求 0168）：双链关系力导向图，独立 chunk */}
             <Route path="graph" element={
