@@ -16,10 +16,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
+from cndb.core.errors import PermissionDeniedError
 from cndb.core.events import record_event
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import (
     TEAM_POLICY_DEFAULTS,
+    TEAM_ROLE_RANK,
     Team,
     TeamMember,
     TeamRole,
@@ -295,14 +297,17 @@ def update_team_member(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> TeamMemberResponse:
-    """修改团队成员角色（仅 ``team_owner``；保护最后一个 ``team_owner``）."""
+    """修改团队成员角色（仅 ``team_owner``；保护最后一个 ``team_owner``；不得操作更高角色）."""
     team = _get_team_or_404(team_id, db)
-    require_team_role(db, team, current_user, TeamRole.OWNER, requirement="仅团队所有者可修改成员角色")
+    actor_role = require_team_role(db, team, current_user, TeamRole.OWNER, requirement="仅团队所有者可修改成员角色")
     if payload.role not in _TEAM_ROLE_VALUES:
         raise HTTPException(status_code=400, detail="团队成员角色只能是 owner / admin / member")
     member = db.query(TeamMember).filter(TeamMember.id == member_id, TeamMember.team_id == team.id).first()
     if member is None:
         raise HTTPException(status_code=404, detail="成员不存在")
+    # ADR 0161 D5：不得操作角色高于自己的成员（下级不改上级）
+    if TEAM_ROLE_RANK[member.role] > TEAM_ROLE_RANK[actor_role]:
+        raise PermissionDeniedError("不能修改角色高于自己的成员")
     new_role = TeamRole(payload.role)
     if member.role is TeamRole.OWNER and new_role is not TeamRole.OWNER:
         owner_count = (
@@ -344,10 +349,13 @@ def remove_team_member(
     移除团队身份**不影响**其工作区成员身份（两套授权彼此独立，D4）。
     """
     team = _get_team_or_404(team_id, db)
-    require_team_role(db, team, current_user, TeamRole.ADMIN, requirement="仅团队所有者或管理员可移除成员")
+    actor_role = require_team_role(db, team, current_user, TeamRole.ADMIN, requirement="仅团队所有者或管理员可移除成员")
     member = db.query(TeamMember).filter(TeamMember.id == member_id, TeamMember.team_id == team.id).first()
     if member is None:
         raise HTTPException(status_code=404, detail="成员不存在")
+    # ADR 0161 D5：不得移除角色高于自己的成员（团队管理员不可移除 team_owner）
+    if TEAM_ROLE_RANK[member.role] > TEAM_ROLE_RANK[actor_role]:
+        raise PermissionDeniedError("不能移除角色高于自己的成员")
     if member.role is TeamRole.OWNER:
         owner_count = (
             db.query(func.count(TeamMember.id))

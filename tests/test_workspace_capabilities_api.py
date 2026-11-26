@@ -67,6 +67,8 @@ class TestCapabilitiesEndpoint:
             "DELETE_WORKSPACE",
             "MANAGE_LINKS",
             "MANAGE_ACCESS",
+            "TRANSFER_OWNERSHIP",
+            "WIDEN_ACCESS",
         }
         assert data["sources"]["manage"] == "workspace_member:owner"
 

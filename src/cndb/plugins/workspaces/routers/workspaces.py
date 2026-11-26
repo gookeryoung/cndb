@@ -27,6 +27,7 @@ from cndb.plugins.workspaces.models import (
 from cndb.plugins.workspaces.modules import workspace_modules_from_meta
 from cndb.plugins.workspaces.permissions import (
     WorkspaceCapability,
+    raise_permission_denied,
     require_capability,
     resolve_capabilities,
 )
@@ -63,6 +64,13 @@ from cndb.plugins.workspaces.services.teams import ensure_modules_allowed, team_
 
 # 工作区列表缓存（进程内，短 TTL；写路径主动失效）
 WORKSPACE_LIST_TTL_SECONDS = 10.0
+
+# 可见性放宽判定（ADR 0161 D3）：新值等级高于旧值即视为放宽，仅 owner 可执行
+_VISIBILITY_RANK: dict[WorkspaceVisibility, int] = {
+    WorkspaceVisibility.PRIVATE: 0,
+    WorkspaceVisibility.MEMBER: 1,
+    WorkspaceVisibility.PUBLIC: 2,
+}
 
 
 def _list_cache() -> Any:
@@ -323,7 +331,9 @@ def get_workspace_capabilities(
     """
     ws = _get_workspace_or_404(workspace_id, db)
     caps = resolve_capabilities(current_user, ws, db)
-    if caps.data_role is None:
+    # ADR 0161 D6：有管理面无数据面（如团队管理员）仍返回 200，前端据此渲染管理入口；
+    # 完全无能力才按「不存在」处理，避免泄露工作区存在性。
+    if caps.data_role is None and not caps.capabilities:
         raise HTTPException(status_code=404, detail="工作区不存在")
     return WorkspaceCapabilitiesResponse.model_validate(caps.to_payload())
 
@@ -414,8 +424,28 @@ def update_workspace(
     """更新工作区（仅 OWNER）."""
     ws = _get_workspace_or_404(workspace_id, db)
     # 管理面：工作区所有者或团队管理员（ADR 0153 D4）
-    _require_owner(ws, current_user, db)
+    caps = _require_owner(ws, current_user, db)
     update_data = payload.model_dump(exclude_unset=True)
+    # ADR 0161 D3 / I2：放宽数据暴露与变更团队归属仅工作区所有者可执行
+    new_visibility = update_data.get("visibility")
+    if (
+        isinstance(new_visibility, WorkspaceVisibility)
+        and _VISIBILITY_RANK[new_visibility] > _VISIBILITY_RANK[ws.visibility]
+        and not caps.allows(WorkspaceCapability.WIDEN_ACCESS)
+    ):
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可放宽工作区可见性")
+    if (
+        update_data.get("allow_edit") is True
+        and not ws.allow_edit
+        and not caps.allows(WorkspaceCapability.WIDEN_ACCESS)
+    ):
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可开启成员编辑")
+    if (
+        "team_id" in update_data
+        and update_data["team_id"] != ws.team_id
+        and not caps.allows(WorkspaceCapability.DELETE_WORKSPACE)
+    ):
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可变更工作区所属团队")
     if "team_id" in update_data:
         target_team_id = update_data["team_id"]
         if target_team_id is not None:

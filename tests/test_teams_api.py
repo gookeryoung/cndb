@@ -185,7 +185,12 @@ class TestTwoPlaneSeparation:
         auth = _login(client, env.admin.username)
         assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=auth).status_code == 404
         assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=auth).status_code == 404
-        assert client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=auth).status_code == 404
+        # ADR 0161 D6：有管理面无数据面时能力位端点返回 200，便于前端渲染管理入口
+        r = client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=auth)
+        assert r.status_code == 200, r.text
+        payload = r.json()
+        assert payload["data_role"] is None
+        assert "EDIT_SETTINGS" in payload["capabilities"]
 
     def test_team_admin_can_update_settings(self, client, db):
         env = Env(db)
@@ -406,7 +411,10 @@ class TestPrivateVisibilityEnforced:
 
         viewer_auth = _login(client, env.admin.username)
         assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=viewer_auth).status_code == 404
-        assert client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=viewer_auth).status_code == 404
+        # 该用户同时是团队管理员：能力位端点 200，但数据面仍为 None（ADR 0161 D6 / I3）
+        r = client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=viewer_auth)
+        assert r.status_code == 200, r.text
+        assert r.json()["data_role"] is None
         assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=viewer_auth).status_code == 404
         assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=owner_auth).status_code == 200
 

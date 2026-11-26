@@ -17,6 +17,7 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
 from cndb.plugins.workspaces.permissions import (
     WorkspaceCapability,
+    raise_permission_denied,
     require_capability,
 )
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
@@ -85,9 +86,18 @@ def add_member(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceMember:
-    """添加成员（仅 OWNER，不允许添加为 OWNER）."""
+    """添加成员（`MANAGE_MEMBERS`，不允许添加为 OWNER，不允许添加自己）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_owner(ws, current_user, db)
+    require_capability(
+        WorkspaceCapability.MANAGE_MEMBERS,
+        db,
+        ws,
+        current_user,
+        requirement="仅所有者或团队管理员可添加成员",
+    )
+    # ADR 0161 D2 / I4：管理动作不得让操作者本人获得数据面
+    if payload.username.strip() == current_user.username:
+        raise HTTPException(status_code=403, detail="不能把自己加入所管辖的工作区")
     if payload.role == WorkspaceRole.OWNER:
         raise HTTPException(status_code=400, detail="不能直接添加所有者")
     user = db.query(User).filter(User.username == payload.username, User.is_active.is_(True)).first()
@@ -163,6 +173,10 @@ def add_members_batch(
         username = item.username.strip()
         if not username:
             continue
+        if username == current_user.username:
+            # ADR 0161 D2 / I4：团队管理员不得批量把自己加入所辖工作区
+            result.errors.append({"username": username, "detail": "不能把自己加入所管辖的工作区"})
+            continue
         if username in seen:
             result.skipped.append(username)
             continue
@@ -204,10 +218,12 @@ def update_member_role(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceMember:
-    """修改成员角色（仅 OWNER；保护最后一个 OWNER 不可降级）."""
+    """修改成员角色（`MANAGE_MEMBERS`；owner 层变更仅工作区所有者，保护最后一个 OWNER）."""
     ws = _get_workspace_or_404(workspace_id, db)
     # ADR 0153 P0：门控统一走能力位，失败走 ADR 0047 文案（唯一出口）
-    require_capability(WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可执行此操作")
+    caps = require_capability(
+        WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可执行此操作"
+    )
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -218,6 +234,9 @@ def update_member_role(
     )
     if member is None:
         raise HTTPException(status_code=404, detail="成员不存在")  # pragma: no cover
+    # ADR 0161 D1 / I2：授予或变更 owner 角色仅工作区所有者可执行（团队管理员不得提权）
+    if (WorkspaceRole.OWNER in (payload.role, member.role)) and not caps.allows(WorkspaceCapability.TRANSFER_OWNERSHIP):
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可授予或变更所有者角色")
     # 保护：最后一个 OWNER 不可降级
     if member.role == WorkspaceRole.OWNER and payload.role != WorkspaceRole.OWNER:
         owner_count = (
@@ -244,9 +263,11 @@ def remove_member(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
-    """移除成员（仅 OWNER；保护最后一个 OWNER 不可移除）."""
+    """移除成员（`MANAGE_MEMBERS`；移除 owner 仅工作区所有者，保护最后一个 OWNER）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    require_capability(WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可执行此操作")
+    caps = require_capability(
+        WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可执行此操作"
+    )
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -257,6 +278,9 @@ def remove_member(
     )
     if member is None:
         raise HTTPException(status_code=404, detail="成员不存在")  # pragma: no cover
+    # ADR 0161 D1 / I2：移除 owner 仅工作区所有者可执行
+    if member.role == WorkspaceRole.OWNER and not caps.allows(WorkspaceCapability.TRANSFER_OWNERSHIP):
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可移除所有者")
     if member.role == WorkspaceRole.OWNER:
         owner_count = (
             db.query(WorkspaceMember)
@@ -285,7 +309,8 @@ def transfer_owner(
 ) -> WorkspaceMember:
     """转让工作区所有权（仅当前 OWNER 可执行；目标须是工作区成员）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    require_capability(WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可转让所有权")
+    # ADR 0161 D1 / I2：所有权转让仅工作区所有者（团队管理员不得代替 / 自授）
+    require_capability(WorkspaceCapability.TRANSFER_OWNERSHIP, db, ws, current_user, requirement="仅所有者可转让所有权")
 
     # 目标必须是工作区成员
     target_member = (

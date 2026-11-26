@@ -48,6 +48,8 @@ class WorkspaceCapability(enum.StrEnum):
     - ``DELETE_WORKSPACE``：仅工作区所有者（团队管理员不可删，ADR 0153 D9）
     - ``MANAGE_LINKS``：仅工作区所有者（批准 / 拒绝 / 撤回跨工作区链接，ADR 0154 C2）
     - ``MANAGE_ACCESS``：仅工作区所有者（授 / 撤团队数据授权，ADR 0154 B′ / D11）
+    - ``TRANSFER_OWNERSHIP``：仅工作区所有者（授予 / 转让 / 移除 owner，ADR 0161 D1）
+    - ``WIDEN_ACCESS``：仅工作区所有者（放宽 visibility / allow_edit，ADR 0161 D3）
     """
 
     READ = "READ"
@@ -59,6 +61,8 @@ class WorkspaceCapability(enum.StrEnum):
     DELETE_WORKSPACE = "DELETE_WORKSPACE"
     MANAGE_LINKS = "MANAGE_LINKS"
     MANAGE_ACCESS = "MANAGE_ACCESS"
+    TRANSFER_OWNERSHIP = "TRANSFER_OWNERSHIP"
+    WIDEN_ACCESS = "WIDEN_ACCESS"
 
 
 # 内置三档角色的能力位集合（唯一来源；自定义角色在 P2 复用同一映射口径）
@@ -112,6 +116,15 @@ def _member_role(user: User | None, workspace: Workspace, db: Session) -> Worksp
 def get_member_role(user: User | None, workspace: Workspace, db: Session) -> WorkspaceRole | None:
     """返回用户在工作区的角色枚举，非成员返回 None（``resolve_capabilities`` 的数据面视图）."""
     return _member_role(user, workspace, db)
+
+
+def workspace_data_role(user: User | None, workspace: Workspace, db: Session) -> WorkspaceRole | None:
+    """资源层数据面角色（ADR 0161 D4）：含 private / public / 策略默认 / team_grant / 超管.
+
+    与 :func:`get_member_role` 的区别：后者只看显式成员行，会绕过 `private` 限制并丢弃
+    团队层授予。资源级读写门槛一律用本函数，不要直接查 ``WorkspaceMember.role``。
+    """
+    return resolve_capabilities(user, workspace, db).data_role
 
 
 def _team_of(workspace: Workspace, db: Session) -> Team | None:
@@ -202,6 +215,15 @@ def resolve_capabilities(user: User | None, workspace: Workspace, db: Session) -
     team = _team_of(workspace, db)
     team_role = _team_role(user, team, db)
     sources: dict[str, str] = {}
+
+    # D7（ADR 0161）：系统管理员按该工作区 owner 处理，统一走本入口，避免与资源层两套判定。
+    if user is not None and getattr(user, "is_superuser", False):
+        return Capabilities(
+            data_role=WorkspaceRole.OWNER,
+            team_role=team_role.value if team_role is not None else None,
+            capabilities=ROLE_CAPABILITIES[WorkspaceRole.OWNER],
+            sources={"data": "superuser", "manage": "superuser"},
+        )
 
     data_role = role
     if role is not None:
@@ -356,4 +378,5 @@ __all__ = [
     "require_capability",
     "resolve_capabilities",
     "team_policy",
+    "workspace_data_role",
 ]

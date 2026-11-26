@@ -85,6 +85,10 @@
 | H61 | 复合数据源（union / join）逐输入同权：每个输入都经 `resolve_link` / 表 `READ` + 行级 + 字段隐藏；任一输入失效或不可读 → **整体 fail-closed**（404/403），禁止返回部分结果或静默补空 | `make test` | ADR 0159 L1/L2 |
 | H62 | 跨工作区关联只允许 `left` / `inner` 且由左表驱动：右表未匹配行与不可见行不得影响结果行数或数值（行存在性不外泄） | `make test` | ADR 0159 L3 |
 | H63 | 复合数据源的列名与列序固化进模板配置（`config.source.columns`），保存 / 执行 / 导出三处一致；join 冲突列按 `left.` / `right.` 消歧 | `make test` | ADR 0159 L4 |
+| H64 | 工作区数据面单一判定：表 / 文档 / 设计 / 文件 / 议题 / 修改申请 / 分析 / 数据源 / 搜索等资源级读写门槛一律以 `resolve_capabilities` 的 `data_role` 为最终结论，禁止以原始 `WorkspaceMember.role` 直接放行 | `make test` | ADR 0161 I1 |
+| H65 | 管理面天花板：`MANAGE_MEMBERS` / `EDIT_SETTINGS` 不得授予、转让或移除工作区 owner，不得放宽数据暴露（`visibility` / `allow_edit`）或变更团队归属；这些动作仅工作区 owner（`TRANSFER_OWNERSHIP` / `WIDEN_ACCESS` / `DELETE_WORKSPACE`）可执行 | `make test` | ADR 0161 I2 |
+| H66 | 私有工作区数据面恒为空：`visibility=private` 时非 owner 的 `data_role` 固定为 `None`，显式成员角色、`team_grant`、`public`、策略默认均不得放宽；资源层同样按此返回 404/403 | `make test` | ADR 0161 I3 |
+| H67 | 管理动作不得自授权：任何管理面操作不得使操作者本人获得其此前不具备的数据面权限（含把自己加入所辖工作区、放宽可见性后按团队成员身份取数） | `make test` | ADR 0161 I4 |
 
 ## 发布与部署
 
