@@ -195,7 +195,7 @@ def require_workspace_write(user, workspace, db) -> Capabilities: ...
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 进行中 | `src/cndb/plugins/workspaces/{permissions.py,routers/member_routes.py,routers/teams.py,routers/workspaces.py}` | `tests/test_workspace_permission_hardening.py`（21 例） | 未发布 |
+| P0 | 已完成（2026-11-26） | `src/cndb/plugins/workspaces/{permissions.py,routers/member_routes.py,routers/teams.py,routers/workspaces.py}` | `tests/test_workspace_permission_hardening.py`（21 例） | 330b644 |
 | P1 | 未开始 | `src/cndb/plugins/tables/services/core/access.py`、`documents/`、`design/`、`files/`、`workspaces/routers/search.py` | `tests/test_workspace_permission_hardening.py`、`tests/test_workspace_team_capabilities.py` | — |
 | P2 | 未开始 | `analytics/`、`datasource/`、`issues/`、`change_requests/`、`pipeline/`、`frontend/src/` | 同上 + `frontend/tests/e2e/critical/workspace-permissions.spec.ts` | — |
 
