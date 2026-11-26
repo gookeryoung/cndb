@@ -11,9 +11,28 @@ unexport LD_LIBRARY_PATH
 PACKAGE := cndb
 
 # 门禁并发度（两阶段串行执行，各自独占 CPU，避免 pytest 与 vitest 互抢）：
-# PYTEST_JOBS：pytest-xdist worker 数，实测 24 核机器 n16 + worksteal 最优（~79s vs 旧 n8/loadfile ~120s）；
-#   worksteal 动态窃取任务消除 loadfile 整文件分配的长尾；低配机器用 make check PYTEST_JOBS=8 覆盖
-PYTEST_JOBS ?= 16
+# PYTEST_JOBS：pytest-xdist worker 数，默认按本机逻辑核数求值（上限 32），不再硬编码 16——
+#   24 核实测 n16=89s / n24=70s，worksteal 动态窃取任务消除 loadfile 整文件分配的长尾；
+#   低配机器 / CI 按档位显式覆盖：make check PYTEST_JOBS=8。
+#   求值顺序：nproc（POSIX / MSYS，毫秒级）→ uv run python（跨平台兜底）→ 8。
+CPU_COUNT := $(shell nproc 2>/dev/null | tr -dc 0-9)
+ifeq ($(strip $(CPU_COUNT)),)
+CPU_COUNT := $(shell uv run python -c "import os; print(os.cpu_count() or 0)" 2>/dev/null | tr -dc 0-9)
+endif
+ifeq ($(strip $(CPU_COUNT)),)
+CPU_COUNT := 8
+endif
+# 上限 32：再多 worker 的调度与内存开销开始反超收益（24 核实测 24 worker 已接近最优）。
+# 用 ifndef + := 而非 ?=：worker 数是确定的，一次求值即可，避免每条 recipe 展开都 fork 一个 shell。
+ifndef PYTEST_JOBS
+ifneq ($(shell test $(CPU_COUNT) -gt 32 && echo y),)
+PYTEST_JOBS := 32
+else
+PYTEST_JOBS := $(CPU_COUNT)
+endif
+endif
+# 导出给 scripts/retest.py / scripts/verify_changed.py 计算并发度，两处不各算一份
+export PYTEST_JOBS
 # VITEST_MAX_WORKERS：vitest worker 数，留空即由 frontend/vite.config.ts 按容器 CPU 配额取 min(16, 配额核数)；
 #   云端 / 低核机器可显式覆盖：make check VITEST_MAX_WORKERS=4。仅在非空时导出，避免空串覆盖自动求值
 VITEST_MAX_WORKERS ?=
@@ -35,7 +54,8 @@ FRONTEND_DEPS := frontend/node_modules/.make-sync
 
 .PHONY: help env-guard sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev bench gitkeep-check adr-check constraint-check \
-        check-fast check-docs check-backend check-frontend flow check bump pub push pack-doctor pack pack-cache-clean \
+        check-fast check-docs check-backend check-frontend flow verify-changed verify-changed-plan retest \
+        e2e-affected e2e-reuse check bump pub push pack-doctor pack pack-cache-clean \
         docker-dev docker-dev-down docker-stop docker-build docker-export dd ds ddd db de \
         patch minor major
 
@@ -108,6 +128,15 @@ e2e: frontend-build ## 前端 E2E（Playwright；webServer 自动起隔离后端
 e2e-dev: $(FRONTEND_DEPS) ## dev 模式 E2E（vite dev 源码直出，兜住只在 dev 现形的回归）
 	cd frontend && pnpm e2e:dev
 
+e2e-affected: frontend-build ## E2E 定向：按 git 变更筛受影响 spec（E2E_BASE_REF 默认 HEAD~1，未跟踪新 spec 也算）
+	cd frontend && pnpm e2e:affected
+
+# 复用已 seed 的隔离服务器跑 E2E（需求 0181 C6）：省掉每轮 rmtree + seed + 起服务的固定开销。
+# 仅本地内环使用——默认路径仍每次重建，避免复用来源不明的端口服务。
+E2E_REUSE_PORT ?= 8001
+e2e-reuse: frontend-build ## E2E 复用已 seed 的服务器（只跑指定 spec，如 make e2e-reuse SPEC=tests/e2e/critical/navigation.spec.ts）
+	cd frontend && CNDB_E2E_REUSE=1 E2E_PORT=$(E2E_REUSE_PORT) pnpm e2e $(SPEC)
+
 # 性能基准导入行数：make bench ROWS=100000 覆盖
 ROWS ?= 10000
 
@@ -115,11 +144,23 @@ bench: env-guard ## 性能基准（临时 SQLite 库跑 10k 行导入 + 查询�
 	uv run python scripts/bench_10k_rows.py --rows $(ROWS)
 
 # L1 配置改动：轻量静态门禁（无测试）
-check-fast: env-guard gitkeep-check adr-check constraint-check lint typecheck frontend-static ## 轻量静态门禁（无测试，实现期快速反馈）
+check-fast: env-guard gitkeep-check adr-check constraint-check lint typecheck frontend-static ## L0 门禁：轻量静态检查（无测试，实现期每轮跑；预算 ≤10s）
 # L0 文档改动：只跑文档级校验
 check-docs: gitkeep-check adr-check constraint-check ## 文档级门禁（只改 *.md 时用）
-# L2 代码改动：轻量静态门禁 + 全量后端测试
-flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试
+# L2 代码改动：轻量静态门禁 + 全量后端测试（需求 0181 四级验证漏斗的 L2）
+flow: check-fast test ## L2 门禁：轻量静态检查 + 全量后端测试（预算 ≤3min）
+
+# L1 定向验证（需求 0181 C2）：按 git 变更只跑相关测试，单模块改动通常 20-40s；
+# 改动共享基础设施 / 命中面过宽时自动回退全量，宁慢不漏。BASE 可指向远程分支。
+BASE ?= HEAD
+verify-changed: env-guard ## L1 门禁：定向验证，按 git 变更只跑相关测试（BASE=origin/main 可比远程分支；预算 ≤60s）
+	@uv run python scripts/verify_changed.py --base $(BASE)
+
+verify-changed-plan: ## 只打印 verify-changed 的执行计划，不跑测试
+	@uv run python scripts/verify_changed.py --base $(BASE) --dry-run
+
+retest: env-guard ## 只重跑上轮失败用例（lastfailed 为空时显式回退全量，不静默跑全量）
+	@uv run python scripts/retest.py $(PYTEST_EXTRA)
 
 check-backend: env-guard ## 后端门禁（cov + lint + 类型 + gitkeep + ADR；PYTEST_JOBS 可调）
 	@$(MAKE) --no-print-directory -j1 cov gitkeep-check adr-check lint typecheck

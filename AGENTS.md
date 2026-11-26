@@ -53,6 +53,23 @@
 - 分级只约束本地内环与提交前自查；CI 始终跑全量门禁。
 - L2 执行链按 H4：`make check-fast` → `make test` → 更新文档 → `make push`；任一步失败修完重跑。
 
+### 3.3 验证漏斗与耗时预算
+
+内环按成本递增分四级，**只决定「多快拿到反馈」，不减免 3.2 的必跑项**：
+
+| 级 | 命令 | 用途 | 预算 |
+|---|---|---|---|
+| **F0 静态** | `make check-fast` | 每轮改完立刻跑，红了先修 | ≤10s |
+| **F1 定向** | `make verify-changed` | 按 git 变更只跑相关测试（`BASE=origin/main` 可比远程分支） | ≤60s |
+| **F2 全量** | `make flow`；前端改动加 `make check-frontend` | 提交前 / 阶段收尾 | ≤3min / 单项 |
+| **F3 端到端** | `make e2e-affected` | 只跑受影响的 spec；全量 e2e 留给阶段收尾与 CI | ≤3min |
+
+- **F1 不替代 F2**：`verify-changed` 是快速反馈，提交前仍按 3.2 跑到对应级别全绿。
+- **F1 偏向多跑**：命中共享基础设施或筛选面过宽时自动回退全量；一个都没筛出也回退，不凭静态分析判定「无需验证」。
+- **只重跑失败**：`make retest` 读 pytest `lastfailed`；`lastfailed` 为空时会显式回退全量（`pytest --lf` 在空缓存下会静默跑全量，别直接用它）。
+- **超预算时先量后改**：打印分段耗时定位固定开销（环境启动、setup、seed），再针对性优化；不得用跳过用例、放宽覆盖率、`--no-verify` 换时间（H9–H12、H1）。
+- **e2e 复用**：`make e2e-reuse SPEC=...` 复用已 seed 的服务器，仅本地内环；默认路径与 CI 仍每次全新 seed。
+
 ## 4. 实施循环
 
 1. **需求 / 方案**：S1 先落需求卡片；S2 再写 ADR，`Proposed → Accepted` 前完成人工评审。

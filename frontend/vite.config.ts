@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vitest/config'
+import { configDefaults, defineConfig, type Plugin, type TestProjectInlineConfiguration } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
 import postcssLogical from 'postcss-logical'
@@ -148,6 +148,53 @@ function fontPreloadPlugin(): Plugin {
   }
 }
 
+// ── 测试运行环境分片（需求 0181 C5）────────────────────────────────
+// src/test/pure-tests.json 由 scripts/pure-tests.mjs 沿 import 图扫描生成，列出不碰 DOM 的用例。
+// 这些用例不需要 jsdom，也不需要 src/test/setup.ts 里那套 antd polyfill / MSW 网络桩——
+// 实测同类文件在 jsdom 下 18.6s、在 node 下 2.6s（setup 占 65%、environment 占 29%、
+// 用例本体只占 5%），所以按环境拆 project，让快的那批不被慢的拖住。
+// 清单读不到时退回「全部走 jsdom」：慢但不漏跑，也不会因为缺文件直接报错。
+function pureTestFiles(): string[] {
+  try {
+    const raw = fs.readFileSync(path.resolve(__dirname, 'src/test/pure-tests.json'), 'utf8')
+    const list = (JSON.parse(raw) as { pure?: unknown }).pure
+    return Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function testProjects(): TestProjectInlineConfiguration[] {
+  const pure = pureTestFiles()
+  // 注意：project 继承根 test 配置时**数组是取并集**（include / exclude / setupFiles 都会拼接），
+  // 所以 environment / setupFiles / include 一律写在各 project 里，根配置只留两者共用的项。
+  const domProject: TestProjectInlineConfiguration = {
+    extends: true,
+    test: {
+      name: 'dom',
+      // 组件 / 交互 / 走 MSW 的用例：jsdom + 完整 setup
+      environment: 'jsdom',
+      setupFiles: ['./src/test/setup.ts'],
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
+      exclude: [...configDefaults.exclude, ...pure],
+    },
+  }
+  if (pure.length === 0) return [domProject]
+  return [
+    {
+      extends: true,
+      test: {
+        name: 'pure',
+        // 纯逻辑用例：node 环境 + 极简 setup，不加载 jsdom / antd polyfill / MSW
+        environment: 'node',
+        setupFiles: ['./src/test/setup.pure.ts'],
+        include: pure,
+      },
+    },
+    domProject,
+  ]
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
@@ -212,21 +259,19 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  // ── Vitest 测试配置（不影响构建行为）────────────────────────────────
+  // ── Vitest 测试配置（不影响构建行为）──────────────────────────────
   test: {
-    // antd 5 组件在 happy-dom 下兼容性欠佳，选择 jsdom
-    environment: 'jsdom',
+    // 公共项放根配置；environment / setupFiles / include 按运行环境写在各 project 里（见 testProjects）
     globals: true,
-    setupFiles: ['./src/test/setup.ts'],
     // 用例结束后自动 restore spyOn mock，防止 mock 泄漏到后续用例
     restoreMocks: true,
     // 高并发下 jsdom + antd 渲染负载高，长链路用例偶发超过默认 5s；放宽到 10s
     // 仅改超时阈值，不改变断言语义。
     testTimeout: 10_000,
-    // 单元/组件测试遵循就近放置约定：src 下的 *.test.ts(x)
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
     // worker 数按容器真实 CPU 配额求值（见 effectiveCpus），可用 VITEST_MAX_WORKERS 覆盖。
     maxWorkers: resolveMaxWorkers(),
+    // 按运行环境拆 project：pure 跑 node 环境，dom 跑 jsdom（清单见上方 pureTestFiles）。
+    projects: testProjects(),
     coverage: {
       provider: 'v8',
       include: ['src/**'],

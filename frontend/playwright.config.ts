@@ -23,12 +23,18 @@ export default defineConfig({
     ["html", { outputFolder: "playwright-report", open: "never" }],
   ],
 
-  // 一键起后端：.e2e-data 隔离 + seed + 起 :8000（E2E_PORT 可换端口）。reuseExistingServer
+  // 一键起后端：.e2e-data 隔离 + seed + 起 :8000（E2E_PORT 可换端口）。默认 reuseExistingServer
   // 关闭，绝不复用来源不明的 8000 服务，保证每次在隔离数据上全量重建。跨平台 Python 脚本（避免 shell 差异）。
+  //
+  // 本地反复跑定向用例时，seed + 启动约占单 spec 30s 里的 25s（需求 0181 C6），故允许显式复用：
+  //   make e2e-reuse             # 端口 8001（E2E_REUSE_PORT 可改），先手动起一次
+  //   uv run python frontend/scripts/e2e-server.py   # 长期驻留的服务端（另开一个终端）
+  // 只有 CNDB_E2E_REUSE=1 时才复用——CI 与日常全量门禁仍然是「每次全新 seed」，
+  // 复用意味着用例间的数据不再是初始态，所以必须显式开启、且只用于本地快速反馈。
   webServer: {
     command: "uv run python scripts/e2e-server.py",
     url: `${E2E_BASE_URL}/`,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.CNDB_E2E_REUSE === "1",
     timeout: 120_000,
   },
 

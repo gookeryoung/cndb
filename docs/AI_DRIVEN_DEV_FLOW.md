@@ -45,13 +45,15 @@ S0 / S1 / S2 的裁剪规则以 AGENTS 第 3.1 节为准：S0 直接从 C 开始
 - 插件分层：`plugins/<name>/{models.py,routers/,schemas/,services/}`；动态表 DDL 走 SQLAlchemy Core。
 - 迁移：幂等 + downgrade 可还原；新表纳入 `backup_io`（H13 / H14）。
 - 前端：`frontend/src/`，API 类型与后端对齐。
-- 每改完跑 `make check-fast`；每期完成回填 ADR 的“落地状态 / 交接”。
+- 每改完跑 `make check-fast`（F0，≤10s）；每期完成回填 ADR 的“落地状态 / 交接”。
+- 需要更宽反馈时按验证漏斗升级：`make verify-changed`（F1，≤60s，只跑变更相关测试）→ `make flow` / `make check-frontend`（F2）→ `make e2e-affected`（F3）。F1 只加速反馈，不减免 AGENTS 3.2 的必跑项。
 
 ### D 测试
 
 - 与实现同轮，按 H12 分层：判定层单测 / 接口 / 迁移 / 备份往返 / 前端单测 / e2e。
 - 断言行为而非实现细节；覆盖 ADR 的边界与例外。
 - 门槛：后端 ≥95%；前端双门槛；e2e 不得跳过用例（H10 / H11）。
+- 失败后只重跑失败项：`make retest`（读 pytest `lastfailed`；为空时显式回退全量，不要直接 `pytest --lf`）。
 
 ### E 集成
 
