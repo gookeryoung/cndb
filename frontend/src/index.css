@@ -5596,7 +5596,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-sider-resizer:hover::after,
-.cn-sider-resizer:focus-visible::after {
+.cn-sider-resizer:focus::after {
   background: var(--cn-brand-color);
 }
 

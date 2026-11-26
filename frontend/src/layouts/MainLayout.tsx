@@ -1412,6 +1412,7 @@ export default function MainLayout() {
           <div
             className="cn-sider-resizer"
             role="separator"
+            tabIndex={0}
             aria-orientation="vertical"
             aria-label="调整侧栏宽度"
             data-testid="sider-resizer"
