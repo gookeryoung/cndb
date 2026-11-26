@@ -392,11 +392,37 @@ class ExportTemplatePreview(BaseModel):
     ref: str | None = Field(default=None, max_length=64)
 
 
+class ContentTemplateCreate(BaseModel):
+    """新建内容模板（需求 0169）：工作区内名称唯一."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    content_markdown: str = ""
+    description: str = Field(default="", max_length=200)
+    icon: str = Field(default="", max_length=32)
+    sort_order: int = 0
+
+
+class ContentTemplateUpdate(BaseModel):
+    """更新内容模板：字段均可选，未传表示保持不变."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    content_markdown: str | None = None
+    description: str | None = Field(default=None, max_length=200)
+    icon: str | None = Field(default=None, max_length=32)
+    sort_order: int | None = None
+
+
 __all__ = [
     "ChartCreate",
     "ChartOut",
     "ChartRenderPreview",
     "ChartUpdate",
+    "ContentTemplateCreate",
+    "ContentTemplateUpdate",
     "ContentUpdate",
     "DiffResponse",
     "DocumentChangeRequestCreate",

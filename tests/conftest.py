@@ -28,6 +28,10 @@ settings.STORAGE_SNAPSHOT_ENABLED = False
 # 同理不进「帮助图示」后台重建线程（ADR 0030）：图示走请求期懒生成，
 # 线程行为由 tests/test_help_figures.py 直接构造 FigureRefresher 验证。
 settings.HELP_FIGURES_ENABLED = False
+# 同理不启动 FTS 一致性校验后台线程（需求 0170）：它用独立 SessionLocal 连真实库，
+# 测试库是进程内内存 SQLite，跨线程写会污染。线程行为由 test_documents_fts_consistency.py
+# 直接构造校验函数调用验证。
+settings.FTS_VERIFY_ENABLED = False
 
 
 @pytest.fixture(scope="session")
@@ -270,6 +274,11 @@ def _cleanup_tables(db_engine):
                 conn.execute(text(f"DELETE FROM {table.name}"))
         with suppress(Exception):
             conn.execute(text("DELETE FROM sqlite_sequence WHERE name NOT LIKE 'sqlite_%'"))
+        # FTS5 虚表由裸 SQL 创建、不在 Base.metadata 中，需显式清空（0170）：
+        # 否则上一用例的索引行会被下一用例的 verify_fts_index 统计为孤儿。
+        for fts_table in ("documents_fts", "documents_fts_tri"):
+            with suppress(Exception):
+                conn.execute(text(f"DELETE FROM {fts_table}"))
         conn.commit()
 
     from cndb.plugins.documents.services import content as content_service

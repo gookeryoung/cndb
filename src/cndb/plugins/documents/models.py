@@ -473,6 +473,36 @@ class ExportTemplate(TimestampMixin, Base):
         return f"ExportTemplate(id={self.id}, name={self.name!r})"
 
 
+class ContentTemplate(TimestampMixin, Base):
+    """内容模板（需求 0169）：工作区级的「从模板新建文档」正文骨架.
+
+    与 ``ExportTemplate``（docx/pdf 排版配置，ADR 0152）完全独立：本表只存 Markdown
+    正文骨架，新建文档时作为初始 content 写入，不参与导出渲染，也不预置内置行。
+    """
+
+    __tablename__ = "documents_contenttemplate"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_documents_contenttemplate_ws_name"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    content_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    icon: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"ContentTemplate(id={self.id}, name={self.name!r})"
+
+
 __all__ = [
     "ASSET_CONTENT_TYPES",
     "CHANGE_TYPES",
@@ -502,6 +532,7 @@ __all__ = [
     "INLINE_MAX_SIZE",
     "SHARE_PERM_EDITOR",
     "SHARE_PERM_VIEWER",
+    "ContentTemplate",
     "Document",
     "DocumentChangeRequest",
     "DocumentChart",

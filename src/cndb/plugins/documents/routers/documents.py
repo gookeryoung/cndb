@@ -1443,6 +1443,17 @@ def rollback(
 # ── 反向链接 ──
 
 
+@router.get("/links/graph")
+def get_link_graph(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """知识图谱聚合（需求 0168）：可见文档为节点、双链为边，30s 缓存（工作区成员）."""
+    _require_member(db, workspace_id, current_user)
+    return services.content.build_link_graph(db, workspace_id, current_user)
+
+
 @router.get("/{doc_id}/backlinks")
 def get_backlinks(
     workspace_id: int,

@@ -15,6 +15,7 @@ import datetime as dt
 import gzip
 import logging
 import shutil
+import time
 import zlib
 from collections import defaultdict
 from pathlib import Path
@@ -1001,24 +1002,25 @@ def sync_fts(db: Session, doc: Document, content: str) -> None:
     from cndb.plugins.documents.services.search import ensure_fts_schema
 
     ensure_fts_schema(db)
-    db.execute(
-        _fts_upsert_sql(),
-        {
-            "doc_id": doc.id,
-            "title": doc.title,
-            "content": content[:65536],
-            "summary": doc.summary[:2000],
-            "author": doc.author,
-        },
-    )
+    params = {
+        "doc_id": doc.id,
+        "title": doc.title,
+        "content": content[:65536],
+        "summary": doc.summary[:2000],
+        "author": doc.author,
+    }
+    db.execute(_fts_upsert_sql("documents_fts"), params)
+    # trigram 影子表（0171）与主表同 rowid 同步维护；两表内容一致，分词器不同。
+    db.execute(_fts_upsert_sql("documents_fts_tri"), params)
 
 
-def _fts_upsert_sql():
+def _fts_upsert_sql(table: str = "documents_fts"):
     from sqlalchemy import text
 
+    # 表名来自本模块常量调用点，非用户输入；FTS 虚拟表名不接受 bind 参数。
     return text(
-        """
-        INSERT OR REPLACE INTO documents_fts(rowid, title, content, summary, author)
+        f"""
+        INSERT OR REPLACE INTO {table}(rowid, title, content, summary, author)
         VALUES (:doc_id, :title, :content, :summary, :author)
         """
     )
@@ -1026,7 +1028,9 @@ def _fts_upsert_sql():
 
 def _sync_fts_delete(db: Session, doc_id: int) -> None:
     """从 FTS5 索引移除文档：内容清空（FTS5 delete 命令需旧值，清空更简单可靠）."""
-    db.execute(_fts_upsert_sql(), {"doc_id": doc_id, "title": "", "content": "", "summary": "", "author": ""})
+    empty = {"doc_id": doc_id, "title": "", "content": "", "summary": "", "author": ""}
+    db.execute(_fts_upsert_sql("documents_fts"), empty)
+    db.execute(_fts_upsert_sql("documents_fts_tri"), empty)
 
 
 def _normalize_ts(ts: str) -> str:
@@ -1161,3 +1165,154 @@ def _serialize_document(
         # 可见性提示：前端据此展示"仅自己可见 / 已发布"
         "visibility": _document_visibility(doc),
     }
+
+
+# ── 知识图谱聚合（需求 0168） ──────────────────────────────────────────
+# 零新表、零迁移：实时复用 iter_wikilinks 解析最新版本正文；只缓存解析结构，
+# 不缓存正文。缓存键含工作区与可见性身份（管理员看全集，成员看自己可见集）。
+
+GRAPH_MAX_NODES = 500
+_GRAPH_CACHE_TTL_SECONDS = 30.0
+# 缓存条目上限（用户 × 工作区维度会累积）：超出时丢弃最旧条目，避免长驻进程无界增长。
+_GRAPH_CACHE_MAX_ENTRIES = 256
+_graph_cache: dict[tuple[int, str | int], tuple[float, dict[str, Any]]] = {}
+
+
+def reset_link_graph_cache() -> None:
+    """清空图谱聚合缓存（写路径 / 测试使用）."""
+    _graph_cache.clear()
+
+
+def _prune_graph_cache(now: float) -> None:
+    """清理过期条目；仍超上限时丢弃最旧一条（O(n)，n ≤ 256+1）."""
+    for key in [k for k, (ts, _) in _graph_cache.items() if now - ts >= _GRAPH_CACHE_TTL_SECONDS]:
+        _graph_cache.pop(key, None)
+    while len(_graph_cache) >= _GRAPH_CACHE_MAX_ENTRIES:
+        oldest = min(_graph_cache.items(), key=lambda item: item[1][0])[0]
+        _graph_cache.pop(oldest, None)
+
+
+def _broken_node_id(title: str) -> int:
+    """断链目标用稳定负 id，避免与真实文档 id 冲突."""
+    return -(zlib.crc32(title.encode("utf-8")) % 1_000_000_000) - 1
+
+
+def build_link_graph(
+    db: Session,
+    workspace_id: int,
+    user: User,
+    *,
+    max_nodes: int = GRAPH_MAX_NODES,
+) -> dict[str, Any]:
+    """工作区链接图：可见文档为节点，``[[标题]]`` 为边（需求 0168 C1/C2/C3）.
+
+    - 解析唯一复用 ``parse.iter_wikilinks``，与 /links、/backlinks 同源；
+    - 断链目标是虚拟节点（负 id，``broken=true``）；同名多命中取首个并标
+      ``ambiguous``；自环过滤、边按 (源, 目标) 去重；
+    - H33：draft/archived 仅创建者与 OWNER/超管可见，不可见文档不进节点与边；
+    - C6：节点数上限按 updated_at 取最近 N，超出时 ``truncated=true``；
+      聚合结果按 (工作区, 可见性身份) 缓存 30s。
+    """
+    from cndb.plugins.documents.services import visibility
+
+    admin = visibility.is_document_admin(db, workspace_id, user)
+    cache_key: tuple[int, str | int] = (workspace_id, "admin" if admin else user.id)
+    cached = _graph_cache.get(cache_key)
+    now = time.monotonic()
+    if cached is not None and now - cached[0] < _GRAPH_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    filters: list[Any] = [Document.workspace_id == workspace_id, Document.is_deleted == False]  # noqa: E712
+    if not admin:
+        filters.append(visibility.visible_condition(db, workspace_id, user, is_admin=False))
+    total = int(db.execute(select(func.count()).select_from(Document).where(*filters)).scalar_one())
+    docs = list(
+        db.execute(
+            select(Document).where(*filters).order_by(Document.updated_at.desc(), Document.id.desc()).limit(max_nodes)
+        )
+        .scalars()
+        .all()
+    )
+    truncated = total > len(docs)
+
+    title_counts: dict[str, int] = defaultdict(int)
+    title_index: dict[str, int] = {}
+    for doc in docs:
+        title_counts[doc.title] += 1
+        title_index.setdefault(doc.title, doc.id)
+    # H33：区分「真断链」与「存在但当前用户不可见」——后者不得建节点/边，
+    # 否则断链节点标题会把他人草稿的存在性泄漏给 viewer。只取标题列，不返回前端。
+    all_titles = set(
+        db.execute(
+            select(Document.title).where(
+                Document.workspace_id == workspace_id,
+                Document.is_deleted == False,  # noqa: E712
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": doc.id,
+            "title": doc.title,
+            "content_type": doc.content_type,
+            "status": doc.status,
+            "is_folder": bool(doc.is_folder),
+            "broken": False,
+        }
+        for doc in docs
+    ]
+    broken_ids: set[int] = set()
+    edges: list[dict[str, Any]] = []
+    seen_edges: set[tuple[int, int]] = set()
+    for doc in docs:
+        version = latest_version(db, doc.id)
+        for link in parse.iter_wikilinks(load_content(version, doc)):
+            target_title = link["target"]
+            if not target_title:
+                continue  # [[#锚点]] 无目标标题，不构成跨文档边
+            target_id = title_index.get(target_title)
+            if target_id is None and target_title in all_titles:
+                continue  # 文档存在但当前用户不可见（H33）：不建节点、不建边
+            if target_id is None:
+                target_id = _broken_node_id(target_title)
+                if target_id not in broken_ids:
+                    broken_ids.add(target_id)
+                    nodes.append(
+                        {
+                            "id": target_id,
+                            "title": target_title,
+                            "content_type": "markdown",
+                            "status": "broken",
+                            "is_folder": False,
+                            "broken": True,
+                        }
+                    )
+            elif target_id == doc.id:
+                continue  # 自环不画
+            ambiguous = title_counts[target_title] > 1
+            edge_key = (doc.id, target_id)
+            if edge_key in seen_edges:
+                continue
+            seen_edges.add(edge_key)
+            edges.append(
+                {
+                    "source": doc.id,
+                    "target": target_id,
+                    "broken": target_id in broken_ids,
+                    "ambiguous": ambiguous,
+                    "raw": parse.format_wikilink(target_title, anchor=link["anchor"], alias=link["alias"]),
+                }
+            )
+
+    payload = {
+        "nodes": nodes,
+        "edges": edges,
+        "truncated": truncated,
+        "total": total,
+    }
+    _prune_graph_cache(now)
+    _graph_cache[cache_key] = (now, payload)
+    return payload

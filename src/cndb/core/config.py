@@ -292,6 +292,12 @@ class Settings(BaseSettings):
     # 启动后首轮延迟（秒）：让首屏与迁移先跑完
     HELP_FIGURES_STARTUP_DELAY_SECONDS: int = 5
 
+    # ── 文档 FTS 索引一致性校验（需求 0170）────────────────
+    # FTS5 无触发器，后台按周期只读校验主表 + trigram 影子表，漂移则全量重建。
+    FTS_VERIFY_ENABLED: bool = True
+    FTS_VERIFY_INTERVAL_SECONDS: int = 21600
+    FTS_VERIFY_STARTUP_DELAY_SECONDS: int = 300
+
     # ── 配置文件加载 ─────────────────────────────────────
     model_config = {"env_file": str(CONFIG_DIR / ".env"), "env_file_encoding": "utf-8"}
 

@@ -29,6 +29,7 @@ class DocumentsPlugin(PluginBase):
         from cndb.plugins.documents.routers import router as documents_router
         from cndb.plugins.documents.routers.change_requests import router as change_requests_router
         from cndb.plugins.documents.routers.charts import router as charts_router
+        from cndb.plugins.documents.routers.content_templates import router as content_templates_router
         from cndb.plugins.documents.routers.file_import import router as file_import_router
         from cndb.plugins.documents.routers.issues import router as issues_router
         from cndb.plugins.documents.routers.share import share_router
@@ -37,10 +38,11 @@ class DocumentsPlugin(PluginBase):
         from cndb.plugins.documents.routers.vault import router as vault_router
 
         # 导入/导出路由先挂载：/import、/import/files、/export/vault 必须在 /{doc_id} 一族之前匹配；
-        # /templates 同理（否则会被 /{doc_id} 吃掉），放在 documents_router 之前
+        # /templates、/document-content-templates 同理（否则会被 /{doc_id} 吃掉），放在 documents_router 之前
         router.include_router(vault_router)
         router.include_router(file_import_router)
         router.include_router(templates_router)
+        router.include_router(content_templates_router)
         router.include_router(documents_router)
         router.include_router(charts_router)
         router.include_router(share_router)

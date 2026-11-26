@@ -148,6 +148,33 @@ export interface OutgoingLinkItem {
   raw?: string
 }
 
+/** 知识图谱节点（需求 0168）：broken 为断链虚拟节点（负 id） */
+export interface GraphNode {
+  id: number
+  title: string
+  content_type: string
+  status: string
+  /** 文件夹节点：点击进入其文档列表而非编辑器 */
+  is_folder: boolean
+  broken: boolean
+}
+
+/** 知识图谱边：source/target 为节点 id，ambiguous 表示同名多文档 */
+export interface GraphEdge {
+  source: number
+  target: number
+  broken: boolean
+  ambiguous: boolean
+  raw: string
+}
+
+export interface LinkGraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  truncated: boolean
+  total: number
+}
+
 /** 断链修复结果 */
 export interface LinkRepairResult {
   document_id: number
@@ -842,6 +869,10 @@ export const documentsApi = {
         params: { q, ...params },
       })
       .then(r => r.data),
+
+  // 知识图谱聚合（需求 0168）：可见文档为节点、双链为边，30s 缓存
+  linkGraph: (wid: number | string) =>
+    api.get<LinkGraph>(`${base(wid)}/links/graph`).then(r => r.data),
 
   // 反向链接：谁在正文中引用了 [[本文档标题]]
   backlinks: (wid: number | string, docId: number | string) =>

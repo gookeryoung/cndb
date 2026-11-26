@@ -62,6 +62,7 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
     """
     from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun
     from cndb.plugins.documents.models import (
+        ContentTemplate,
         Document,
         DocumentChangeRequest,
         DocumentChart,
@@ -96,6 +97,7 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
         ensure_fts_schema(db)
         placeholders = ",".join(str(int(i)) for i in doc_ids)
         db.execute(text(f"DELETE FROM documents_fts WHERE rowid IN ({placeholders})"))
+        db.execute(text(f"DELETE FROM documents_fts_tri WHERE rowid IN ({placeholders})"))
 
     # 挂在文档下的表（无 workspace_id 列）：经 document_id 关联；评论/事件经 issue 关联
     if doc_ids:
@@ -106,7 +108,7 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
         if issue_id_list:
             db.execute(delete(DocumentIssueComment).where(DocumentIssueComment.issue_id.in_(issue_id_list)))
             db.execute(delete(DocumentIssueEvent).where(DocumentIssueEvent.issue_id.in_(issue_id_list)))
-    for model in (DocumentIssue, DocumentChart, Document, Tag):
+    for model in (DocumentIssue, DocumentChart, Document, Tag, ContentTemplate):
         db.execute(delete(model).where(model.workspace_id == workspace_id))
 
     for model in (DatasourceSyncRun, DatasourceSyncJob, DatasourceSession):

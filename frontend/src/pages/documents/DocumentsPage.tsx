@@ -52,6 +52,7 @@ import {
   MoreOutlined,
   PushpinOutlined,
   SearchOutlined,
+  SnippetsOutlined,
   SortAscendingOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
@@ -64,6 +65,7 @@ import {
 import { clearRecentDocs, loadRecentDocs } from './recentDocs'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem, VaultExportStyle } from '@/api/documents'
+import { contentTemplateApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
@@ -200,6 +202,9 @@ export default function DocumentsPage() {
   const [createType, setCreateType] = useState<'doc' | 'folder'>('doc')
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
+  // 从内容模板新建（需求 0169 C4）：模板选择弹层
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [templateKeyword, setTemplateKeyword] = useState('')
   // 重命名弹窗（系列与列表行共用）：target 区分来源，决定标题文案与输入框 testid
   const [renameTarget, setRenameTarget] = useState<{ id: number; title: string; isSeries: boolean } | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -303,23 +308,43 @@ export default function DocumentsPage() {
   }, [qc, workspaceId])
 
   const createMut = useMutation({
-    mutationFn: () =>
+    /** 从模板新建时直接传标题与正文（避免依赖 React state 异步更新） */
+    mutationFn: (override?: { title: string; content: string }) =>
       documentsApi.create(workspaceId, {
-        title: newTitle.trim(),
-        content: createType === 'doc' ? newContent : '',
-        is_folder: createType === 'folder',
+        title: override?.title ?? newTitle.trim(),
+        content: override ? override.content : createType === 'doc' ? newContent : '',
+        // 从模板新建一定是文档：createType 可能残留上一次「新建文件夹」（弹窗取消不复位）
+        is_folder: override ? false : createType === 'folder',
         parent_id: parentId,
       }),
-    onSuccess: doc => {
-      message.success(createType === 'folder' ? '文件夹已创建' : '文档已创建')
+    onSuccess: (doc, override) => {
+      message.success(override || createType === 'doc' ? '文档已创建' : '文件夹已创建')
       setCreateOpen(false)
+      setTemplatePickerOpen(false)
       setNewTitle('')
       setNewContent('')
       invalidate()
-      if (createType === 'doc') navigate(`/w/${workspaceId}/documents/${doc.id}`)
+      if (createType === 'doc' || override) navigate(`/w/${workspaceId}/documents/${doc.id}`)
     },
     onError: () => message.error('创建失败'),
   })
+
+  /** 模板选择弹层的数据（需求 0169 C4）：只在弹层打开时拉取 */
+  const contentTemplatesQuery = useQuery({
+    queryKey: ['content-templates', workspaceId],
+    queryFn: () => contentTemplateApi.list(workspaceId),
+    enabled: templatePickerOpen,
+  })
+  const templateItems = useMemo(() => {
+    const items = contentTemplatesQuery.data?.items ?? []
+    const keyword = templateKeyword.trim().toLowerCase()
+    if (!keyword) return items
+    return items.filter(
+      item =>
+        item.name.toLowerCase().includes(keyword) ||
+        (item.description ?? '').toLowerCase().includes(keyword),
+    )
+  }, [contentTemplatesQuery.data, templateKeyword])
 
   const deleteMut = useMutation({
     mutationFn: (docId: number) => documentsApi.remove(workspaceId, docId),
@@ -1173,6 +1198,15 @@ export default function DocumentsPage() {
               menu={{
                 items: [
                   { key: 'doc', icon: <FileAddOutlined />, label: '新建文档', onClick: () => openCreate('doc') },
+                  {
+                    key: 'from-template',
+                    icon: <SnippetsOutlined />,
+                    label: '从模板新建',
+                    onClick: () => {
+                      setTemplateKeyword('')
+                      setTemplatePickerOpen(true)
+                    },
+                  },
                   { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
                 ],
               }}
@@ -1565,6 +1599,84 @@ export default function DocumentsPage() {
           {quickDoc && <Menu mode="inline" items={rowActionItems(quickDoc)} onClick={() => setQuickDoc(null)} />}
         </Drawer>
       )}
+
+      {/* 从内容模板新建（需求 0169 C4）：选中后以模板正文调用现有 create_document */}
+      <Modal
+        title="从模板新建文档"
+        open={templatePickerOpen}
+        onCancel={() => setTemplatePickerOpen(false)}
+        footer={null}
+        data-testid="content-template-picker"
+        destroyOnHidden
+      >
+        {contentTemplatesQuery.isError ? (
+          <Alert
+            type="error"
+            showIcon
+            title="模板加载失败"
+            action={
+              <Button size="small" onClick={() => void contentTemplatesQuery.refetch()}>
+                重试
+              </Button>
+            }
+          />
+        ) : contentTemplatesQuery.isLoading ? (
+          <Text type="secondary">加载模板…</Text>
+        ) : (contentTemplatesQuery.data?.items.length ?? 0) === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有内容模板">
+            <Button
+              type="primary"
+              onClick={() => {
+                setTemplatePickerOpen(false)
+                navigate(`/w/${workspaceId}/documents/content-templates`)
+              }}
+            >
+              去创建模板
+            </Button>
+          </Empty>
+        ) : (
+          <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+            <Input
+              allowClear
+              placeholder="搜索模板名称或说明"
+              value={templateKeyword}
+              data-testid="content-template-search"
+              onChange={e => setTemplateKeyword(e.target.value)}
+            />
+            {templateItems.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的模板" />
+            ) : (
+              <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                {templateItems.map(item => (
+                  <div
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-disabled={createMut.isPending}
+                    data-testid={`content-template-option-${item.id}`}
+                    className="cn-qc-row cn-qc-row--selectable"
+                    onClick={() =>
+                      !createMut.isPending &&
+                      createMut.mutate({ title: item.name, content: item.content_markdown })
+                    }
+                    onKeyDown={e => {
+                      if ((e.key === 'Enter' || e.key === ' ') && !createMut.isPending) {
+                        createMut.mutate({ title: item.name, content: item.content_markdown })
+                      }
+                    }}
+                  >
+                    <CnListMeta
+                      avatar={item.icon || <SnippetsOutlined />}
+                      title={item.name}
+                      description={item.description || `${item.content_markdown.length} 字符`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </Space>
+        )}
+      </Modal>
 
       {/* 新建弹窗 */}
       <Modal

@@ -58,6 +58,8 @@ BACKUP_VERSION = "15"
 # 供 GET /export 的 v8 降采样与示例包使用（ADR 0075 D8）
 CHUNKED_BACKUP_VERSION = "17"
 # v17：新增 ``templates[]``（文档导出模板，ADR 0152）；旧包缺该键按「无自定义模板」导入
+# v17+：新增 ``content_templates[]``（文档内容模板，需求 0169）；旧包缺该键按空导入，
+#       新包被旧端恢复时未知键自然忽略 —— 不升版本号，保持跨版本往返兼容
 
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
@@ -648,6 +650,26 @@ def _build_backup(
         for t in template_rows
     ]
 
+    # ── 内容模板（需求 0169）：工作区级「从模板新建文档」正文骨架（H14） ──
+    from cndb.plugins.documents.models import ContentTemplate
+
+    content_template_rows = (
+        db.query(ContentTemplate)
+        .filter(ContentTemplate.workspace_id == workspace_id)
+        .order_by(ContentTemplate.id)
+        .all()
+    )
+    content_templates_data = [
+        {
+            "name": t.name,
+            "content_markdown": t.content_markdown or "",
+            "description": t.description or "",
+            "icon": t.icon or "",
+            "sort_order": int(t.sort_order or 0),
+        }
+        for t in content_template_rows
+    ]
+
     # ── 流水线定义（v10，ADR 0076 D12）：只导出配置，运行 / 发现物属流水 ──
     # v13 起带版本历史（ADR 0114 C11）：只导出版本原文与备注，compiled 不导出
     from cndb.plugins.pipeline.models import PipelineWorkflow, PipelineWorkflowVersion
@@ -782,6 +804,7 @@ def _build_backup(
         "file_owners": file_owners_data,
         "charts": charts_data,
         "templates": templates_data,
+        "content_templates": content_templates_data,
         "pipelines": pipelines_data,
         "designs": designs_data,
         "library_refs": library_refs_data,

@@ -89,9 +89,12 @@ const TABLE_LEVEL_TAB_PATHS: Record<string, string> = {
  * 只呈现 document/* 检查动作与规则，不跳到数据表段；其余子页同样导航到 /documents/<key>。 */
 const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
+  { key: 'graph', label: '图谱', icon: <ApartmentOutlined />, to: 'graph' },
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
   // 模板（ADR 0152）：工作区级导出模板，紧邻「质量检查」右侧（同属文档上下文资源）
   { key: 'templates', label: '模板', icon: <SnippetsOutlined />, to: 'templates' },
+  // 内容模板（需求 0169）：从模板新建文档的正文骨架，与导出模板独立
+  { key: 'content-templates', label: '内容模板', icon: <FileTextOutlined />, to: 'content-templates' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
   { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined />, to: 'issues' },
 ] as const
@@ -561,7 +564,11 @@ export default function MainLayout() {
     ? 'structure'
     : location.startsWith(`/w/${wid}/documents/templates`)
       ? 'templates'
-      : location.startsWith(`/w/${wid}/documents/pipelines`)
+      : location.startsWith(`/w/${wid}/documents/graph`)
+        ? 'graph'
+      : location.startsWith(`/w/${wid}/documents/content-templates`)
+        ? 'content-templates'
+        : location.startsWith(`/w/${wid}/documents/pipelines`)
         ? 'pipelines'
         : location.includes('/change-requests')
           ? 'change-requests'

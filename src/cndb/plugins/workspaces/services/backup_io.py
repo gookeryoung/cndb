@@ -529,6 +529,13 @@ def import_backup_into_workspace(
         imported_templates += template_imported
         errors.extend(template_errors)
 
+        # ── 需求 0169：文档内容模板（旧备份无该键时按空导入） ──
+        content_template_imported, content_template_errors = _import_content_templates(
+            workspace_id, json_data, current_user, db
+        )
+        imported_templates += content_template_imported
+        errors.extend(content_template_errors)
+
         # ── v10（ADR 0076）：流水线定义（运行 / 发现物属流水，不进备份） ──
         pipeline_imported, pipeline_errors = _import_pipelines(workspace_id, json_data, current_user, db)
         imported_pipelines += pipeline_imported
@@ -1197,6 +1204,60 @@ def _import_export_templates(
         except Exception as exc:  # pragma: no cover - 唯一约束兜底
             db.rollback()
             errors.append(f"导出模板导入失败: {exc}")
+            return 0, errors
+    return imported, errors
+
+
+def _import_content_templates(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原文档内容模板（需求 0169），返回 (成功数, 错误明细).
+
+    - 旧备份没有 ``content_templates`` 键 → 0 条；
+    - 单条名称为空 / 重复 → 跳过并记错误，不阻断整体导入；
+    - 表名唯一约束由 ``(workspace_id, name)`` 保证，导入端先去重再批量提交。
+    """
+    from cndb.plugins.documents.models import ContentTemplate
+
+    items = json_data.get("content_templates") or []
+    if not items:
+        return 0, []
+
+    errors: list[str] = []
+    imported = 0
+    seen_names: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            errors.append("内容模板跳过（名称为空）")
+            continue
+        if name in seen_names:
+            errors.append(f"内容模板 {name} 跳过（同工作区重复名称）")
+            continue
+        seen_names.add(name)
+        db.add(
+            ContentTemplate(
+                workspace_id=workspace_id,
+                name=name[:80],
+                content_markdown=str(item.get("content_markdown") or ""),
+                description=str(item.get("description") or "")[:200],
+                icon=str(item.get("icon") or "")[:32],
+                sort_order=int(item.get("sort_order") or 0),
+                created_by_id=current_user.id,
+            )
+        )
+        imported += 1
+    if imported:
+        try:
+            db.commit()
+        except Exception as exc:  # pragma: no cover - 唯一约束兜底
+            db.rollback()
+            errors.append(f"内容模板导入失败: {exc}")
             return 0, errors
     return imported, errors
 

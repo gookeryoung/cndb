@@ -82,6 +82,13 @@ export type {
   SyncScheduleMode,
 } from './datasource'
 export { llmApi } from './llm'
+export { contentTemplateApi } from './contentTemplates'
+export type {
+  ContentTemplateCreatePayload,
+  ContentTemplateItem,
+  ContentTemplateList,
+  ContentTemplateUpdatePayload,
+} from './contentTemplates'
 export { exportTemplateApi, BUILTIN_TEMPLATE_LABELS } from './exportTemplates'
 export type {
   ExportTemplateConfig,

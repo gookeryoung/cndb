@@ -55,6 +55,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
 )
 """
 
+# trigram 影子表（0171）：unicode61 把连续中文当单 token，2 字以下短词无法索引；
+# trigram 按 3 字符切分，可命中任意 ≥3 字符的子串（含中文）。两表并行维护，
+# search 在 FTS 无命中时按「最长中文连续段 ≥3」分流到 trigram，否则保留 LIKE 兜底。
+_FTS_TRI_CREATE_SQL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts_tri USING fts5(
+    title, content, summary, author,
+    tokenize='trigram'
+)
+"""
+
 
 def ensure_fts_schema(db: Session) -> None:
     """幂等创建 FTS5 虚拟表（同一数据库内只执行一次）.
@@ -70,7 +80,21 @@ def ensure_fts_schema(db: Session) -> None:
     if _fts_state["ready"] and _fts_state["bind"] is engine:
         return
     db.execute(text(_FTS_CREATE_SQL))
+    db.execute(text(_FTS_TRI_CREATE_SQL))
     db.commit()
+    # 存量回填（0171）：老库已有主表索引但 trigram 表为空时，从主表复制正文回填。
+    # 主表 content 已是完整正文（写路径截 64KB），trigram 只需同内容即可，无需外存读取，
+    # 避免迁移期依赖 data/docs 路径。逐行幂等（只补 trigram 缺行/空行）。
+    tri_count = db.execute(text("SELECT count(*) FROM documents_fts_tri WHERE content != ''")).scalar_one()
+    main_count = db.execute(text("SELECT count(*) FROM documents_fts WHERE content != ''")).scalar_one()
+    if tri_count < main_count:
+        db.execute(
+            text(
+                "INSERT OR REPLACE INTO documents_fts_tri(rowid, title, content, summary, author) "
+                "SELECT rowid, title, content, summary, author FROM documents_fts WHERE content != ''"
+            )
+        )
+        db.commit()
     _fts_state["ready"] = True
     _fts_state["bind"] = engine
 
@@ -261,9 +285,27 @@ def search_documents(
         raise
 
     if total == 0:
-        # FTS 无命中：中文关键词片段（unicode61 整词分词）会走到这里，改用子串检索
-        # 注意沿用同一批筛选参数（wid / status / t0..tN），只去掉 MATCH 用的 :q
+        # FTS 无命中：中文关键词片段（unicode61 整词分词）会走到这里。
+        # 0171 混合策略：存在 ≥3 字符的中文连续段 → 先走 trigram 影子表（有索引，避免大库
+        # 全表 LIKE）；否则（2 字短词 / 纯西文）维持原 LIKE 兜底。trigram 通道仅做候选
+        # 收窄，完整 query 的 AND 语义与高亮/排序仍由 _search_by_substring 在候选集上执行，
+        # 保证命中集合只增不减（trigram 候选 ⊇ LIKE 命中）。
         fallback_params = {key: value for key, value in params.items() if key != "q"}
+        tri_term = _longest_cjk_term(query)
+        if tri_term is not None:
+            # 用子查询收窄候选，避免把大量 rowid 变成 bind 参数（SQLite 上限 999）。
+            tri_filters = [
+                *extra_filters,
+                "d.id IN (SELECT rowid FROM documents_fts_tri WHERE documents_fts_tri MATCH :tri_q)",
+            ]
+            return _search_by_substring(
+                db,
+                query,
+                tri_filters,
+                {**fallback_params, "tri_q": _quote_phrase(tri_term)},
+                limit=limit,
+                offset=offset,
+            )
         return _search_by_substring(
             db,
             query,
@@ -334,6 +376,26 @@ def _mark(term: str, text: str) -> str:
             lowered = result.lower()
             start = idx + len("<mark>") + len(token) + len("</mark>")
     return result
+
+
+def _longest_cjk_term(query: str) -> str | None:
+    """取 query 中最长的连续中文片段（≥3 字符），供 trigram 候选收窄.
+
+    trigram 按 3 字符切分，<3 字符无法命中；取最长段是为了尽量收窄候选集，
+    完整 query 的多词 AND 语义仍由后续 LIKE 通道在候选集上执行（只增不减）。
+    """
+    best = ""
+    current = ""
+    for ch in query:
+        if "\u4e00" <= ch <= "\u9fff":
+            current += ch
+        else:
+            if len(current) > len(best):
+                best = current
+            current = ""
+    if len(current) > len(best):
+        best = current
+    return best if len(best) >= 3 else None
 
 
 def _search_by_substring(
@@ -440,6 +502,122 @@ def _snippet(content_hit: str, pad: int = 80) -> str:
     return f"{prefix}{content_hit[start:end]}{suffix}"
 
 
+_FTS_FINGERPRINT_CHARS = 64
+
+
+def _fts_fingerprints(db: Session, table: str) -> dict[int, tuple[str, int, str]]:
+    """读取 FTS 表的轻量指纹（标题 / 正文长度 / 前 64 字符），不加载完整正文.
+
+    ``table`` 只接受内部常量（documents_fts / documents_fts_tri），不接受外部输入。
+    """
+    rows = db.execute(
+        text(
+            f"SELECT rowid, title, length(content), substr(content, 1, {_FTS_FINGERPRINT_CHARS}) FROM {table}"  # nosec B608 - 表名来自内部常量
+        )
+    ).all()
+    return {int(row[0]): (str(row[1] or ""), int(row[2] or 0), str(row[3] or "")) for row in rows}
+
+
+class FtsConsistencyReport:
+    """FTS 索引一致性报告（0170）：只读，不含正文，仅含计数与文档 id."""
+
+    def __init__(
+        self,
+        *,
+        missing: list[int] | None = None,
+        orphan: list[int] | None = None,
+        mismatch: list[int] | None = None,
+    ) -> None:
+        self.missing = missing or []
+        self.orphan = orphan or []
+        self.mismatch = mismatch or []
+
+    @property
+    def consistent(self) -> bool:
+        return not (self.missing or self.orphan or self.mismatch)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "consistent": self.consistent,
+            "missing": self.missing,
+            "orphan": self.orphan,
+            "mismatch": self.mismatch,
+            "counts": {
+                "missing": len(self.missing),
+                "orphan": len(self.orphan),
+                "mismatch": len(self.mismatch),
+            },
+        }
+
+
+def verify_fts_index(
+    db: Session,
+    *,
+    workspace_id: int | None = None,
+    check_trigram: bool = True,
+) -> FtsConsistencyReport:
+    """校验 FTS 索引与文档正文的一致性（0170，只读）.
+
+    - missing：文档未删除且非文件夹，但 FTS 主表缺行或正文为空；
+    - orphan：FTS 主表有正文，但文档不存在 / 已软删 / 是文件夹；
+    - mismatch：FTS 主表 title 与文档 title 不符（内容漂移的轻量信号）；
+    - 默认同时校验 trigram 影子表：与主表 rowid / 正文一致性。
+
+    内存口径：不加载完整正文，只读取 ``length(content)`` 与前 64 字符指纹，
+    避免万级文档时把数百 MB 正文拉进 Python（长度 + 前缀足以发现绝大多数漂移）。
+
+    按 ``workspace_id`` 过滤时**跳过 orphan**：FTS 虚拟表没有 workspace 列，
+    无法区分跨工作区行；只在全库校验时统计孤儿。
+
+    只返回 id 与计数，不含正文或标题（H38：发现物只记定位信息）。
+    """
+    from sqlalchemy import select
+
+    from cndb.plugins.documents.models import Document
+
+    doc_q = select(Document.id, Document.title).where(
+        Document.is_deleted == False,  # noqa: E712
+        Document.is_folder == False,  # noqa: E712
+    )
+    if workspace_id is not None:
+        doc_q = doc_q.where(Document.workspace_id == workspace_id)
+    docs = {row[0]: row[1] for row in db.execute(doc_q).all()}
+
+    fts_rows = _fts_fingerprints(db, "documents_fts")
+
+    missing: list[int] = []
+    mismatch: list[int] = []
+    for doc_id, title in docs.items():
+        row = fts_rows.get(doc_id)
+        if row is None or row[1] == 0:
+            missing.append(doc_id)
+        elif row[0] != title:
+            mismatch.append(doc_id)
+
+    doc_ids = set(docs)
+    # FTS 虚拟表无 workspace_id 列，无法区分跨工作区行；按工作区过滤时只报本区文档的
+    # missing/mismatch，跳过 orphan（全库校验时才统计孤儿）。
+    if workspace_id is None:
+        orphan = sorted(doc_id for doc_id, row in fts_rows.items() if row[1] > 0 and doc_id not in doc_ids)
+    else:
+        orphan: list[int] = []
+
+    if check_trigram:
+        tri_rows = _fts_fingerprints(db, "documents_fts_tri")
+        for doc_id in docs:
+            tri = tri_rows.get(doc_id)
+            main = fts_rows.get(doc_id)
+            drifted = tri is not None and main is not None and tri[1:] != main[1:]
+            if (tri is None or tri[1] == 0 or drifted) and doc_id not in missing:
+                missing.append(doc_id)
+        if workspace_id is None:
+            for doc_id, row in tri_rows.items():
+                if row[1] > 0 and doc_id not in doc_ids and doc_id not in orphan:
+                    orphan.append(doc_id)
+
+    return FtsConsistencyReport(missing=sorted(missing), orphan=sorted(orphan), mismatch=sorted(mismatch))
+
+
 def rebuild_fts_index(db: Session) -> int:
     """全量重建 FTS5 索引（修复索引不一致时的兜底任务）.
 
@@ -450,7 +628,9 @@ def rebuild_fts_index(db: Session) -> int:
 
     from cndb.plugins.documents.models import Document
 
-    db.execute(text("INSERT INTO documents_fts(documents_fts) VALUES ('delete-all')"))
+    # 普通 FTS5 表（非 contentless）不支持 'delete-all' 特殊命令；直接 DELETE 全表。
+    db.execute(text("DELETE FROM documents_fts"))
+    db.execute(text("DELETE FROM documents_fts_tri"))
     docs = (
         db.execute(
             select(Document).where(
@@ -465,25 +645,36 @@ def rebuild_fts_index(db: Session) -> int:
     from cndb.plugins.documents.services.content import latest_version, load_content
 
     count = 0
+    params_list: list[dict[str, Any]] = []
     for doc in docs:
         v = latest_version(db, doc.id)
         content = load_content(v, doc)
-        db.execute(
-            text(
-                "INSERT INTO documents_fts(rowid, title, content, summary, author) "
-                "VALUES (:id, :title, :content, :summary, :author)"
-            ),
+        params_list.append(
             {
                 "id": doc.id,
                 "title": doc.title,
                 "content": content[:65536],
                 "summary": doc.summary[:2000],
                 "author": doc.author,
-            },
+            }
         )
         count += 1
+    insert_sql = (
+        "INSERT INTO {table}(rowid, title, content, summary, author) VALUES (:id, :title, :content, :summary, :author)"
+    )
+    for table in ("documents_fts", "documents_fts_tri"):
+        for params in params_list:
+            db.execute(text(insert_sql.format(table=table)), params)
     db.commit()
     return count
 
 
-__all__ = ["ensure_fts_schema", "escape_query", "rebuild_fts_index", "reset_fts_schema_cache", "search_documents"]
+__all__ = [
+    "FtsConsistencyReport",
+    "ensure_fts_schema",
+    "escape_query",
+    "rebuild_fts_index",
+    "reset_fts_schema_cache",
+    "search_documents",
+    "verify_fts_index",
+]

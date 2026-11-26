@@ -1,7 +1,9 @@
-"""cndb docs 子命令 —— 文档数据运维（外存内容体检与物理回收）.
+"""cndb docs 子命令 —— 文档数据运维（外存内容体检、物理回收、FTS 索引一致性）.
 
 子命令：
-- gc    外存孤儿文件体检 / 回收（默认 dry-run，--apply 才实际删除）
+- gc          外存孤儿文件体检 / 回收（默认 dry-run，--apply 才实际删除）
+- fts-verify  FTS 主表 + trigram 影子表一致性校验（只读，需求 0170）
+- fts-rebuild 全量重建 FTS 主表 + trigram 影子表（需求 0170）
 
 CLI 是运维侧工具，调用者已具备服务端文件系统访问权限，等价于超级管理员。
 """
@@ -62,6 +64,44 @@ def cmd_gc(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def cmd_fts_verify(args: argparse.Namespace) -> dict[str, Any]:
+    """校验 FTS 主表 + trigram 影子表与文档的一致性（只读，输出只含 id/计数）."""
+    del args  # CLI 分发签名统一；本子命令无额外参数
+    from cndb.plugins.documents.services.search import verify_fts_index
+
+    db = _get_session()
+    try:
+        report = verify_fts_index(db)
+    finally:
+        db.close()
+    return report.as_dict()
+
+
+def cmd_fts_rebuild(args: argparse.Namespace) -> dict[str, Any]:
+    """全量重建 FTS 主表 + trigram 影子表，返回重建文档数."""
+    del args  # CLI 分发签名统一；本子命令无额外参数
+    from cndb.plugins.documents.services.search import ensure_fts_schema, rebuild_fts_index
+
+    db = _get_session()
+    try:
+        ensure_fts_schema(db)
+        count = rebuild_fts_index(db)
+    finally:
+        db.close()
+    return {"rebuilt": count}
+
+
+def _print_fts_verify(payload: dict[str, Any]) -> None:
+    counts = payload["counts"]
+    print(
+        f"[docs fts-verify] {'一致' if payload['consistent'] else '不一致'}："
+        f"missing={counts['missing']} orphan={counts['orphan']} mismatch={counts['mismatch']}"
+    )
+    for key in ("missing", "orphan", "mismatch"):
+        if payload[key]:
+            print(f"  {key}: {payload[key]}")
+
+
 def _print_gc(payload: dict[str, Any]) -> None:
     mode = "体检（dry-run，未删除）" if payload["dry_run"] else "回收"
     print(f"[docs gc] 外存根目录: {payload['root']} — {mode}")
@@ -93,6 +133,20 @@ def docs_command(args: argparse.Namespace) -> None:
         else:
             _print_gc(payload)
         return
+    if cmd == "fts-verify":
+        payload = cmd_fts_verify(args)
+        if getattr(args, "json", False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_fts_verify(payload)
+        return
+    if cmd == "fts-rebuild":
+        payload = cmd_fts_rebuild(args)
+        if getattr(args, "json", False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"[docs fts-rebuild] 已重建 {payload['rebuilt']} 篇文档的 FTS 索引（主表 + trigram）")
+        return
     print(f"[error] 未知 docs 子命令: {cmd}", file=sys.stderr)  # pragma: no cover - argparse 已收窄
     sys.exit(2)
 
@@ -106,5 +160,16 @@ def register_docs_subparser(sub: Any) -> None:
     p_gc.add_argument("--apply", action="store_true", help="实际删除孤儿文件（默认 dry-run）")
     p_gc.add_argument("--json", action="store_true", help="以 JSON 输出报告")
 
+    p_fts_verify = docs_sub.add_parser("fts-verify", help="校验 FTS 主表 + trigram 索引一致性（只读）")
+    p_fts_verify.add_argument("--json", action="store_true", help="以 JSON 输出报告")
+    p_fts_rebuild = docs_sub.add_parser("fts-rebuild", help="全量重建 FTS 主表 + trigram 索引")
+    p_fts_rebuild.add_argument("--json", action="store_true", help="以 JSON 输出报告")
 
-__all__ = ["cmd_gc", "docs_command", "register_docs_subparser"]
+
+__all__ = [
+    "cmd_fts_rebuild",
+    "cmd_fts_verify",
+    "cmd_gc",
+    "docs_command",
+    "register_docs_subparser",
+]

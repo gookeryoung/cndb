@@ -35,6 +35,8 @@ const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
 const DocumentTemplatesPage = lazy(() => import('@/pages/documents/DocumentTemplatesPage'))
+const DocumentContentTemplatesPage = lazy(() => import('@/pages/documents/DocumentContentTemplatesPage'))
+const DocumentGraphPage = lazy(() => import('@/pages/documents/DocumentGraphPage'))
 const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/DocumentsChangeRequestsPage'))
 const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssuesPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
@@ -184,6 +186,14 @@ function AuthenticatedApp() {
             {/* 文档模板（ADR 0152）：工作区级导出模板，入口在「质量检查」右侧 */}
             <Route path="templates" element={
               <Suspense fallback={<PageFallback />}><DocumentTemplatesPage /></Suspense>
+            } />
+            {/* 内容模板（需求 0169）：从模板新建文档用的 Markdown 正文骨架 */}
+            <Route path="content-templates" element={
+              <Suspense fallback={<PageFallback />}><DocumentContentTemplatesPage /></Suspense>
+            } />
+            {/* 知识图谱（需求 0168）：双链关系力导向图，独立 chunk */}
+            <Route path="graph" element={
+              <Suspense fallback={<PageFallback />}><DocumentGraphPage /></Suspense>
             } />
             <Route path=":docId" element={
               <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>

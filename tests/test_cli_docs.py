@@ -141,3 +141,39 @@ class TestRegisterDocsSubparser:
 
         plain = parser.parse_args(["docs", "gc"])
         assert plain.apply is False and plain.json is False
+
+
+class TestFtsCliCommands:
+    def test_fts_verify_and_rebuild(self, cli_env, monkeypatch, capsys):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from cndb.cli import docs as cli_docs
+        from cndb.plugins.documents.services.search import ensure_fts_schema
+
+        engine = create_engine(settings.DATABASE_URL)
+        session = sessionmaker(bind=engine)()
+        ensure_fts_schema(session)
+        session.close()
+        monkeypatch.setattr(cli_docs, "_get_session", sessionmaker(bind=engine))
+
+        cli_docs.docs_command(_ns(docs_cmd="fts-verify", json=False))
+        assert "[docs fts-verify]" in capsys.readouterr().out
+
+        cli_docs.docs_command(_ns(docs_cmd="fts-rebuild", json=False))
+        assert "[docs fts-rebuild]" in capsys.readouterr().out
+
+        cli_docs.docs_command(_ns(docs_cmd="fts-verify", json=True))
+        assert json.loads(capsys.readouterr().out)["consistent"] is True
+        engine.dispose()
+
+    def test_parser_registers_fts_options(self):
+        parser = argparse.ArgumentParser(prog="cndb")
+        sub = parser.add_subparsers(dest="command")
+        from cndb.cli.docs import register_docs_subparser
+
+        register_docs_subparser(sub)
+        args = parser.parse_args(["docs", "fts-verify", "--json"])
+        assert args.docs_cmd == "fts-verify" and args.json is True
+        args = parser.parse_args(["docs", "fts-rebuild", "--json"])
+        assert args.docs_cmd == "fts-rebuild" and args.json is True

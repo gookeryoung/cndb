@@ -89,6 +89,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("启动帮助图示刷新线程失败（图示退化为请求期懒重建）", exc_info=True)
 
+    # FTS 索引一致性后台校验（需求 0170）：每 6h 只读校验主表 + trigram 表，
+    # 发现漂移自动全量重建。校验只读、重建只改 FTS 虚拟表，不碰业务数据。
+    try:
+        from cndb.core.fts_refresh import start_fts_refresher
+
+        start_fts_refresher()
+    except Exception:
+        logger.warning("启动 FTS 校验线程失败（索引一致性退化为手动 cndb docs fts-verify）", exc_info=True)
+
     # PPTX → PDF 衍生件补扫 / 缓存治理（ADR 0129 P2）：仅配置了转换器时启动，
     # 默认启动延迟 5 分钟、6 小时一轮；桌面端 / 未部署 worker 时自动跳过。
     try:
@@ -99,6 +108,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         logger.warning("启动 PPTX PDF 补扫线程失败（PDF 预览仍可用，缓存治理退化为手动）", exc_info=True)
 
     yield
+
+    try:
+        from cndb.core.fts_refresh import stop_fts_refresher
+
+        stop_fts_refresher()
+    except Exception:
+        logger.warning("停止 FTS 校验线程失败（忽略）", exc_info=True)
 
     # 关闭阶段：先停帮助图示线程（无事务），再停 PDF 补扫、快照线程、回收导入任务。
     try:
