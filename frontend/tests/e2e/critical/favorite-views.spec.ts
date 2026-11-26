@@ -55,8 +55,9 @@ test.describe("主页「我的视图」收藏面板", () => {
       await expect(favoriteBtn).toHaveAttribute("aria-pressed", "true", {
         timeout: 10000,
       });
-      // 成功后端写入才跳转，避免主页读到旧偏好
-      await expect(page.getByText(/收藏工作区/).first()).toBeVisible({ timeout: 10000 });
+      // 等收藏成功的 message 提示，确认后端写入完成后再跳转，避免主页读到旧偏好。
+      // 注意这里是视图栏星标的成功提示「已收藏「视图名」」，不是主页的「收藏工作区」分组标题。
+      await expect(page.getByText(/已收藏「/).first()).toBeVisible({ timeout: 10000 });
 
       // 2. 主页右侧面板出现该收藏
       await page.goto("/w");

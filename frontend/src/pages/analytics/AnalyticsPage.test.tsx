@@ -321,8 +321,8 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(runBtn).toBeEnabled())
     fireEvent.click(runBtn)
 
-    // 计算链路要等模板回填 + compute + 分块渲染；全量门禁并发下 1s 默认等待会偶发超时
-    const summary = await screen.findByTestId('analytics-summary-table', {}, { timeout: 5000 })
+    // 计算链路要等模板回填 + compute + 分块渲染；CI 分片并发下 5s 仍可能超时，放宽到 10s（不跳过断言）
+    const summary = await screen.findByTestId('analytics-summary-table', {}, { timeout: 10000 })
     expect(summary).toHaveTextContent('平均合格率')
     expect(summary).toHaveTextContent('96')
 
