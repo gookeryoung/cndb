@@ -48,6 +48,7 @@ function renderWorkspaceList(initialRoute = '/w') {
             <Route path="/w/:wid/tables/:tid" element={<LocationProbe />} />
             <Route path="/w/:wid/documents" element={<LocationProbe />} />
             <Route path="/w/:wid/design" element={<LocationProbe />} />
+            <Route path="/teams/:tid" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>
       </ThemeProvider>
@@ -173,6 +174,28 @@ describe('WorkspaceList 列表渲染与交互', () => {
     // 引导入口与工具栏入口行为一致：打开同一个新建弹窗
     fireEvent.click(screen.getByTestId('empty-create-workspace'))
     expect(await screen.findByTestId('create-workspace-modal')).toBeVisible()
+  })
+
+  it('主页「我的团队」板块：列出所在团队并跳转团队页（2026-11-26 新增）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () => HttpResponse.json([])),
+      http.get('/api/v1/teams', () => HttpResponse.json([
+        {
+          id: 500, name: '研发部', slug: 'rd', description: '',
+          current_user_role: 'owner', member_count: 3, workspace_count: 2,
+        },
+      ])),
+    )
+    renderWorkspaceList()
+
+    const panel = await screen.findByTestId('home-teams-panel')
+    expect(within(panel).getByTestId('home-teams-count')).toHaveTextContent('1')
+    const row = within(panel).getByTestId('home-team-row-500')
+    expect(row).toHaveTextContent('研发部')
+    expect(row).toHaveTextContent('团队所有者 · 3 成员 · 2 工作区')
+
+    fireEvent.click(row)
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/teams/500'))
   })
 
   it('搜索关键字过滤行，无匹配时显示搜索空态', async () => {

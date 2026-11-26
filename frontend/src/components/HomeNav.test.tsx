@@ -1,7 +1,7 @@
 /** 主页导航 rail 单测（需求 0160 C1 / C4 / C9，A′ 口径）.
  *
- * 覆盖：只承载独有信息（新建 / 最近访问 / 全部工作区）、不重复顶栏与右栏入口、
- * 最近访问单行 label（含 title 提示）与「仍可读」过滤、当前项选中态、移动端变体。
+ * 覆盖：独有信息承载（新建 / 最近访问 / 我的团队 / 全部工作区）、不重复右栏与顶栏动作入口、
+ * 最近访问单行 label（含 title 提示）与「仍可读」过滤、团队条目跳转与选中态、当前项选中态、移动端变体。
  */
 
 import { describe, expect, it, beforeEach } from 'vitest'
@@ -17,7 +17,7 @@ import { RECENT_WORKSPACES_KEY } from '@/utils/recentWorkspaces'
 
 function LocationProbe() {
   const loc = useLocation()
-  return <span data-testid="location">{loc.pathname}{loc.search}</span>
+  return <span data-testid="location">{loc.pathname}{loc.search}{loc.hash}</span>
 }
 
 function renderNav(props: { mobile?: boolean } = {}, route = '/w') {
@@ -72,18 +72,59 @@ describe('HomeNav', () => {
     await waitFor(() =>
       expect(within(nav).getByTestId('home-nav-all')).toHaveTextContent('全部工作区1'))
     expect(within(nav).getByText('最近访问')).toBeVisible()
-    expect(within(nav).getByText('工作区')).toBeVisible()
+    expect(within(nav).getByText('我的工作区')).toBeVisible()
 
-    // 重复入口一律不渲染：团队（顶栏切换器）/ 收藏视图（右栏）/ 帮助（顶栏）/ 管理团队（= 点团队）
+    // 我的视图（2026-11-26 新增）：聚合入口 + 收藏计数；不重复右栏的逐视图行
+    expect(within(nav).getByTestId('home-nav-views')).toHaveTextContent('我的视图')
+    expect(within(nav).getByTestId('home-nav-views')).toHaveTextContent('1')
+    expect(within(nav).queryByTestId('home-nav-view-7')).toBeNull()
     // 动作入口也不渲染：新建工作区由页内工具栏与顶栏切换器底部承担，rail 只做导航
     expect(within(nav).queryByTestId('home-nav-create')).toBeNull()
     expect(within(nav).queryByText('新建工作区')).toBeNull()
     expect(within(nav).queryByTestId('home-nav-help')).toBeNull()
     expect(within(nav).queryByTestId('home-nav-manage-teams')).toBeNull()
-    expect(within(nav).queryByTestId('home-nav-view-7')).toBeNull()
-    expect(within(nav).queryByTestId('home-nav-team-500')).toBeNull()
-    expect(within(nav).queryByText('收藏视图')).toBeNull()
-    expect(within(nav).queryByText('团队')).toBeNull()
+    // 我的团队（2026-11-26 新增）：默认一个团队「研发部」
+    expect(within(nav).getByText('我的团队')).toBeVisible()
+    expect(within(nav).getByTestId('home-nav-team-500')).toHaveTextContent('研发部')
+  })
+
+  it('「我的团队」分区排在已收藏下方、工作区上方，行内标注角色', async () => {
+    renderNav()
+
+    const nav = await screen.findByTestId('sider-home')
+    // 等团队条目渲染完成再取分组标题，避免查询未返回时分组缺失
+    await within(nav).findByTestId('home-nav-team-500')
+    const order = Array.from(nav.querySelectorAll('.ant-menu-item-group-title')).map(el => el.textContent)
+    expect(order).toEqual(['我的团队', '我的工作区'])
+
+    const row = within(nav).getByTestId('home-nav-team-500')
+    expect(row.querySelector('.cn-home-nav-row-hint')).toHaveTextContent('团队所有者')
+    expect(row).toHaveAttribute('title', '研发部 · 团队所有者')
+  })
+
+  it('点击团队条目跳到 /teams/:tid', async () => {
+    renderNav({}, '/w')
+
+    await userEvent.click(await screen.findByTestId('home-nav-team-500'))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/teams/500'))
+  })
+
+  it('团队页（/teams/:tid?section=…）选中对应团队条目', async () => {
+    renderNav({}, '/teams/500?section=members')
+
+    await waitFor(() => {
+      expect(menuRow('home-nav-team-500')).toHaveClass('ant-menu-item-selected')
+      expect(menuRow('home-nav-all')).not.toHaveClass('ant-menu-item-selected')
+    })
+  })
+
+  it('团队接口失败时静默隐藏「我的团队」分组，其余导航可用', async () => {
+    server.use(http.get('/api/v1/teams', () => new HttpResponse(null, { status: 500 })))
+    renderNav()
+
+    expect(await screen.findByTestId('home-nav-all')).toBeVisible()
+    expect(screen.queryByText('我的团队')).toBeNull()
+    expect(screen.queryByTestId('home-nav-team-500')).toBeNull()
   })
 
   it('最近访问为单行 label：名称 + 相对时间，并有完整 title 提示', async () => {
@@ -144,7 +185,8 @@ describe('HomeNav', () => {
     const nav = await screen.findByTestId('sider-home')
     expect(nav).toHaveClass('cn-home-nav-mobile')
     expect(screen.getByTestId('home-nav-all')).toBeVisible()
-    expect(screen.queryByTestId('home-nav-team-500')).toBeNull()
+    // 内容与桌面一致：我的团队同样渲染
+    expect(await screen.findByTestId('home-nav-team-500')).toBeVisible()
   })
   it('「已收藏」分区排在最近访问下方，并标注所属团队（需求 0160 补充）', async () => {
     server.use(http.get('/api/v1/workspaces', () => HttpResponse.json([
@@ -181,10 +223,10 @@ describe('HomeNav', () => {
     expect(star).not.toBeNull()
     expect(star).toHaveStyle({ color: '#f59e0b' })
 
-    // 分区顺序：最近访问 → 已收藏 → 工作区
+    // 分区顺序：最近访问 → 已收藏 → 我的团队 → 我的工作区
     const nav = screen.getByTestId('sider-home')
     const order = Array.from(nav.querySelectorAll('.ant-menu-item-group-title')).map(el => el.textContent)
-    expect(order.slice(0, 3)).toEqual(['最近访问', '已收藏', '工作区'])
+    expect(order).toEqual(['最近访问', '已收藏', '我的团队', '我的工作区'])
   })
 
   it('没有收藏工作区时不渲染「已收藏」分区', async () => {
@@ -222,5 +264,25 @@ describe('HomeNav', () => {
     expect(await screen.findByTestId('home-nav-all')).toBeVisible()
     expect(screen.getByTestId('location')).toHaveTextContent('/w')
     expect(screen.queryByTestId('home-nav-pending')).toBeNull()
+  })
+
+  it('点击「我的视图」深链到 /w#my-views（定位右栏面板，2026-11-26 新增）', async () => {
+    server.use(http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([{
+      view_id: 7, name: '本周待办', view_type: 'grid', is_default: false, visibility: 'table',
+      filter_count: 0, sort_count: 0, table_id: 100, table_name: '任务', workspace_id: 10,
+      workspace_name: '测试工作区', updated_at: null,
+    }])))
+    renderNav({}, '/teams/500')
+
+    await userEvent.click(await screen.findByTestId('home-nav-views'))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w#my-views'))
+  })
+
+  it('没有收藏视图时不渲染「我的视图」分组', async () => {
+    renderNav()
+
+    expect(await screen.findByTestId('home-nav-all')).toBeVisible()
+    expect(screen.queryByText('我的视图')).toBeNull()
+    expect(screen.queryByTestId('home-nav-views')).toBeNull()
   })
 })

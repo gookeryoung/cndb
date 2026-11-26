@@ -10,9 +10,15 @@
  *    不写团队就分不清归属）；
  *  - 全部工作区：主页锚点，带工作区计数与**待办徽标**（ADR 0160 P2：修改申请 / 问题 / 待审链接
  *    的聚合计数，只读、只有总数，不含 id / 标题；失败静默隐藏徽标，不阻断主页）。
- * 明确**不放**（重复入口）：团队（顶栏 `ScopeSwitcher` 已按团队分组并带团队页入口）、
- * 收藏视图（右栏「我的视图」同一数据源）、帮助文档（顶栏常驻图标）、管理团队
- * （`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` 的 Navigate）；
+ *  - 我的团队：用户所在团队列表，点击进入 `/teams/:tid`（2026-11-26 用户确认新增侧栏入口；
+ *    此前口径是「团队入口只由顶栏 `ScopeSwitcher` 承担」，现修订为顶栏切换器与 rail 并存，
+ *    切换器仍提供跨团队分组视图，rail 提供常驻直达入口）。团队接口失败时静默隐藏该分组。
+ *  - 我的视图：收藏视图聚合入口（2026-11-26 用户确认新增，修订此前「收藏视图不进 rail」口径），
+ *    点击回主页并定位到右栏「我的视图」面板（`/w#my-views`）；无收藏时不渲染，计数与面板共用
+ *    `FAVORITE_VIEWS_QUERY_KEY`，同会话不重复请求。
+ *
+ * 明确**不放**（重复入口）：帮助文档（顶栏常驻图标）、
+ * 管理团队（`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` 的 Navigate）；
  * **新建工作区**也不放（2026-11-27 确认）：页内工具栏与顶栏切换器底部（`ScopeSwitcher`）
  * 已各有一处，rail 只做「去哪」的导航，不做动作入口。
  *
@@ -26,10 +32,12 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Menu } from 'antd'
 import type { MenuProps } from 'antd'
-import { ClockCircleOutlined, FolderOpenOutlined, StarFilled } from '@ant-design/icons'
-import { homeApi, workspaceApi } from '@/api'
-import type { Workspace } from '@/api'
+import { ClockCircleOutlined, ApartmentOutlined, FolderOpenOutlined, StarFilled, EyeOutlined } from '@ant-design/icons'
+import { homeApi, teamApi, workspaceApi } from '@/api'
+import { useFavoriteViews } from '@/hooks/useFavoriteViews'
+import type { Team, Workspace } from '@/api'
 import { normalizeModules, workspaceLandingSegment, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
+import { teamRoleLabel } from '@/utils/roleLabels'
 import { formatRelativeTime } from '@/utils/datetime'
 import { readRecentWorkspaces } from '@/utils/recentWorkspaces'
 import type { RecentWorkspaceEntry } from '@/utils/recentWorkspaces'
@@ -39,6 +47,13 @@ export interface HomeNavProps {
   mobile?: boolean
   /** 命中任一条目后的回调（移动端用来关闭抽屉） */
   onNavigate?: () => void
+}
+
+/** 当前项：`/w` 高亮全部工作区；`/teams/:tid`（含 `?section=`）高亮对应团队 */
+function selectedKey(pathname: string): string[] {
+  if (pathname === '/w') return ['/w']
+  const m = /^\/teams\/(\d+)/.exec(pathname)
+  return m ? [`/teams/${m[1]}`] : []
 }
 
 export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
@@ -60,7 +75,18 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
   })
   const pendingTotal = summary?.pending.total ?? 0
 
+  // 我的团队（2026-11-26 新增）：与 TeamPage / ScopeSwitcher 共用 ['teams']，同会话不重复请求；
+  // 失败静默隐藏分组，不阻断主页其它导航
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => teamApi.list(),
+    retry: false,
+  })
+
   const byId = useMemo(() => new Map(workspaces.map(ws => [String(ws.id), ws])), [workspaces])
+
+  // 我的视图（2026-11-26 新增）：与右栏面板共用同一 queryKey，无收藏时不渲染分组
+  const { data: favoriteViews = [] } = useFavoriteViews()
 
   /** 最近访问：只展示仍然可读的工作区（退出 / 被移除的条目自动隐去，不发额外请求） */
   const recentItems = useMemo(() => {
@@ -129,9 +155,49 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
     })
   }
 
+  if (favoriteViews.length > 0) {
+    items.push({
+      type: 'group',
+      label: '我的视图',
+      children: [{
+        key: '/w#my-views',
+        icon: <EyeOutlined />,
+        label: (
+          <span className="cn-home-nav-row" data-testid="home-nav-views" title="主页右栏收藏的视图">
+            <span className="cn-home-nav-row-name">我的视图</span>
+            <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
+              {favoriteViews.length}
+            </span>
+          </span>
+        ),
+      }],
+    })
+  }
+
+  if (teams.length > 0) {
+    items.push({
+      type: 'group',
+      label: '我的团队',
+      children: teams.map(team => ({
+        key: `/teams/${team.id}`,
+        icon: <ApartmentOutlined />,
+        label: (
+          <span
+            className="cn-home-nav-row"
+            data-testid={`home-nav-team-${team.id}`}
+            title={`${team.name} · ${teamRoleLabel(team.current_user_role)}`}
+          >
+            <span className="cn-home-nav-row-name">{team.name}</span>
+            <span className="cn-home-nav-row-hint">{teamRoleLabel(team.current_user_role)}</span>
+          </span>
+        ),
+      })),
+    })
+  }
+
   items.push({
     type: 'group',
-    label: '工作区',
+    label: '我的工作区',
     children: [{
       key: '/w',
       icon: <FolderOpenOutlined />,
@@ -168,7 +234,7 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
     >
       <Menu
         mode="inline"
-        selectedKeys={location.pathname === '/w' ? ['/w'] : []}
+        selectedKeys={selectedKey(location.pathname)}
         items={items}
         onClick={({ key }) => go(key)}
       />

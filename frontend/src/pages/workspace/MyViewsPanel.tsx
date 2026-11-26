@@ -9,7 +9,7 @@
  *  - 取消收藏走 `useToggleFavoriteView`（先读最新偏好再替换，避免用过期列表覆盖其他标签页的写入）。
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Empty, Skeleton, Tag, Tooltip, App as AntApp } from 'antd'
 import {
@@ -26,7 +26,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useFavoriteViews, useSetFavoriteViews, useToggleFavoriteView } from '@/hooks/useFavoriteViews'
 import type { FavoriteViewSummary } from '@/api'
 
@@ -192,11 +192,24 @@ export default function MyViewsPanel({
   teamByWorkspaceId?: Map<string, string>
 } = {}) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { message } = AntApp.useApp()
   const { data: views = [], isLoading } = useFavoriteViews()
   const setFavoriteViews = useSetFavoriteViews()
   const toggleFavorite = useToggleFavoriteView()
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const sectionRef = useRef<HTMLElement | null>(null)
+
+  // 侧栏「我的视图」深链（`/w#my-views`）：命中时把面板滚入可视区并短暂高亮
+  useEffect(() => {
+    if (location.hash !== '#my-views') return
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    const el = sectionRef.current
+    if (!el) return
+    el.classList.add('is-targeted')
+    const timer = window.setTimeout(() => el.classList.remove('is-targeted'), 1600)
+    return () => window.clearTimeout(timer)
+  }, [location.hash])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -248,7 +261,12 @@ export default function MyViewsPanel({
   }
 
   return (
-    <section className="cn-myviews-panel" data-testid="my-views-panel" aria-label="我的视图">
+    <section
+      ref={sectionRef}
+      className="cn-myviews-panel"
+      data-testid="my-views-panel"
+      aria-label="我的视图"
+    >
       <header className="cn-myviews-head">
         <StarFilled style={{ color: '#f59e0b' }} />
         <span className="cn-myviews-title">我的视图</span>

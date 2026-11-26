@@ -1751,6 +1751,73 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   background: var(--cn-bg-container);
 }
 
+/* 侧栏「我的视图」深链定位（/w#my-views）：短暂描边高亮后回落 */
+.cn-myviews-panel.is-targeted {
+  border-color: var(--cn-primary, #2563eb);
+  box-shadow: 0 0 0 3px var(--cn-mix-primary-10, rgba(37, 99, 235, 0.1));
+}
+
+/* ── 主页「我的团队」板块：与「我的视图」面板同款卡片外观，独占一行 ── */
+.cn-home-teams {
+  margin-top: var(--cn-space-xl);
+  padding: var(--cn-space-lg);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+}
+
+.cn-home-teams-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cn-home-teams-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  width: 100%;
+  padding: var(--cn-space-sm) var(--cn-space-xs);
+  border: 0;
+  border-radius: var(--cn-radius-md);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.cn-home-teams-row:hover {
+  background: var(--cn-bg-text-hover, rgba(0, 0, 0, 0.04));
+}
+
+.cn-home-teams-icon {
+  color: var(--cn-text-muted);
+}
+
+.cn-home-teams-name {
+  font-weight: 500;
+  color: var(--cn-text);
+}
+
+.cn-home-teams-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-home-teams-arrow {
+  color: var(--cn-text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.cn-home-teams-row:hover .cn-home-teams-arrow {
+  opacity: 1;
+}
+
 .cn-myviews-head {
   display: flex;
   align-items: center;

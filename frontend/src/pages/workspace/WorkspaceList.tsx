@@ -47,6 +47,7 @@ import {
   scopeOptions, type WorkspaceGroup, type WorkspaceScope,
 } from './workspaceGroups'
 import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
+import { teamRoleLabel } from '@/utils/roleLabels'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
 import MyViewsPanel from './MyViewsPanel'
@@ -496,6 +497,35 @@ export default function WorkspaceList() {
           <MyViewsPanel teamByWorkspaceId={teamByWorkspaceId} />
         </aside>
       </div>
+
+      {/* 我的团队板块（2026-11-26 新增）：主页内容区常驻团队入口，行内标注角色与规模 */}
+      {teams.length > 0 && (
+        <section className="cn-home-teams" data-testid="home-teams-panel" aria-label="我的团队">
+          <header className="cn-myviews-head">
+            <TeamOutlined />
+            <span className="cn-myviews-title">我的团队</span>
+            <span className="cn-myviews-count" data-testid="home-teams-count">{teams.length}</span>
+          </header>
+          <div className="cn-home-teams-list">
+            {teams.map(team => (
+              <button
+                key={team.id}
+                type="button"
+                className="cn-home-teams-row"
+                data-testid={`home-team-row-${team.id}`}
+                onClick={() => navigate(`/teams/${team.id}`)}
+              >
+                <span className="cn-home-teams-icon" aria-hidden><ApartmentOutlined /></span>
+                <span className="cn-home-teams-name">{team.name}</span>
+                <span className="cn-home-teams-hint">
+                  {teamRoleLabel(team.current_user_role)} · {team.member_count ?? 0} 成员 · {team.workspace_count ?? 0} 工作区
+                </span>
+                <ArrowRightOutlined className="cn-home-teams-arrow" aria-hidden />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 新建工作区 Modal — 扩展字段；条件渲染避免 Form.useForm 在未挂载时触发 warning */}
       {createOpen && (
