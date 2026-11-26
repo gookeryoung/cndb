@@ -1,9 +1,11 @@
 """文档内容服务：CRUD / 版本快照 / 乐观锁更新 / 分级存储.
 
 存储策略（按内容大小自动分级）：
-- ≤50KB：直接存 document_versions.content
+- ≤4KB：直接存 document_versions.content
+- 4KB–2MB：gzip 压缩后存 DB（content 字段存 base64 压缩串，前缀 ``gz:`` 标记）
 - >2MB：gzip 落文件系统 data/docs/{doc_id}/v{n}.md.gz，DB 存路径
-- 之间：zlib 压缩后存 DB（content 字段存 base64 压缩串，前缀 ``gz:`` 标记）
+
+历史版本按原策略写入的不带前缀原文仍可读（``load_content`` 自动识别）。
 
 并发控制：乐观锁 — 更新时 WHERE updated_at 匹配客户端持有版本，失配抛 ConflictError。
 """
@@ -34,7 +36,6 @@ from cndb.plugins.documents.models import (
     CONTENT_TYPE_MARKDOWN,
     DOC_STATUS_PUBLISHED,
     EXTERNAL_MIN_SIZE,
-    INLINE_MAX_SIZE,
     Document,
     DocumentChangeRequest,
     DocumentIssue,
@@ -58,6 +59,10 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 _COMPRESSED_PREFIX = "gz:"
+
+# 低于该体积直接内联原文：压缩收益不足以抵消解压与 base64 膨胀开销。
+# 4KB 起压缩可显著降低「长文档 × 多版本」的 DB / 备份体积（格式与读取路径不变）。
+RAW_INLINE_MAX_SIZE = 4 * 1024
 
 # 外存根目录：跟随数据库目录（data/docs）
 _DOCS_DIR = (
@@ -215,12 +220,12 @@ def version_count(db: Session, doc_id: int) -> int:
 def store_content_bytes(doc: Document, next_num: int, content: str, raw_size: int) -> str:
     """按分级存储策略落盘，返回 DB content 字段应存的值.
 
-    - ≤50KB：原文内联
-    - ≤2MB：gz base64 内联（``gz:`` 前缀）
+    - ≤4KB：原文内联
+    - 4KB–2MB：gz base64 内联（``gz:`` 前缀）
     - >2MB：gzip 写 ``data/docs/{doc_id}/v{n}.md.gz``，返回 ""；同时刷新
       ``doc.content_path``（仅作"最新外存版本"冗余标记，读取以版本号定位为准）
     """
-    if raw_size <= INLINE_MAX_SIZE:
+    if raw_size <= RAW_INLINE_MAX_SIZE:
         return content
     compressed = gzip.compress(content.encode("utf-8"), compresslevel=6)
     if raw_size > EXTERNAL_MIN_SIZE:

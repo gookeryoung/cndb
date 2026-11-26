@@ -144,8 +144,21 @@ class TestExternalContentStorage:
         assert _get_content(client, doc_api, auth_headers, doc["id"])["content"] == ""
 
     def test_inline_compressed_roundtrip(self, docs_dir):
-        """50KB~2MB 区间内联 gzip+base64 存储可无损读取."""
-        text = "中" * (content_service.INLINE_MAX_SIZE // 3 + 100)
+        """内联 gzip+base64 存储可无损读取（下限已由 50KB 下调到 4KB，见 `RAW_INLINE_MAX_SIZE`）."""
+        text = "中" * 3000  # ≈9KB：超过原文内联阈值，走 gzip 内联
+        stored = content_service.store_content_bytes(Document(id=4242), 1, text, len(text.encode("utf-8")))
+        assert stored.startswith("gz:")
+        assert content_service.decode_inline_compressed(stored) == text
+
+    def test_small_inline_stays_raw(self, docs_dir):
+        """≤4KB 直接内联原文（历史格式兼容，不加前缀）."""
+        text = "短正文" * 100
+        stored = content_service.store_content_bytes(Document(id=4242), 1, text, len(text.encode("utf-8")))
+        assert stored == text
+
+    def test_medium_inline_compressed_from_4k(self, docs_dir):
+        """4KB~50KB 也走 gzip 内联，减少多版本占用."""
+        text = "中" * 3000  # ~9KB
         stored = content_service.store_content_bytes(Document(id=4242), 1, text, len(text.encode("utf-8")))
         assert stored.startswith("gz:")
         assert content_service.decode_inline_compressed(stored) == text

@@ -209,3 +209,53 @@
   `vite.config.ts` → `pnpm typecheck` 不覆盖 `frontend/tests/e2e/**` 与 `playwright.config.ts`。
 - **`pytest.ini` 的 `--dist worksteal`**：仅在调用方传 `-n` 时生效（Makefile / CI 都传，裸 `pytest` 串行）；
   已在文件内加注释说明，未改动行为。
+
+## 六、版本存储与对象存储评估（2026-11-26）
+
+### 6.1 现状
+
+`documents/services/content.py` 每版全量快照，按体积分级（本次调整后）：
+
+| 区间 | 存储方式 | 备注 |
+|---|---|---|
+| ≤4KB | DB 原文内联 | 本次由 50KB 下调到 4KB，减少「长文档多版本」占用 |
+| 4KB–2MB | DB 内联 `gz:` + base64 | base64 有 33% 膨胀，但读取路径已有 |
+| >2MB | gzip 落 `data/docs/{doc_id}/v{n}.md.gz` | DB 只存路径 |
+
+空保存已按 `content_hash` 去重（`update_content` 内容未变不建版本），因此增量收益只在
+「大文档 + 多版本 + 小改动」场景。
+
+### 6.2 增量版本方案对比
+
+| 方案 | 收益 | 成本 / 风险 | 结论 |
+|---|---|---|---|
+| A 全量 + 压缩（现状 + 4KB 起压缩） | 零格式变更、读取最简单 | 存储随版本线性增长 | **当前采用** |
+| B diff 链 + 周期基线 | 长文档多版本节省最大 | 链式重建放大随机读；删除 / 备份 / 回滚需处理链完整性；任一环损坏影响后续版本 | 暂不实施 |
+| C 内容寻址去重（hash → 内容表） | 跨版本 / 跨文档重复内容只存一份；实现比链简单 | 需新表与 GC；删除引用计数；备份需重建索引 | 触发后优先评估 |
+
+**决策**：本期不实施 B / C，先做 A（4KB 起压缩）。触发条件（任一满足再做 ADR）：
+
+1. 任一工作区 `document_versions` 体积（`content` + 外存文件）> 2GB；
+2. 单文档版本重建（`load_content` 链式 / 外存读）P95 > 200ms；
+3. 备份包体积中 `document_versions` 占比 > 60% 且月增 > 20%。
+
+满足时优先 C（无链式放大、实现简单），B 仅作为 C 无法覆盖「逐字小改」时的补充。
+
+### 6.3 对象存储评估
+
+- 现状：附件与原件落本地 `UPLOAD_DIR/{workspace_id}`，单机 / 桌面部署足够；`files/services.resolve_workspace_file`
+  已是唯一路径解析入口。
+- 引入对象存储的代价：凭据与签名 URL、网络失败重试、测试替身、备份 / 恢复跨端一致性、私有部署默认无对象存储。
+- **决策**：暂不实施。触发条件：多实例共享附件目录、单工作区上传量 > 50GB、需要 CDN / 浏览器直传。
+  届时以 `resolve_workspace_file` 为适配点抽 storage backend，不改业务表。
+
+### 6.4 数据采集
+
+当前仓库无生产库，无法实测体积分布。上线后建议统计：
+
+```sql
+-- 各工作区版本存储量（content 列近似；外存需另计目录大小）
+SELECT d.workspace_id, COUNT(*) AS versions, SUM(LENGTH(v.content)) AS inline_bytes
+FROM documents_documentversion v JOIN documents_document d ON d.id = v.document_id
+GROUP BY d.workspace_id ORDER BY inline_bytes DESC;
+```
