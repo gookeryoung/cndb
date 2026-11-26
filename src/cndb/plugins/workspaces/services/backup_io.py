@@ -24,6 +24,19 @@ from cndb.plugins.workspaces.schemas import WorkspaceImportResponse
 
 logger = logging.getLogger(__name__)
 
+
+def _restored_template_ref(raw: Any) -> str | None:
+    """备份里的排版模板绑定：只保留 ``builtin:<key>``.
+
+    id 型 ref 指向备份来源工作区的模板行，导入到新工作区后必然悬空 → 清空；
+    builtin 是代码常量，可原样保留。旧备份缺该键 / 值非法 → None（ADR 0177 C8）。
+    """
+    text = str(raw or "").strip()
+    if text.startswith("builtin:") and len(text) > len("builtin:"):
+        return text
+    return None
+
+
 # ── 工作区整体导入导出 ──────────────────────────────
 
 
@@ -651,6 +664,8 @@ def _import_documents(
                 asset_file_key=asset_key,
                 asset_mime=dd.get("asset_mime") or "",
                 content_size=int(dd.get("content_size") or 0) if asset_key else None,
+                # ADR 0177 C8：id 型绑定跨工作区必悬空，只还原 builtin
+                export_template_ref=_restored_template_ref(dd.get("export_template_ref")),
             )
             # v9：软删除元数据还原（回收站文档随备份携带）
             if dd.get("is_deleted"):
@@ -1250,6 +1265,7 @@ def _import_content_templates(
                 description=str(item.get("description") or "")[:200],
                 icon=str(item.get("icon") or "")[:32],
                 sort_order=int(item.get("sort_order") or 0),
+                export_template_ref=_restored_template_ref(item.get("export_template_ref")),
                 created_by_id=current_user.id,
             )
         )

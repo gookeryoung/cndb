@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 新功能
+- **【文档】文档记不住自己的排版模板，每次导出都要重选；内容模板也只能记正文、带不出配套版式（ADR 0177 P3）**：① **文档级默认排版模板**：`documents_document.export_template_ref`（`String(64)` 可空、无外键、存量零迁移），写入口 `validate_export_template_ref` 校验（非法 / 跨区 400，`null` 清除），解析链变为「显式 `?template=` → 文档绑定 → 工作区默认 → 内置 `research`」，绑定失效（已删 / 悬空 / 跨区）只记 warning 并静默回落、导出不报错（H68）；编辑器「导出」菜单标出「（本文档默认）」，并新增「本文档默认排版模板」入口随时设置 / 清除，原件族不展示。② **内容模板绑定版式**：`documents_contenttemplate.export_template_ref`，模板编辑面板可下拉绑定一份导出模板，「从模板新建」把绑定写入新文档；创建副本继承绑定。③ **一致性与备份**：文档副本复制绑定、跨工作区移动清空 id 型引用（保留 `builtin:`）、备份两处清单各增字段（不升备份版本，旧包缺键按 `None`，导入只保留 `builtin:`）。迁移 `e0f1a2b3c4d6` 可 upgrade / downgrade 往返。新增 `tests/test_documents_template_binding.py` 20 例与 e2e `document-template-integration.spec.ts`；`make flow`、`make check-frontend` 全绿。
+
 ### 修复
 - **【测试 / CI】提交 b9524aec 后 GitHub Actions CI 连续两轮红，定位为两处回归／抖动并修复**：① E2E shard 2 的 `favorite-views.spec.ts` 把「视图栏星标成功提示」误改成「收藏工作区」分组标题断言——该标题只在主页工作区切换器出现，数据表页点星标后根本不可见，三次重试全红；恢复为等待成功提示「已收藏「视图名」」，确认后端写入后再跳主页（本地 `chromium-authed` 单用例 2 passed）。② Frontend Test shard 1 的 `AnalyticsPage.test.tsx`「运行分析」用例在分片并发下 5s 等待仍超时（CI 单次 7.3s，本地单文件 1.5s 必过），按既有口径把该处 `findByTestId` 窗口放宽到 10s，断言、阈值与用例范围零改动（本地 39 passed）。改动：`frontend/tests/e2e/critical/favorite-views.spec.ts`、`frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`CHANGELOG.md`。
 - **【测试 / 前端】CI 的 Frontend Test shard 2/3 红在 theme token 合规门禁（`--cn-mix-primary-10` 未注册 + 游离字重 / 间距字面量）**：`index.css` 三处字面量违反 `themeMix.test.ts` / `tokens.test.ts` 的源码扫描断言——① `.cn-myviews-panel.is-targeted` 的 `var(--cn-mix-primary-10, …)` 未登记在 `MIX_REGISTRY`（注册表只有 `primary-10-transparent`，同为 10% 主色 + 90% 透明），改用该已注册项；② `.cn-home-teams-name` 的 `font-weight: 500` 改用 `var(--cn-weight-medium)`（WEIGHT.medium=500）；③ `.cn-home-nav .ant-menu-item-divider` 的 `margin-inline: 20px` 改用现成 `var(--cn-space-2xl)`（=20px）。断言与阈值零改动。改动：`frontend/src/index.css`、`CHANGELOG.md`。

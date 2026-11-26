@@ -78,6 +78,7 @@ def create_content_template(
         description=payload.description,
         icon=payload.icon,
         sort_order=payload.sort_order,
+        export_template_ref=payload.export_template_ref,
     )
 
 
@@ -96,6 +97,11 @@ def _apply_update(
         description=payload.description,
         icon=payload.icon,
         sort_order=payload.sort_order,
+        export_template_ref=payload.export_template_ref,
+        # 「传 null = 清除绑定」靠字段是否出现在请求体判定（省略 = 不变）
+        clear_export_template_ref=(
+            "export_template_ref" in payload.model_fields_set and payload.export_template_ref is None
+        ),
     )
 
 

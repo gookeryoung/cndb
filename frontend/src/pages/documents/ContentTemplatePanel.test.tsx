@@ -31,6 +31,7 @@ const tpl = (id: number, name: string, body: string): ContentTemplateItem => ({
   description: '模板说明',
   icon: '📝',
   sort_order: id,
+  export_template_ref: null,
   created_by_id: 1,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -159,6 +160,18 @@ describe('文档内容模板页（需求 0169）', () => {
     renderPage()
     expect(await screen.findByText('还没有内容模板')).toBeInTheDocument()
     expect(screen.getByText('创建首个模板')).toBeInTheDocument()
+  })
+
+  it('绑定排版模板后保存携带 export_template_ref（ADR 0177 C6）', async () => {
+    renderPage()
+    expect(await screen.findByTestId('content-template-row-1')).toBeInTheDocument()
+
+    const select = screen.getByTestId('content-template-export-template')
+    fireEvent.mouseDown(select.querySelector('input')!)
+    fireEvent.click(await screen.findByText('内置 · 论文'))
+    fireEvent.click(screen.getByTestId('content-template-save'))
+
+    await waitFor(() => expect(savedPayload).toMatchObject({ export_template_ref: 'builtin:thesis' }))
   })
 })
 

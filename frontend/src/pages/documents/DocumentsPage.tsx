@@ -310,13 +310,15 @@ export default function DocumentsPage() {
 
   const createMut = useMutation({
     /** 从模板新建时直接传标题与正文（避免依赖 React state 异步更新） */
-    mutationFn: (override?: { title: string; content: string }) =>
+    mutationFn: (override?: { title: string; content: string; export_template_ref?: string | null }) =>
       documentsApi.create(workspaceId, {
         title: override?.title ?? newTitle.trim(),
         content: override ? override.content : createType === 'doc' ? newContent : '',
         // 从模板新建一定是文档：createType 可能残留上一次「新建文件夹」（弹窗取消不复位）
         is_folder: override ? false : createType === 'folder',
         parent_id: parentId,
+        // 内容模板的排版模板绑定随「从模板新建」写入文档（ADR 0177 C6）
+        export_template_ref: override?.export_template_ref ?? null,
       }),
     onSuccess: (doc, override) => {
       message.success(override || createType === 'doc' ? '文档已创建' : '文件夹已创建')
@@ -1676,11 +1678,19 @@ export default function DocumentsPage() {
                     className="cn-qc-row cn-qc-row--selectable"
                     onClick={() =>
                       !createMut.isPending &&
-                      createMut.mutate({ title: item.name, content: item.content_markdown })
+                      createMut.mutate({
+                        title: item.name,
+                        content: item.content_markdown,
+                        export_template_ref: item.export_template_ref,
+                      })
                     }
                     onKeyDown={e => {
                       if ((e.key === 'Enter' || e.key === ' ') && !createMut.isPending) {
-                        createMut.mutate({ title: item.name, content: item.content_markdown })
+                        createMut.mutate({
+                          title: item.name,
+                          content: item.content_markdown,
+                          export_template_ref: item.export_template_ref,
+                        })
                       }
                     }}
                   >

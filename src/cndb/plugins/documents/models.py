@@ -116,6 +116,10 @@ class Document(TimestampMixin, Base):
         ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
     )
 
+    # 文档级默认排版模板（ADR 0177 P3）：``builtin:<key>`` 或本工作区导出模板 id，
+    # NULL = 跟随工作区默认。不设外键：允许悬空引用，解析失败静默回落（D8 / I3）。
+    export_template_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # 大文件外存路径（NULL = 内容内联在 document_versions）
     content_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     content_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -494,6 +498,9 @@ class ContentTemplate(TimestampMixin, Base):
     content_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
     description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     icon: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    # 内容模板自带的排版模板（ADR 0177 P3）：「从模板新建」时写入新文档；
+    # 格式与文档绑定列同源，NULL = 不绑定，建出的文档跟随工作区默认。
+    export_template_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True

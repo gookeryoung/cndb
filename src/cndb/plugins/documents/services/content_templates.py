@@ -15,8 +15,17 @@ from cndb.core.errors import BadRequestError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import ContentTemplate
 from cndb.plugins.documents.services import templates_common
+from cndb.plugins.documents.services.export import templates as template_cfg
 
 _TABLE = ContentTemplate
+
+
+def _validated_ref(db: Session, workspace_id: int, ref: str | None) -> str | None:
+    """写入口校验绑定引用（ADR 0177 C7）：非法 / 跨区 → 400（ValueError 转 BadRequest）."""
+    try:
+        return template_cfg.validate_export_template_ref(db, workspace_id, ref)
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
 
 
 def list_content_templates(db: Session, workspace_id: int) -> dict[str, Any]:
@@ -48,11 +57,13 @@ def create_content_template(
     description: str = "",
     icon: str = "",
     sort_order: int = 0,
+    export_template_ref: str | None = None,
 ) -> dict[str, Any]:
     name = name.strip()
     if not name:
         raise BadRequestError("模板名称不能为空")
     templates_common.ensure_name_free(db, _TABLE, workspace_id, name)
+    bound_ref = _validated_ref(db, workspace_id, export_template_ref)
     row = ContentTemplate(
         workspace_id=workspace_id,
         name=name,
@@ -60,6 +71,7 @@ def create_content_template(
         description=description.strip(),
         icon=icon.strip(),
         sort_order=sort_order,
+        export_template_ref=bound_ref,
         created_by_id=user.id,
     )
     db.add(row)
@@ -78,6 +90,8 @@ def update_content_template(
     description: str | None = None,
     icon: str | None = None,
     sort_order: int | None = None,
+    export_template_ref: str | None = None,
+    clear_export_template_ref: bool = False,
 ) -> dict[str, Any]:
     row = _get(db, workspace_id, template_id)
     if name is not None:
@@ -94,6 +108,10 @@ def update_content_template(
         row.icon = icon.strip()
     if sort_order is not None:
         row.sort_order = sort_order
+    if clear_export_template_ref:
+        row.export_template_ref = None
+    elif export_template_ref is not None:
+        row.export_template_ref = _validated_ref(db, workspace_id, export_template_ref)
     templates_common.commit_or_conflict(db, row.name)
     db.refresh(row)
     return _serialize(row)
@@ -131,6 +149,7 @@ def duplicate_content_template(db: Session, workspace_id: int, user: User, templ
         description=source.description,
         icon=source.icon,
         sort_order=source.sort_order,
+        export_template_ref=source.export_template_ref,
         created_by_id=user.id,
     )
     db.add(row)
@@ -152,6 +171,7 @@ def _serialize(row: ContentTemplate) -> dict[str, Any]:
         "description": row.description,
         "icon": row.icon,
         "sort_order": row.sort_order,
+        "export_template_ref": row.export_template_ref,
         "created_by_id": row.created_by_id,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,

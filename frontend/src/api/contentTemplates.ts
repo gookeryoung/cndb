@@ -15,6 +15,8 @@ export interface ContentTemplateItem {
   description: string
   icon: string
   sort_order: number
+  /** 内容模板自带的排版模板（ADR 0177 C6）：`builtin:<key>` 或导出模板 id；null = 不绑定 */
+  export_template_ref: string | null
   created_by_id: number | null
   created_at: string | null
   updated_at: string | null
@@ -31,6 +33,7 @@ export interface ContentTemplateCreatePayload {
   description?: string
   icon?: string
   sort_order?: number
+  export_template_ref?: string | null
 }
 
 export type ContentTemplateUpdatePayload = Partial<ContentTemplateCreatePayload>

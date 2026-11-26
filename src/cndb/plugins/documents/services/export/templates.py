@@ -15,12 +15,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+_logger = logging.getLogger(__name__)
 
 # ── 取值域 ──
 
@@ -696,27 +699,57 @@ def default_template() -> ResolvedTemplate:
     return ResolvedTemplate(ref=template.ref, name=template.name, source="builtin", config=template.config)
 
 
-def resolve_export_template(db: Any, workspace_id: int, ref: str | None = None) -> ResolvedTemplate:
-    """唯一解析入口：显式 ref → 工作区默认 → 内置 ``research``（I1）.
+def validate_export_template_ref(db: Any, workspace_id: int, ref: str | None) -> str | None:
+    """写入口校验（ADR 0177 D9）：规范化引用并检查存在性与工作区归属.
+
+    Returns:
+        规范化后的 ``builtin:<key>`` / 数字字符串，或 ``None``（未绑定）。
 
     Raises:
-        ValueError: ref 格式非法。
-        NotFoundError: ref 指向的模板不存在 / 不属于该工作区（统一 404）。
+        ValueError: 格式非法、内置 key 未知或模板不属于该工作区（路由转 400）。
+    """
+    normalized = normalize_ref(ref)
+    if normalized is None:
+        return None
+    from cndb.core.errors import NotFoundError
+
+    try:
+        _resolve_normalized(db, workspace_id, normalized)
+    except NotFoundError as exc:
+        raise ValueError("模板不存在或不属于当前工作区") from exc
+    return normalized
+
+
+def resolve_export_template(
+    db: Any, workspace_id: int, ref: str | None = None, *, document_ref: str | None = None
+) -> ResolvedTemplate:
+    """唯一解析入口：显式 ref → 文档绑定 → 工作区默认 → 内置 ``research``（I1 / D9）.
+
+    ``document_ref`` 是文档 / 内容模板上的绑定：失败（格式非法 / 已删 / 跨工作区）
+    **记 warning 后静默跳过**，不阻断导出，也不向调用方泄露模板是否存在（I3）。
+
+    Raises:
+        ValueError: 显式 ref 格式非法。
+        NotFoundError: 显式 ref 指向的模板不存在 / 不属于该工作区（统一 404）。
     """
     from cndb.core.errors import NotFoundError
     from cndb.plugins.documents.models import ExportTemplate
 
     normalized = normalize_ref(ref)
     if normalized is not None:
-        builtin = resolve_builtin(normalized)
-        if builtin is not None:
-            return builtin
-        if normalized.startswith(_BUILTIN_PREFIX):
-            raise NotFoundError("模板不存在")
-        row = db.get(ExportTemplate, int(normalized))
-        if row is None or row.workspace_id != workspace_id:
-            raise NotFoundError("模板不存在")
-        return _resolved_from_row(row)
+        return _resolve_normalized(db, workspace_id, normalized)
+
+    if document_ref is not None:
+        try:
+            bound = normalize_ref(document_ref)
+            if bound is not None:
+                return _resolve_normalized(db, workspace_id, bound)
+        except (ValueError, NotFoundError):
+            _logger.warning(
+                "文档绑定的排版模板不可用，已回落工作区默认: ref=%r workspace=%s",
+                document_ref,
+                workspace_id,
+            )
 
     row = (
         db.query(ExportTemplate)
@@ -727,6 +760,22 @@ def resolve_export_template(db: Any, workspace_id: int, ref: str | None = None) 
     if row is not None:
         return _resolved_from_row(row)
     return default_template()
+
+
+def _resolve_normalized(db: Any, workspace_id: int, normalized: str) -> ResolvedTemplate:
+    """规范化引用 → 解析结果；未知内置 key / 跨区 / 已删统一 ``NotFoundError``."""
+    from cndb.core.errors import NotFoundError
+    from cndb.plugins.documents.models import ExportTemplate
+
+    builtin = resolve_builtin(normalized)
+    if builtin is not None:
+        return builtin
+    if normalized.startswith(_BUILTIN_PREFIX):
+        raise NotFoundError("模板不存在")
+    row = db.get(ExportTemplate, int(normalized))
+    if row is None or row.workspace_id != workspace_id:
+        raise NotFoundError("模板不存在")
+    return _resolved_from_row(row)
 
 
 def _resolved_from_row(row: Any) -> ResolvedTemplate:
@@ -876,4 +925,5 @@ __all__ = [
     "resolve_export_template",
     "sample_markdown",
     "validate_config",
+    "validate_export_template_ref",
 ]

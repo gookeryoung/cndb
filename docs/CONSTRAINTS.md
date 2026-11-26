@@ -89,6 +89,7 @@
 | H65 | 管理面天花板：`MANAGE_MEMBERS` / `EDIT_SETTINGS` 不得授予、转让或移除工作区 owner，不得放宽数据暴露（`visibility` / `allow_edit`）或变更团队归属；这些动作仅工作区 owner（`TRANSFER_OWNERSHIP` / `WIDEN_ACCESS` / `DELETE_WORKSPACE`）可执行 | `make test` | ADR 0161 I2 |
 | H66 | 私有工作区数据面恒为空：`visibility=private` 时非 owner 的 `data_role` 固定为 `None`，显式成员角色、`team_grant`、`public`、策略默认均不得放宽；资源层同样按此返回 404/403 | `make test` | ADR 0161 I3 |
 | H67 | 管理动作不得自授权：任何管理面操作不得使操作者本人获得其此前不具备的数据面权限（含把自己加入所辖工作区、放宽可见性后按团队成员身份取数） | `make test` | ADR 0161 I4 |
+| H68 | 文档级排版模板绑定解析失败必须静默回落（工作区默认 → 内置 `research`）：导出不得报错、不得区分「不存在 / 跨工作区 / 已删除」，写入口提交非法 ref 一律 400；绑定只影响 docx / pdf 视觉，不参与任何权限、可见性与列表过滤判定 | `make test` | ADR 0177 I3 |
 
 ## 发布与部署
 

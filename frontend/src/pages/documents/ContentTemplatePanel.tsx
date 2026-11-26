@@ -41,7 +41,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons'
 
-import { contentTemplateApi } from '@/api'
+import { contentTemplateApi, exportTemplateApi } from '@/api'
 import type { ContentTemplateItem } from '@/api'
 import CnListMeta from '@/components/CnListMeta'
 import MarkdownLiveEditor, { type MarkdownEditorMode } from '@/components/Document/MarkdownLiveEditor'
@@ -63,6 +63,7 @@ interface Draft {
   description: string
   icon: string
   sort_order: number
+  export_template_ref: string | null
   content_markdown: string
 }
 
@@ -71,6 +72,7 @@ const EMPTY_DRAFT: Draft = {
   description: '',
   icon: '',
   sort_order: 0,
+  export_template_ref: null,
   content_markdown: '',
 }
 
@@ -80,6 +82,7 @@ function toDraft(item: ContentTemplateItem): Draft {
     description: item.description ?? '',
     icon: item.icon ?? '',
     sort_order: item.sort_order ?? 0,
+    export_template_ref: item.export_template_ref ?? null,
     content_markdown: item.content_markdown ?? '',
   }
 }
@@ -96,6 +99,15 @@ export default function ContentTemplatePanel() {
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
   // 切换模板时若有未保存修改，先挂起目标条目并弹确认（受控 Modal，便于测试）
   const [pendingSwitch, setPendingSwitch] = useState<ContentTemplateItem | null>(null)
+
+  // 导出模板候选（ADR 0177 C6）：内容模板可绑定一份排版模板，
+  // 「从模板新建」时写入新文档，可作为文档级默认导出排版
+  const exportTemplatesQuery = useQuery({
+    queryKey: ['export-templates', Number(workspaceId)],
+    queryFn: () => exportTemplateApi.list(workspaceId),
+    staleTime: 0,
+  })
+  const exportTemplateOptions = exportTemplatesQuery.data?.items ?? []
 
   const templatesQuery = useQuery({
     queryKey: ['content-templates', workspaceId],
@@ -124,6 +136,7 @@ export default function ContentTemplatePanel() {
       it.description !== draft.description ||
       it.icon !== draft.icon ||
       it.sort_order !== draft.sort_order ||
+      it.export_template_ref !== draft.export_template_ref ||
       it.content_markdown !== draft.content_markdown
     )
   })
@@ -540,6 +553,18 @@ export default function ContentTemplatePanel() {
                       placeholder="排序"
                       value={draft.sort_order}
                       onChange={e => setDraft({ ...draft, sort_order: Number(e.target.value) || 0 })}
+                    />
+                    <Select
+                      allowClear
+                      style={{ flex: '2 1 220px' }}
+                      placeholder="排版模板（可选，决定导出 Word / PDF 的版式）"
+                      data-testid="content-template-export-template"
+                      value={draft.export_template_ref ?? undefined}
+                      options={exportTemplateOptions.map(item => ({
+                        value: item.ref,
+                        label: item.source === 'builtin' ? `内置 · ${item.name}` : `自定义 · ${item.name}`,
+                      }))}
+                      onChange={value => setDraft({ ...draft, export_template_ref: value ?? null })}
                     />
                   </div>
                 )}

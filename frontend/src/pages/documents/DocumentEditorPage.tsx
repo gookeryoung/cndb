@@ -543,6 +543,18 @@ export default function DocumentEditorPage() {
     },
   })
 
+  /** 设为 / 取消本文档默认排版模板（ADR 0177 C6）：null = 跟随工作区默认 */
+  const bindTemplateMut = useMutation({
+    mutationFn: (ref: string | null) =>
+      documentsApi.updateMeta(workspaceId, id, { export_template_ref: ref }),
+    onSuccess: (_result, ref) => {
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id] })
+      message.success(ref ? '已设为本文档默认排版模板' : '已恢复跟随工作区默认排版模板')
+    },
+    onError: (err: unknown) => message.error(err instanceof Error ? err.message : '设置失败'),
+  })
+
   /** 导出模板候选：默认 + 内置 + 自定义；key 形如 `<format>::<templateRef>` */
   const templateMenuChildren = (format: 'docx' | 'pdf') => {
     const templates = exportTemplatesQuery.data?.items ?? []
@@ -555,12 +567,36 @@ export default function DocumentEditorPage() {
       },
       ...templates.map(item => ({
         key: `${format}::${item.ref}`,
-        label: item.source === 'builtin' ? `内置 · ${item.name}` : item.name,
+        label: `${item.source === 'builtin' ? `内置 · ${item.name}` : item.name}${
+          docQuery.data?.export_template_ref === item.ref ? '（本文档默认）' : ''
+        }`,
       })),
     ]
   }
 
   /** 解析导出菜单 key：`<format>::<templateRef>`（模板可空 = 工作区默认模板） */
+  /** 本文档默认排版模板候选：清除绑定 + 全部模板（ADR 0177 C6） */
+  const bindingMenuChildren = () => {
+    const templates = exportTemplatesQuery.data?.items ?? []
+    const current = docQuery.data?.export_template_ref ?? null
+    return [
+      { key: 'bind::', label: `${current == null ? '✓ ' : ''}跟随工作区默认（清除绑定）` },
+      ...templates.map(item => ({
+        key: `bind::${item.ref}`,
+        label: `${current === item.ref ? '✓ ' : ''}${item.source === 'builtin' ? `内置 · ${item.name}` : item.name}`,
+      })),
+    ]
+  }
+
+  /** 导出菜单 key 分流：`bind::` 设默认，其余是导出 */
+  const runTemplateMenuKey = (key: string) => {
+    if (key.startsWith('bind::')) {
+      bindTemplateMut.mutate(key.slice('bind::'.length) || null)
+      return
+    }
+    runExport(key)
+  }
+
   const runExport = (key: string) => {
     const [format, template] = key.split('::')
     exportMut.mutate({ format: format as DocumentExportFormat, template: template || undefined })
@@ -1365,6 +1401,8 @@ export default function DocumentEditorPage() {
                 children: templateMenuChildren('pdf'),
               },
               { key: 'md::', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)' },
+              { type: 'divider' as const },
+              { key: 'bind', label: '本文档默认排版模板', children: bindingMenuChildren() },
             ],
           },
         ]),
@@ -1538,7 +1576,10 @@ export default function DocumentEditorPage() {
                 放映
               </Button>
             )}
-            <Dropdown trigger={['click']} menu={{ items: docMoreItems }}>
+            <Dropdown
+              trigger={['click']}
+              menu={{ items: docMoreItems, onClick: ({ key }) => runTemplateMenuKey(key) }}
+            >
               <Button icon={<MoreOutlined />} data-testid="doc-more-actions">更多</Button>
             </Dropdown>
             {!isAssetDoc && (
@@ -1715,8 +1756,10 @@ export default function DocumentEditorPage() {
                   children: templateMenuChildren('pdf'),
                 },
                 { key: 'md::', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)' },
+                { type: 'divider' as const },
+                { key: 'bind', label: '本文档默认排版模板', children: bindingMenuChildren() },
               ],
-              onClick: ({ key }) => runExport(key),
+              onClick: ({ key }) => runTemplateMenuKey(key),
             }}
           >
             <IconBtn icon={<DownloadOutlined />} label="导出" loading={exportMut.isPending} data-testid="doc-export-btn" />

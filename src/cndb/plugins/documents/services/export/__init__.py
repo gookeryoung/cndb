@@ -31,6 +31,7 @@ from cndb.plugins.documents.services.export.templates import (
     normalize_ref,
     resolve_export_template,
     validate_config,
+    validate_export_template_ref,
 )
 
 FORMAT_MARKDOWN = "md"
@@ -175,4 +176,5 @@ __all__ = [
     "resolve_export_template",
     "rewrite_markdown_table_refs",
     "validate_config",
+    "validate_export_template_ref",
 ]

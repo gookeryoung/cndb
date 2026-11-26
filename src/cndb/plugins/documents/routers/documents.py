@@ -290,6 +290,15 @@ def create_document(
 ) -> dict[str, Any]:
     """创建文档或文件夹（editor+）。"""
     services.content.require_editor(db, workspace_id, current_user)
+    # 写入口校验绑定引用（ADR 0177 C7）：非法 / 跨区 → 400；文件夹没有导出物
+    if payload.is_folder and payload.export_template_ref is not None:
+        raise BadRequestError("文件夹不支持绑定排版模板")
+    try:
+        export_template_ref = services.export.validate_export_template_ref(
+            db, workspace_id, payload.export_template_ref
+        )
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
     doc = services.content.create_document(
         db,
         workspace_id,
@@ -301,6 +310,7 @@ def create_document(
         status=payload.status,
         tag_ids=payload.tag_ids,
         sort_order=payload.sort_order,
+        export_template_ref=export_template_ref,
     )
     _audit_document(
         db,
@@ -887,7 +897,9 @@ def export_document(
     resolved_template = None
     if normalized != services.export.FORMAT_MARKDOWN:
         try:
-            resolved_template = services.export.resolve_export_template(db, workspace_id, template)
+            resolved_template = services.export.resolve_export_template(
+                db, workspace_id, template, document_ref=doc.export_template_ref
+            )
         except ValueError as exc:
             raise BadRequestError(str(exc)) from exc
     chart_assets: dict[str, bytes] = {}
@@ -1353,6 +1365,16 @@ def update_document_meta(
         doc.status = payload.status
     if payload.sort_order is not None:
         doc.sort_order = payload.sort_order
+    if "export_template_ref" in payload.model_fields_set:
+        # null = 清除绑定、回到工作区默认；文件夹没有导出物（ADR 0177 C6 / 边界 1）
+        if doc.is_folder:
+            raise BadRequestError("文件夹不支持绑定排版模板")
+        try:
+            doc.export_template_ref = services.export.validate_export_template_ref(
+                db, workspace_id, payload.export_template_ref
+            )
+        except ValueError as exc:
+            raise BadRequestError(str(exc)) from exc
     if payload.parent_id is not None and payload.parent_id != doc.parent_id:
         # 校验复用批量移动的同一实现（services.content.move_target_reason）
         reason = services.content.move_target_reason(db, workspace_id, doc, payload.parent_id)

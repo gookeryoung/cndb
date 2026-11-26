@@ -319,6 +319,11 @@ def move_nodes_to_workspace(
         # ── 2) 子树本体 ──
         for doc in nodes:
             doc.workspace_id = target_workspace_id
+            # 模板绑定：id 型引用属于源工作区，移动后必然悬空 → 清空；
+            # builtin:<key> 是代码常量，跨工作区仍然有效，保留（ADR 0177 C8）
+            ref = doc.export_template_ref or ""
+            if ref and not ref.startswith("builtin:"):
+                doc.export_template_ref = None
             doc.updated_at = now
             doc.updated_by_id = actor.id
         sort_order = (

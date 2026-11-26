@@ -28,6 +28,8 @@ export interface DocumentItem {
   status: 'draft' | 'published' | 'archived'
   is_folder: boolean
   sort_order: number
+  /** 文档级默认排版模板（ADR 0177 C6）：`builtin:<key>` 或导出模板 id；null = 跟随工作区默认 */
+  export_template_ref?: string | null
   content_size: number
   created_at: string
   updated_at: string

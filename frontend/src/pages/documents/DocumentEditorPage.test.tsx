@@ -2368,3 +2368,40 @@ describe('DocumentEditorPage 专注模式（需求 0096）', () => {
         expect(document.body.classList.contains('cn-doc-focus')).toBe(false)
     })
 })
+
+
+it('导出菜单可把排版模板设为本文档默认（PATCH export_template_ref）', async () => {
+    let patchBody: Record<string, unknown> | null = null
+    server.use(
+        http.get('/api/v1/workspaces/:wid/documents/templates', () =>
+            HttpResponse.json({
+                items: [
+                    {
+                        ref: 'builtin:thesis',
+                        name: '论文',
+                        description: '',
+                        source: 'builtin',
+                        is_default: false,
+                        config: {},
+                        updated_at: null,
+                    },
+                ],
+                total: 1,
+                default_ref: 'builtin:research',
+            }),
+        ),
+        http.patch('/api/v1/workspaces/:wid/documents/:docId', async ({ request }) => {
+            patchBody = (await request.json()) as Record<string, unknown>
+            return HttpResponse.json({ ...mockDocuments[1], export_template_ref: 'builtin:thesis' })
+        }),
+    )
+
+    renderEditor()
+    await screen.findByRole('heading', { level: 4, name: '需求说明' })
+
+    fireEvent.click(screen.getByTestId('doc-export-btn'))
+    fireEvent.mouseEnter(await screen.findByText('本文档默认排版模板'))
+    fireEvent.click(await screen.findByText('内置 · 论文'))
+
+    await waitFor(() => expect(patchBody).toMatchObject({ export_template_ref: 'builtin:thesis' }))
+})

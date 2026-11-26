@@ -46,6 +46,7 @@ describe('从内容模板新建文档（需求 0169 C4）', () => {
               description: '周会用',
               icon: '📝',
               sort_order: 0,
+              export_template_ref: 'builtin:thesis',
               created_by_id: 1,
               created_at: null,
               updated_at: null,
@@ -75,6 +76,7 @@ describe('从内容模板新建文档（需求 0169 C4）', () => {
       expect(createdPayload).toMatchObject({
         title: '会议纪要',
         content: '# 会议纪要\n\n## 议题',
+        export_template_ref: 'builtin:thesis',
         is_folder: false,
       })
     })

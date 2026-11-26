@@ -20,6 +20,9 @@ class DocumentCreate(BaseModel):
     status: str = Field(default="draft", pattern="^(draft|published|archived)$")
     tag_ids: list[int] = Field(default_factory=list)
     sort_order: int = 0
+    sort_order: int = 0
+    # 文档级默认排版模板（ADR 0177 C6）：「从模板新建」透传内容模板上的绑定
+    export_template_ref: str | None = Field(default=None, max_length=64)
 
 
 class DocumentDuplicateRequest(BaseModel):
@@ -36,6 +39,9 @@ class DocumentUpdate(BaseModel):
     status: str | None = Field(default=None, pattern="^(draft|published|archived)$")
     sort_order: int | None = None
     tag_ids: list[int] | None = None  # None=不变；[] = 清空
+    tag_ids: list[int] | None = None  # None=不变；[] = 清空
+    # 文档级默认排版模板（ADR 0177 C6）：传 null = 清除绑定；不传 = 不变
+    export_template_ref: str | None = Field(default=None, max_length=64)
 
 
 class DocumentAiActionRequest(BaseModel):
@@ -111,6 +117,8 @@ class DocumentOut(BaseModel):
     status: str
     is_folder: bool
     sort_order: int
+    # 文档级默认排版模板（ADR 0177 C6）：NULL = 跟随工作区默认
+    export_template_ref: str | None = None
     content_size: int
     created_at: dt.datetime
     updated_at: dt.datetime
@@ -408,6 +416,8 @@ class ContentTemplateCreate(BaseModel):
     description: str = Field(default="", max_length=200)
     icon: str = Field(default="", max_length=32)
     sort_order: int = 0
+    # 内容模板自带的排版模板（ADR 0177 C6）：非法 / 跨区 400
+    export_template_ref: str | None = Field(default=None, max_length=64)
 
 
 class ContentTemplateUpdate(BaseModel):
@@ -420,6 +430,9 @@ class ContentTemplateUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=200)
     icon: str | None = Field(default=None, max_length=32)
     sort_order: int | None = None
+    sort_order: int | None = None
+    # 传 null = 清除绑定；不传 = 不变（ADR 0177 C6）
+    export_template_ref: str | None = Field(default=None, max_length=64)
 
 
 __all__ = [

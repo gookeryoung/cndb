@@ -494,6 +494,8 @@ def _build_backup(
                 # 原件族（ADR 0025）：file_key 指向 uploads 条目
                 "asset_file_key": d.asset_file_key,
                 "asset_mime": d.asset_mime,
+                # 文档级排版模板绑定（ADR 0177 C8）：不升备份版本，旧包缺键按 None
+                "export_template_ref": d.export_template_ref,
                 "content": "" if d.is_folder else load_content(latest_version(db, d.id), d),
                 "tag_ids": tag_links.get(d.id, []),
                 "pinned": d.id in pinned_doc_ids,
@@ -666,6 +668,8 @@ def _build_backup(
             "description": t.description or "",
             "icon": t.icon or "",
             "sort_order": int(t.sort_order or 0),
+            # 内容模板自带的排版模板（ADR 0177 C8）
+            "export_template_ref": t.export_template_ref,
         }
         for t in content_template_rows
     ]
