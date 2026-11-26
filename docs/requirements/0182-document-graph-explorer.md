@@ -80,6 +80,10 @@
 
 后端 `tests/test_documents_link_graph.py` 5 → 9 例；前端 `DocumentGraphPage.test.tsx` 重写为 21 例、`DocumentEditorPage.test.tsx` 94 例（+1）。
 
+E2E `frontend/tests/e2e/critical/document-graph.spec.ts`（4 例，`mode: "serial"`）：全图统计与图例、局部图深链与清回全图、「只看断链」保留源节点、单击选中 / 双击进入文档。三个踩坑已写进用例注释：① 命中元素必须用节点标签 `<text>`——echarts SVG 里边上的箭头也是 `path[fill]`，按图元取第一个会点到箭头；② 统计断言用页面自身那次 `links/graph` 响应，不另发接口请求，否则两次请求之间新增的文档会让「接口 9 个 / 页面 11 个」错位；
+③ 清掉 `?focus=` 不会重新请求（图谱数据由 React Query 按 `workspaceId` 缓存），
+所以「回到全图」只断言中心标签消失、URL 清空、显示数回升，实测按初始总数等值断言会假失败。
+
 ## 未决问题
 
 - [x] 范围：C1–C10 全做（用户「都按建议，开始」）
