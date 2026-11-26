@@ -1,7 +1,8 @@
 """文档知识图谱聚合（需求 0168）测试.
 
 覆盖：节点/边结构、断链虚拟节点、自环过滤与边去重、歧义标记、
-H33 可见性过滤、C6 节点上限与 30s 缓存（含 reset）。
+H33 可见性过滤、C6 节点上限与 30s 缓存（含 reset）、
+需求 0182 C1 写路径缓存失效与 C2 截断丢边计数。
 """
 
 from __future__ import annotations
@@ -115,14 +116,120 @@ class TestLinkGraph:
         first = build_link_graph(db, wid, owner, max_nodes=2)
         assert first["truncated"] is True
         assert len([n for n in first["nodes"] if not n["broken"]]) == 2
-        # 同 key 再调：命中缓存（改动数据库也不影响）
+        # 同参再调：命中缓存（无写入时同样是同一个对象）
+        assert build_link_graph(db, wid, owner, max_nodes=2) is first
+        # 需求 0182 C1：写路径会失效缓存，不再靠 TTL 等自然过期
         _create(client, wid, auth_headers, "新增文档", "正文")
         second = build_link_graph(db, wid, owner, max_nodes=2)
-        assert second is first
+        assert second is not first
+        assert second["total"] == 4
+        # 不同 max_nodes 是不同的缓存槽：不能被截断版结果串味
+        assert build_link_graph(db, wid, owner)["truncated"] is False
+
+    def test_cache_invalidated_by_writes(self, client, auth_headers, db):
+        """需求 0182 C1：写路径必须让图谱缓存失效，不能靠 30s TTL 等自然过期."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.documents.services.content import build_link_graph
+
+        wid = _ws(client, auth_headers, "图谱缓存失效")
+        target = _create(client, wid, auth_headers, "目标文档", "正文")
+        owner = db.query(User).filter(User.username == "testuser").first()
+        assert owner is not None
         _reset_cache()
-        third = build_link_graph(db, wid, owner, max_nodes=2)
-        assert third is not first
-        assert third["total"] == 4
+
+        before = build_link_graph(db, wid, owner)
+        assert all(edge["target"] != target["id"] for edge in before["edges"])
+
+        # 新建文档引用目标：缓存必须失效，否则仍是旧图
+        source = _create(client, wid, auth_headers, "引用方", "[[目标文档]]")
+        after_create = build_link_graph(db, wid, owner)
+        assert (source["id"], target["id"]) in {(e["source"], e["target"]) for e in after_create["edges"]}
+
+        # 改正文（PUT content）：边消失后同样要立刻反映
+        r = client.put(
+            API.format(wid=wid) + f"/{source['id']}/content",
+            json={"content": "正文不再引用"},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        after_update = build_link_graph(db, wid, owner)
+        assert all(edge["source"] != source["id"] for edge in after_update["edges"])
+
+    def test_cache_invalidated_by_rename_and_delete(self, client, auth_headers, db):
+        """需求 0182 C1：改标题 / 删除也会改变边，同样要失效."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.documents.services.content import build_link_graph
+
+        wid = _ws(client, auth_headers, "图谱改标题")
+        target = _create(client, wid, auth_headers, "旧标题", "正文")
+        source = _create(client, wid, auth_headers, "引用方", "[[旧标题]]")
+        owner = db.query(User).filter(User.username == "testuser").first()
+        assert owner is not None
+        _reset_cache()
+        assert any(e["target"] == target["id"] for e in build_link_graph(db, wid, owner)["edges"])
+
+        r = client.patch(API.format(wid=wid) + f"/{target['id']}", json={"title": "新标题"}, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        renamed = build_link_graph(db, wid, owner)
+        assert any(e["target"] == target["id"] for e in renamed["edges"]) is False
+        assert any(e["broken"] and e["raw"] == "[[旧标题]]" for e in renamed["edges"])
+
+        # 删除被引用方：节点消失，指向它的边变断链
+        r = client.delete(API.format(wid=wid) + f"/{target['id']}", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        deleted = build_link_graph(db, wid, owner)
+        ids = {n["id"] for n in deleted["nodes"]}
+        assert target["id"] not in ids
+        assert source["id"] in ids
+
+    def test_edges_out_of_view_counted_when_truncated(self, client, auth_headers, db):
+        """需求 0182 C2：被截断丢弃的边要单独计数，不能混进断链."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.documents.services.content import build_link_graph
+
+        wid = _ws(client, auth_headers, "图谱窗口外")
+        # 三个文档：引用方 → 目标文档；目标先建（updated_at 更早），max_nodes=2 时被截掉
+        target = _create(client, wid, auth_headers, "窗口外目标", "正文")
+        _create(client, wid, auth_headers, "中间文档", "正文")
+        source = _create(client, wid, auth_headers, "引用方", "[[窗口外目标]]")
+        owner = db.query(User).filter(User.username == "testuser").first()
+        assert owner is not None
+        _reset_cache()
+
+        payload = build_link_graph(db, wid, owner, max_nodes=2)
+        assert payload["truncated"] is True
+        assert payload["edges_out_of_view"] == 1
+        # 不能同时生成断链节点：目标其实存在，只是不在窗口里
+        assert not [n for n in payload["nodes"] if n["broken"]]
+        assert not [e for e in payload["edges"] if e["source"] == source["id"] and e["broken"]]
+
+        full = build_link_graph(db, wid, owner)
+        assert full["truncated"] is False
+        assert full["edges_out_of_view"] == 0
+        assert any(e["target"] == target["id"] for e in full["edges"])
+
+    def test_edges_out_of_view_ignores_invisible_documents(self, client, auth_headers, db):
+        """H33：窗口外计数不能泄漏「存在但不可见」的草稿（需求 0182 C2）."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.documents.services.content import build_link_graph
+
+        wid = _ws(client, auth_headers, "图谱窗口外可见性")
+        _create(client, wid, auth_headers, "他人草稿", "草稿正文")
+        _create(client, wid, auth_headers, "已发布", "公开正文 [[他人草稿]]", status="published")
+
+        viewer = User(username="graph_viewer2", nickname="graph_viewer2")
+        viewer.set_password("passw0rd")
+        db.add(viewer)
+        db.flush()
+        from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
+
+        db.add(WorkspaceMember(workspace_id=wid, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        _reset_cache()
+
+        payload = build_link_graph(db, wid, viewer, max_nodes=1)
+        assert payload["edges_out_of_view"] == 0
+        assert {n["title"] for n in payload["nodes"]} == {"已发布"}
 
     def test_folder_node_marked(self, client, auth_headers):
         """文件夹也是节点（链接目标可为文件夹），前端据此跳目录列表而非编辑器."""

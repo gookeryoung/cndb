@@ -361,6 +361,12 @@ def move_nodes_to_workspace(
                 logger.warning("回滚清理已复制文件失败: %s", key, exc_info=True)
         raise
 
+    # 跨工作区移动改变了两个工作区的节点集合（需求 0182 C1）
+    from cndb.plugins.documents.services.content import invalidate_link_graph_cache
+
+    invalidate_link_graph_cache(source_workspace_id)
+    invalidate_link_graph_cache(target_workspace_id)
+
     # ── 4) 提交成功：删源文件 + 重建检索 + 两侧统计与事件（失败只告警） ──
     for key in copied:
         try:

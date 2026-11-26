@@ -1,14 +1,17 @@
-/** 文档知识图谱页测试（需求 0168 C4/C5/C6）.
+/** 文档知识图谱页测试（需求 0168 C4/C5/C6 + 需求 0182 C3/C5–C9）.
  *
- * 覆盖：节点/边 option 结构（含虚线断链与歧义提示）、点击节点跳转、
- * 缩放/复位控件、超 500 截断提示。echarts 用轻量 mock，断言 option 纯结构。
+ * 覆盖：节点/边 option 结构（含虚线断链与歧义提示）、单击选中 + 双击进入文档、
+ * 局部图 `?focus=&depth=`、筛选栏、图例显隐、Inspector、孤岛/枢纽清单、
+ * 力参数面板、标签按倍率淡化、缩放/复位控件、超 500 截断提示。
+ * echarts 用轻量 mock，断言 option 纯结构与事件语义。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
-import DocumentGraphPage from './DocumentGraphPage'
+import DocumentGraphPage, { collectNeighborhood, filterGraph, findHubs, findIsolated } from './DocumentGraphPage'
+import type { GraphEdge, GraphNode } from '@/api/documents'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
 
@@ -26,6 +29,7 @@ const echartsMock = vi.hoisted(() => {
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: echartsMock.init }))
 vi.mock('echarts/charts', () => ({ GraphChart: {} }))
 vi.mock('echarts/components', () => ({ TooltipComponent: {} }))
+vi.mock('echarts/features', () => ({ LabelLayout: {} }))
 vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
 
 const graphPayload = {
@@ -48,18 +52,44 @@ function LocationProbe() {
   return <div data-testid="loc">{`${location.pathname}${location.search}`}</div>
 }
 
-function renderPage() {
+function renderPage(route = '/w/10/documents/graph') {
   return renderProviders(
     <Routes>
       <Route path="/w/:wid/documents/graph" element={<DocumentGraphPage />} />
       <Route path="/w/:wid/documents" element={<LocationProbe />} />
       <Route path="/w/:wid/documents/:docId" element={<div data-testid="editor-stub" />} />
     </Routes>,
-    { route: '/w/10/documents/graph', initialAuth: { user: mockUser, token: 'fake-token' } },
+    { route, initialAuth: { user: mockUser, token: 'fake-token' } },
   )
 }
 
-describe('知识图谱页（需求 0168）', () => {
+/** 取某个 echarts 事件的最新一次回调 */
+function handlerOf(event: string) {
+  const found = echartsMock.on.mock.calls.filter((c: unknown[]) => c[0] === event).at(-1)
+  return found?.[1] as ((p: unknown) => void) | undefined
+}
+
+/** 派发节点点击（value 是文档 id，is_folder 区分文件夹） */
+function clickNode(docId: number, isFolder = false) {
+  const handler = handlerOf('click')
+  act(() => handler?.({ dataType: 'node', data: { value: docId, is_folder: isFolder } }))
+}
+
+function doubleClickNode(docId: number, isFolder = false) {
+  const handler = handlerOf('dblclick')
+  act(() => handler?.({ dataType: 'node', data: { value: docId, is_folder: isFolder } }))
+}
+
+/** 最近一次「完整图」option：标签显隐是单独一次 setOption 下发的，只带 label 没有 data */
+function lastGraphOption() {
+  for (let i = echartsMock.setOption.mock.calls.length - 1; i >= 0; i -= 1) {
+    const series = echartsMock.setOption.mock.calls[i][0]?.series?.[0]
+    if (series && Array.isArray(series.data)) return series
+  }
+  return undefined
+}
+
+describe('知识图谱页（需求 0168 / 0182）', () => {
   beforeEach(() => {
     echartsMock.init.mockClear()
     echartsMock.setOption.mockClear()
@@ -96,29 +126,25 @@ describe('知识图谱页（需求 0168）', () => {
     expect(tooltip).toContain('同名多文档')
   })
 
-  it('点击文档节点进编辑器、文件夹节点进目录列表，缩放与复位调用 dispatchAction', async () => {
+  it('单击只选中、双击才进入文档；文件夹与断链的跳转口径', async () => {
     renderPage()
     await screen.findByTestId('document-graph-canvas')
     await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
-    const clickHandler = echartsMock.on.mock.calls.find((c: unknown[]) => c[0] === 'click')?.[1] as
-      | ((p: { dataType: string; data: { value: number; is_folder?: boolean } }) => void)
-      | undefined
-    expect(clickHandler).toBeTypeOf('function')
 
-    // 缩放/复位需在图谱页仍在挂载时触发
-    fireEvent.click(screen.getByTestId('graph-zoom-in'))
-    fireEvent.click(screen.getByTestId('graph-zoom-out'))
-    fireEvent.click(screen.getByTestId('graph-reset'))
-    expect(echartsMock.dispatchAction).toHaveBeenCalledTimes(3)
+    // 需求 0182 C6：单击是「选中」，不能把用户点走
+    clickNode(2)
+    expect(await screen.findByTestId('graph-inspector-detail')).toBeInTheDocument()
+    expect(screen.getByTestId('graph-inspector-title')).toHaveTextContent('乙')
+    expect(screen.queryByTestId('editor-stub')).not.toBeInTheDocument()
 
-    act(() => clickHandler?.({ dataType: 'node', data: { value: 2 } }))
+    doubleClickNode(2)
     expect(await screen.findByTestId('editor-stub')).toBeInTheDocument()
 
-    act(() => clickHandler?.({ dataType: 'node', data: { value: 3, is_folder: true } }))
+    doubleClickNode(3, true)
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents?parent=3'))
 
-    // 断链虚拟节点（负 id）不跳转：位置保持在上一次跳转结果
-    clickHandler?.({ dataType: 'node', data: { value: -123 } })
+    // 断链虚拟节点（负 id）即使双击也不跳转
+    doubleClickNode(-123)
     expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents?parent=3')
   })
 
@@ -152,22 +178,24 @@ describe('知识图谱页（需求 0168）', () => {
     )
     renderPage()
     expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
-    expect(screen.getByText(/节点 0 · 关系 0/)).toBeInTheDocument()
-    await waitFor(() => expect(echartsMock.setOption).toHaveBeenCalled())
-    const option = echartsMock.setOption.mock.calls.at(-1)?.[0]
-    expect(option.series[0].data).toEqual([])
-    expect(option.series[0].links).toEqual([])
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 0 / 共 0 个节点 · 关系 0'),
+    )
+    await waitFor(() => expect(lastGraphOption()?.data).toEqual([]))
+    expect(lastGraphOption()?.links).toEqual([])
   })
 
-  it('超出节点上限时显示截断提示', async () => {
+  it('超出节点上限时显示截断提示，并区分「指向图外的关系」与断链（C2）', async () => {
     server.use(
       http.get('/api/v1/workspaces/:wid/documents/links/graph', () =>
-        HttpResponse.json({ ...graphPayload, truncated: true, total: 612 }),
+        HttpResponse.json({ ...graphPayload, truncated: true, total: 612, edges_out_of_view: 7 }),
       ),
     )
     renderPage()
-    expect(await screen.findByText(/仅展示最近更新的 500 个/)).toBeInTheDocument()
-    expect(screen.getByText(/共 612 个/)).toBeInTheDocument()
+    const alert = await screen.findByTestId('graph-truncated-alert')
+    expect(alert).toHaveTextContent('仅展示最近更新的 500 个')
+    expect(alert).toHaveTextContent('共 612 个')
+    expect(alert).toHaveTextContent('另有 7 条关系指向未展示的文档')
   })
 
   /**
@@ -247,19 +275,236 @@ describe('知识图谱页（需求 0168）', () => {
     await screen.findByTestId('document-graph-canvas')
     await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
 
-    const roamHandler = echartsMock.on.mock.calls.find((c: unknown[]) => c[0] === 'graphroam')?.[1] as
-      | (() => void)
-      | undefined
+    const roamHandler = handlerOf('graphroam')
     expect(roamHandler).toBeTypeOf('function')
 
     echartsMock.getOption.mockReturnValue({ series: [{ zoom: 2.5 }] })
-    act(() => roamHandler?.())
+    act(() => roamHandler?.(undefined))
     expect(screen.getByTestId('graph-zoom-pct')).toHaveTextContent('250%')
 
     // 越界的视图倍率按上下限夹住，读数不出现 0% 或 1000%
     echartsMock.getOption.mockReturnValue({ series: [{ zoom: 100 }] })
-    act(() => roamHandler?.())
+    act(() => roamHandler?.(undefined))
     expect(screen.getByTestId('graph-zoom-pct')).toHaveTextContent('400%')
   })
 
+  it('局部图按 ?focus=&depth= 收敛节点集，中心文档不在图内时给出回退入口（C3）', async () => {
+    renderPage('/w/10/documents/graph?focus=1&depth=1')
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+
+    // 1 的 1 跳邻域 = {1, 2, -123}：出链与反链都算邻接
+    await waitFor(() => expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4 个节点'))
+    expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('甲')
+    expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('1 跳')
+  })
+
+  it('中心文档不在图内时提示并可一键回到全图（C3）', async () => {
+    renderPage('/w/10/documents/graph?focus=999&depth=1')
+    expect(await screen.findByText(/作为中心的文档不在当前图谱范围内/)).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('graph-clear-focus'))
+    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(screen.queryByTestId('graph-focus-tag')).not.toBeInTheDocument()
+  })
+
+  it('筛选栏按关键词与只看断链收敛，页脚同时给出「显示 X / 共 Y」（C5）', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId('graph-filter-keyword'), { target: { value: '资' } })
+    await waitFor(() => expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 1 / 共 4'))
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('隐藏 3')
+
+    fireEvent.change(screen.getByTestId('graph-filter-keyword'), { target: { value: '' } })
+    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+
+    // 只看断链：保留断链节点与「指向它的源节点」，否则画出来是一堆孤点
+    fireEvent.click(screen.getByTestId('graph-filter-broken'))
+    expect(await screen.findByText('显示 2 / 共 4', { exact: false })).toBeInTheDocument()
+    await waitFor(() => expect(lastGraphOption()?.data).toHaveLength(2))
+  })
+
+  it('图例按格式显隐，关掉某项后画布与图例状态同步（C7）', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    expect(await screen.findByTestId('graph-legend-pdf')).toBeInTheDocument()
+
+    expect(screen.getByTestId('graph-legend-pdf')).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByTestId('graph-legend-pdf'))
+    await waitFor(() => expect(screen.getByTestId('graph-legend-pdf')).toHaveAttribute('aria-pressed', 'false'))
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4')
+
+    fireEvent.click(screen.getByTestId('graph-legend-pdf'))
+    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+  })
+
+  it('标签按缩放倍率淡化，工具栏可整体开关（C7）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const labelShows = () =>
+      echartsMock.setOption.mock.calls.at(-1)?.[0]?.series?.[0]?.label?.show as boolean | undefined
+    await waitFor(() => expect(labelShows()).toBe(true))
+
+    // 0.8^3 ≈ 51%，低于 60% 阈值
+    for (let i = 0; i < 3; i += 1) fireEvent.click(screen.getByTestId('graph-zoom-out'))
+    await waitFor(() => expect(labelShows()).toBe(false))
+
+    fireEvent.click(screen.getByTestId('graph-labels-toggle'))
+    expect(screen.getByTestId('graph-labels-toggle')).toHaveTextContent('显示标签')
+  })
+
+  it('Inspector 展示选中文档的出链/反链，并可打开文档、设为中心、复制链接（C6）', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    clickNode(1)
+    expect(await screen.findByTestId('graph-inspector-detail')).toBeInTheDocument()
+    const detail = screen.getByTestId('graph-inspector-detail')
+    expect(detail).toHaveTextContent('出链 2')
+    expect(detail).toHaveTextContent('反链 0')
+    expect(detail).toHaveTextContent('关联 2 条')
+
+    fireEvent.click(screen.getByTestId('graph-inspector-copy'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/w/10/documents/graph?focus=1')))
+
+    fireEvent.click(screen.getByTestId('graph-inspector-focus'))
+    await waitFor(() => expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('甲'))
+
+    fireEvent.click(screen.getByTestId('graph-inspector-open'))
+    expect(await screen.findByTestId('editor-stub')).toBeInTheDocument()
+
+    vi.unstubAllGlobals()
+  })
+
+  it('未选中时 Inspector 给出孤岛与枢纽清单，点击可定位（C8）', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+
+    // 资料夹（id 3）没有任何边 → 孤岛；甲度数最高 → 枢纽首位
+    const isolated = await screen.findByTestId('graph-isolated-list')
+    expect(isolated).toHaveTextContent('资料夹')
+    const hubs = screen.getByTestId('graph-hub-list')
+    expect(hubs.firstElementChild).toHaveTextContent('甲')
+
+    fireEvent.click(hubs.querySelector('a') as HTMLElement)
+    await waitFor(() => expect(screen.getByTestId('graph-inspector-title')).toHaveTextContent('甲'))
+  })
+
+  it('力参数面板可调斥力并恢复默认（C9）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    // 标签显隐是单独一次 setOption 下发的（只带 label），力参数要看最近带 force 的那次
+    const forceOf = () => {
+      for (let i = echartsMock.setOption.mock.calls.length - 1; i >= 0; i -= 1) {
+        const force = echartsMock.setOption.mock.calls[i][0]?.series?.[0]?.force
+        if (force) return force
+      }
+      return undefined
+    }
+    expect(forceOf()).toMatchObject({ repulsion: 180, edgeLength: 100, gravity: 0.08 })
+
+    const slider = screen.getByTestId('graph-force-repulsion-wrap').querySelector('[role="slider"]') as HTMLElement
+    // rc-slider 的键盘处理读 keyCode（antd 6 / rc-slider 11），只给 key 不会触发
+    fireEvent.keyDown(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
+    await waitFor(() => expect(forceOf().repulsion).toBe(200))
+
+    fireEvent.click(screen.getByTestId('graph-force-reset'))
+    await waitFor(() => expect(forceOf()).toMatchObject({ repulsion: 180, edgeLength: 100, gravity: 0.08 }))
+  })
+
+  it('编辑器深链：?focus=2 直接以该文档为中心打开', async () => {
+    renderPage('/w/10/documents/graph?focus=2&depth=1')
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    expect(await screen.findByText('显示 2 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('乙')
+  })
+})
+
+/** 判定层纯函数：这些是「漏跑就画错图」的逻辑，单独钉住 */
+describe('图谱判定纯函数（需求 0182）', () => {
+  const nodes: GraphNode[] = [
+    { id: 1, title: '甲', content_type: 'markdown', status: 'published', is_folder: false, broken: false },
+    { id: 2, title: '乙', content_type: 'pdf', status: 'draft', is_folder: false, broken: false },
+    { id: 3, title: '丙', content_type: 'markdown', status: 'published', is_folder: false, broken: false },
+    { id: -9, title: '缺', content_type: 'markdown', status: 'broken', is_folder: false, broken: true },
+  ]
+  const edges: GraphEdge[] = [
+    { source: 1, target: 2, broken: false, ambiguous: false, raw: '[[乙]]' },
+    { source: 1, target: 3, broken: false, ambiguous: false, raw: '[[丙]]' },
+    { source: 3, target: -9, broken: true, ambiguous: false, raw: '[[缺]]' },
+  ]
+  const degrees = new Map<number, number>([[1, 2], [2, 1], [3, 2], [-9, 1]])
+  const noDeps = { scope: null, hiddenFormats: new Set<string>(), degrees }
+
+  it('collectNeighborhood 按无向邻接扩跳：反链也算邻接', () => {
+    // 只看出链时 2 不会把 1 带出来
+    expect([...collectNeighborhood(edges, 2, 1)].sort()).toEqual([1, 2])
+    expect([...collectNeighborhood(edges, 1, 1)].sort()).toEqual([1, 2, 3])
+    expect([...collectNeighborhood(edges, 1, 2)].sort((a, b) => a - b)).toEqual([-9, 1, 2, 3])
+    // depth 落到 0 时退化为只有自己
+    expect([...collectNeighborhood(edges, 1, 0)]).toEqual([1])
+  })
+
+  it('filterGraph 多条件同时生效，且边只留两端都可见的', () => {
+    const byKeyword = filterGraph(
+      nodes,
+      edges,
+      { keyword: '丙', statuses: [], onlyBroken: false, onlyIsolated: false },
+      noDeps,
+    )
+    expect(byKeyword.nodes.map(n => n.id)).toEqual([3])
+    expect(byKeyword.edges).toEqual([])
+
+    const byStatus = filterGraph(
+      nodes,
+      edges,
+      { keyword: '', statuses: ['draft'], onlyBroken: false, onlyIsolated: false },
+      noDeps,
+    )
+    // 断链节点没有状态字段，按状态筛时不能被误杀（否则「草稿」筛选会把所有断链藏掉）
+    expect(byStatus.nodes.map(n => n.id)).toEqual([2, -9])
+
+    const byScope = filterGraph(
+      nodes,
+      edges,
+      { keyword: '', statuses: [], onlyBroken: false, onlyIsolated: false },
+      { ...noDeps, scope: new Set([1, 2]) },
+    )
+    expect(byScope.nodes.map(n => n.id)).toEqual([1, 2])
+    expect(byScope.edges.map(e => `${e.source}->${e.target}`)).toEqual(['1->2'])
+
+    const byFormat = filterGraph(
+      nodes,
+      edges,
+      { keyword: '', statuses: [], onlyBroken: false, onlyIsolated: false },
+      { ...noDeps, hiddenFormats: new Set(['pdf']) },
+    )
+    expect(byFormat.nodes.map(n => n.id)).toEqual([1, 3, -9])
+
+    // 只看断链：断链节点 + 指向它的源节点都要留，否则画出来是一堆孤点
+    const broken = filterGraph(
+      nodes,
+      edges,
+      { keyword: '', statuses: [], onlyBroken: true, onlyIsolated: false },
+      noDeps,
+    )
+    expect(broken.nodes.map(n => n.id).sort((a, b) => a - b)).toEqual([-9, 3])
+    expect(broken.edges.map(e => `${e.source}->${e.target}`)).toEqual(['3->-9'])
+  })
+
+  it('findIsolated / findHubs 排除断链节点，枢纽按度数倒序且不含零度', () => {
+    expect(findIsolated(nodes, degrees).map(n => n.id)).toEqual([])
+    expect(findIsolated(nodes, new Map([[-9, 0], [1, 0], [2, 1], [3, 0]])).map(n => n.id)).toEqual([1, 3])
+    const hubs = findHubs(nodes, degrees)
+    expect(hubs.map(n => n.id)).toEqual([1, 3, 2])
+    expect(findHubs(nodes, degrees, 1).map(n => n.id)).toEqual([1])
+  })
 })

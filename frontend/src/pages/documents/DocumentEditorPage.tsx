@@ -588,6 +588,12 @@ export default function DocumentEditorPage() {
     ]
   }
 
+  /** 需求 0182 C4：跳到以本文档为中心的局部图谱（深度 1 跳，前端 BFS，不再打接口） */
+  const openGraphFocus = () => {
+    if (!doc || doc.is_folder) return
+    navigate(`/w/${workspaceId}/documents/graph?focus=${doc.id}&depth=1`)
+  }
+
   /** 导出菜单 key 分流：`bind::` 设默认，其余是导出 */
   const runTemplateMenuKey = (key: string) => {
     if (key.startsWith('bind::')) {
@@ -1357,6 +1363,7 @@ export default function DocumentEditorPage() {
             : []),
           { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
           { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
+          { key: 'graph', icon: <ApartmentOutlined />, label: '在图谱中查看', onClick: openGraphFocus },
           ...(viewMode === 'edit'
             ? [
                 { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
@@ -1665,6 +1672,13 @@ export default function DocumentEditorPage() {
                 data-testid="doc-links-open"
                 onClick={() => setLinksOpen(true)}
               />
+              {/* 需求 0182 C4：从当前文档跳到以它为中心的局部图谱 */}
+              {!doc.is_folder && <IconBtn
+                icon={<ApartmentOutlined />}
+                label="在图谱中查看"
+                data-testid="doc-graph-focus-open"
+                onClick={openGraphFocus}
+              />}
             </Space.Compact>
           )}
           {/* 组 2：内容标注（AI / 标签）；插入图片 / 表格引用已移入编辑模式 Markdown 工具栏（ADR 0042）；

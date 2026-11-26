@@ -314,6 +314,8 @@ def create_document(
 
     db.commit()
     db.refresh(doc)
+    # 新节点/新标题可能立刻被 [[标题]] 引用：图谱缓存必须失效（需求 0182 C1）
+    invalidate_link_graph_cache(workspace_id)
     return doc
 
 
@@ -431,6 +433,8 @@ def update_content(
     # 正文写入后统一分发 document.saved：直编保存 / 草稿提交 / 修改申请合并 / 回滚 / 链接修复
     # 都走本函数，避免只在某个路由里分发导致事件漏触发（ADR 0076 P1）。
     _dispatch_document_saved(db, doc)
+    # 正文变了，边就变了（需求 0182 C1）
+    invalidate_link_graph_cache(workspace_id)
     return doc
 
 
@@ -530,6 +534,8 @@ def soft_delete_documents(db: Session, workspace_id: int, docs: list[Document], 
     if count:
         _refresh_tag_counts(db, workspace_id)
     db.commit()
+    if count:
+        invalidate_link_graph_cache(workspace_id)
     return count
 
 
@@ -543,6 +549,7 @@ def soft_delete_document(db: Session, workspace_id: int, doc_id: int, user: User
     _refresh_tag_counts(db, workspace_id)
     db.commit()
     db.refresh(doc)
+    invalidate_link_graph_cache(workspace_id)
     return doc
 
 
@@ -647,6 +654,7 @@ def restore_document(db: Session, workspace_id: int, doc_id: int, user: User) ->
     _refresh_tag_counts(db, workspace_id)
     db.commit()
     db.refresh(doc)
+    invalidate_link_graph_cache(workspace_id)
     return doc, restored, reparented
 
 
@@ -746,6 +754,7 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
             shutil.rmtree(external, ignore_errors=True)
             files_removed += 1
     files_removed += _remove_asset_files(workspace_id, asset_keys)
+    invalidate_link_graph_cache(workspace_id)
     return {"purged_count": len(ids), "files_removed": files_removed, "detached": detached}
 
 
@@ -1185,12 +1194,22 @@ GRAPH_MAX_NODES = 500
 _GRAPH_CACHE_TTL_SECONDS = 30.0
 # 缓存条目上限（用户 × 工作区维度会累积）：超出时丢弃最旧条目，避免长驻进程无界增长。
 _GRAPH_CACHE_MAX_ENTRIES = 256
-_graph_cache: dict[tuple[int, str | int], tuple[float, dict[str, Any]]] = {}
+_graph_cache: dict[tuple[int, str | int, int], tuple[float, dict[str, Any]]] = {}
 
 
 def reset_link_graph_cache() -> None:
-    """清空图谱聚合缓存（写路径 / 测试使用）."""
+    """清空图谱聚合缓存（测试 / 全局重置使用）."""
     _graph_cache.clear()
+
+
+def invalidate_link_graph_cache(workspace_id: int) -> None:
+    """清掉单个工作区的图谱缓存（需求 0182 C1）.
+
+    30s TTL 期间写路径不失效会让用户看到旧图（改完正文以为双链没生效）。
+    按工作区粒度删键：一处写入不清空全站缓存。
+    """
+    for key in [k for k in _graph_cache if k[0] == workspace_id]:
+        _graph_cache.pop(key, None)
 
 
 def _prune_graph_cache(now: float) -> None:
@@ -1226,7 +1245,9 @@ def build_link_graph(
     from cndb.plugins.documents.services import visibility
 
     admin = visibility.is_document_admin(db, workspace_id, user)
-    cache_key: tuple[int, str | int] = (workspace_id, "admin" if admin else user.id)
+    # max_nodes 必须进缓存键：同一身份用小窗口试探过之后，再用大窗口
+    # 会命中「截断版」结果（测试与未来调参都会踩）。
+    cache_key: tuple[int, str | int, int] = (workspace_id, "admin" if admin else user.id, max_nodes)
     cached = _graph_cache.get(cache_key)
     now = time.monotonic()
     if cached is not None and now - cached[0] < _GRAPH_CACHE_TTL_SECONDS:
@@ -1262,6 +1283,9 @@ def build_link_graph(
         .scalars()
         .all()
     )
+    # 只取可见文档标题（与上面的 all_titles 区分）：判断「窗口外」时不能用
+    # all_titles，否则会把「不可见」也算成「被截断」，泄漏他人草稿的存在性。
+    visible_titles = all_titles if admin else set(db.execute(select(Document.title).where(*filters)).scalars().all())
 
     nodes: list[dict[str, Any]] = [
         {
@@ -1275,6 +1299,9 @@ def build_link_graph(
         for doc in docs
     ]
     broken_ids: set[int] = set()
+    # 需求 0182 C2：节点被截断时，指向「存在但落在窗口外」文档的边会被丢掉，
+    # 不统计的话中心文档看起来像孤立点。按 (源, 目标标题) 去重计数。
+    out_of_view: set[tuple[int, str]] = set()
     edges: list[dict[str, Any]] = []
     seen_edges: set[tuple[int, int]] = set()
     # 批量取每个文档的最新版本（id 单调递增，取 max(id) 等价最新版），
@@ -1298,7 +1325,12 @@ def build_link_graph(
                 continue  # [[#锚点]] 无目标标题，不构成跨文档边
             target_id = title_index.get(target_title)
             if target_id is None and target_title in all_titles:
-                continue  # 文档存在但当前用户不可见（H33）：不建节点、不建边
+                # 两种情况都落在这里：文档存在于窗口外（被 max_nodes 截断），
+                # 或存在但当前用户不可见（H33）。前者计入 edges_out_of_view，
+                # 后者必须静默丢弃（否则标题存在性泄漏）。
+                if truncated and target_title in visible_titles:
+                    out_of_view.add((doc.id, target_title))
+                continue
             if target_id is None:
                 target_id = _broken_node_id(target_title)
                 if target_id not in broken_ids:
@@ -1335,6 +1367,7 @@ def build_link_graph(
         "edges": edges,
         "truncated": truncated,
         "total": total,
+        "edges_out_of_view": len(out_of_view),
     }
     _prune_graph_cache(now)
     _graph_cache[cache_key] = (now, payload)
@@ -1408,7 +1441,10 @@ def duplicate_document(
         parent = get_document_or_404(db, workspace_id, target_parent)
         if not parent.is_folder:
             raise ConflictError("父节点必须是文件夹")
-    return _duplicate_node(db, workspace_id, source, user, target_parent, is_root=True)
+    created = _duplicate_node(db, workspace_id, source, user, target_parent, is_root=True)
+    # 副本标题以「副本」结尾，本身就是新的链接目标（需求 0182 C1）
+    invalidate_link_graph_cache(workspace_id)
+    return created
 
 
 def _duplicate_node(

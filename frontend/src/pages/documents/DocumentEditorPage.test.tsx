@@ -89,7 +89,26 @@ async function enterSourceMode() {
 /** 位置探针：展示当前 pathname 供跳转断言 */
 function LocationProbe() {
     const loc = useLocation()
-    return <div data-testid="editor-location">{loc.pathname}</div>
+    return <div data-testid="editor-location">{`${loc.pathname}${loc.search}`}</div>
+}
+
+/** 带图谱路由的探针渲染：断言「在图谱中查看」跳转带 ?focus=&depth=（0182 C4） */
+function renderEditorWithGraphProbe(route = '/w/10/documents/2') {
+    return renderProviders(
+        <Routes>
+            <Route
+                path="/w/:wid/documents/:docId"
+                element={
+                    <>
+                        <DocumentEditorPage />
+                        <LocationProbe />
+                    </>
+                }
+            />
+            <Route path="/w/:wid/documents/graph" element={<LocationProbe />} />
+        </Routes>,
+        { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
 }
 
 /** 带位置探针的编辑器渲染：跳转类用例（双链 / 反链）断言 URL 变化 */
@@ -610,6 +629,18 @@ describe('DocumentEditorPage 出链与断链修复', () => {
         fireEvent.click(screen.getByTestId('doc-link-open-需求说明'))
         await waitFor(() => {
             expect(screen.getByTestId('editor-location')).toHaveTextContent('/w/10/documents/2')
+        })
+    })
+
+    it('「在图谱中查看」跳转到局部图并带上 focus 与 depth（0182 C4）', async () => {
+        renderEditorWithGraphProbe()
+        expect(await screen.findByRole('button', { name: /保存/ })).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-graph-focus-open'))
+        await waitFor(() => {
+            expect(screen.getByTestId('editor-location')).toHaveTextContent(
+                '/w/10/documents/graph?focus=2&depth=1',
+            )
         })
     })
 

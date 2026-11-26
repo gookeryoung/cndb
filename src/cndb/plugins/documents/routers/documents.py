@@ -1324,6 +1324,10 @@ def batch_documents(
             doc.updated_by_id = current_user.id
             moved.append(doc)
         db.commit()
+        if moved:
+            # 目录位置变化不影响双链，但批量删除分支走 service；移动分支直接提交，
+            # 这里补一次图谱失效，避免「移动后新标题引用」在 30s 内不可见（0182 C1）
+            services.content.invalidate_link_graph_cache(workspace_id)
         return {"action": "move", "updated": len(moved), "skipped": skipped}
 
     docs: list[Document] = []
@@ -1388,6 +1392,8 @@ def update_document_meta(
     doc.updated_by_id = current_user.id
     db.commit()
     db.refresh(doc)
+    # 改标题会改变 [[标题]] 的解析结果，图谱必须失效（需求 0182 C1）
+    services.content.invalidate_link_graph_cache(workspace_id)
     return services.content.serialize_document(db, doc)
 
 

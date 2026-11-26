@@ -175,6 +175,8 @@ export interface LinkGraph {
   edges: GraphEdge[]
   truncated: boolean
   total: number
+  /** 截断时被丢弃的边数：指向「存在但在节点窗口外」的文档（需求 0182 C2） */
+  edges_out_of_view?: number
 }
 
 /** 工作区附件（需求 0174） */
