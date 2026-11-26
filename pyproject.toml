@@ -38,6 +38,8 @@ dependencies = [
     "openpyxl>=3.1.5",
     "python-docx>=1.1.0",
     "reportlab>=4.2.0",
+    # PDF 派生副本（旋转 / 水平镜像，ADR 0164）：纯 Python，无原生依赖
+    "pypdf>=5.0.0",
     "chardet>=7.6.0",
     "pyyaml>=6.0.3",
 ]

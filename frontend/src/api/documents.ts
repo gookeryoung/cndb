@@ -2,6 +2,7 @@
 
 import api from './client'
 import { parseContentDispositionFilename } from '@/utils/disposition'
+import type { PdfOrientationInfo } from '@/pages/documents/assetOrientation'
 
 // ── 类型 ──
 
@@ -970,6 +971,30 @@ export const documentsApi = {
   /** 取原件二进制（前端用 blob + objectURL 走阅读器，避免裸链接绕过鉴权） */
   assetBlob: (wid: number | string, docId: number) =>
     api.get<Blob>(`${base(wid)}/${docId}/asset`, { responseType: 'blob' }).then(r => r.data),
+
+  // ── PDF 方向与派生副本（ADR 0164）──
+
+  /** PDF 每页 `/Rotate` 与页面尺寸，用于自动旋转判定 */
+  assetOrientation: (wid: number | string, docId: number) =>
+    api
+      .get<PdfOrientationInfo>(`${base(wid)}/${docId}/asset/orientation`)
+      .then(r => r.data),
+
+  /** PDF 旋转 / 水平镜像后的派生副本（不改原件） */
+  assetRotated: (
+    wid: number | string,
+    docId: number,
+    rotate: number,
+    flip: boolean,
+    signal?: AbortSignal,
+  ) =>
+    api
+      .get<Blob>(`${base(wid)}/${docId}/asset/rotated`, {
+        params: { rotate, flip },
+        responseType: 'blob',
+        signal,
+      })
+      .then(r => r.data),
 
   // ── PPTX 服务端 PDF 衍生预览（ADR 0129）──
 

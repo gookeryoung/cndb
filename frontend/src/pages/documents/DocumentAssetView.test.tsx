@@ -64,6 +64,16 @@ beforeEach(() => {
   // 默认「服务端 PDF 未启用」：除新增 PDF 用例外，PPTX 用例保持 0128 客户端预览行为
   vi.spyOn(documentsApi, 'assetPdf').mockResolvedValue({ status: 409, data: null })
   vi.spyOn(documentsApi, 'requestAssetPdf').mockResolvedValue({ status: 409 })
+  // ADR 0164：PDF 方向信息与派生副本（默认竖置、无声明旋转）
+  vi.spyOn(documentsApi, 'assetOrientation').mockResolvedValue({
+    page_count: 1,
+    uniform_rotate: 0,
+    uniform_aspect: 'portrait',
+    pages: [{ rotate: 0, width: 595, height: 842 }],
+  })
+  vi.spyOn(documentsApi, 'assetRotated').mockResolvedValue(
+    new Blob(['%PDF-1.7 rotated'], { type: 'application/pdf' }),
+  )
 })
 
 describe('DocumentAssetView 原件阅读器', () => {
@@ -379,5 +389,123 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('doc-asset-error')).toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-mhtml')).not.toBeInTheDocument()
+  })
+})
+
+describe('DocumentAssetView 方向控件（ADR 0164）', () => {
+  it('PDF 右侧出现自动旋转（默认开启）+ 并列的旋转 90° / 水平镜像按钮', async () => {
+    renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
+    await screen.findByTestId('doc-asset-pdf')
+
+    expect(screen.getByTestId('doc-rotate-auto')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('doc-rotate-90')).toHaveAttribute('aria-label', '顺时针旋转 90°')
+    expect(screen.getByTestId('doc-rotate-flip')).toHaveAttribute('aria-label', '水平镜像翻转')
+  })
+
+  it('非 PDF / 图片原件不出现方向控件', async () => {
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'xlsx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          title: '明细',
+        })}
+      />,
+    )
+    await screen.findByTestId('doc-asset-office')
+    expect(screen.queryByTestId('doc-rotate-controls')).not.toBeInTheDocument()
+  })
+
+  it('手动旋转请求派生副本并替换 iframe 地址', async () => {
+    const rotated = vi.spyOn(documentsApi, 'assetRotated')
+    renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
+
+    const frame = await screen.findByTestId('doc-asset-pdf')
+    const before = frame.getAttribute('src')
+    fireEvent.click(screen.getByTestId('doc-rotate-90'))
+
+    await waitFor(() =>
+      expect(rotated).toHaveBeenCalledWith(7, 31, 90, false, expect.anything()),
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('doc-asset-pdf').getAttribute('src')).not.toBe(before),
+    )
+  })
+
+  it('水平镜像请求 flip=true；连续 4 次旋转回到原始方向', async () => {
+    const rotated = vi.spyOn(documentsApi, 'assetRotated')
+    renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
+    const frame = await screen.findByTestId('doc-asset-pdf')
+    const originalSrc = frame.getAttribute('src')
+
+    fireEvent.click(screen.getByTestId('doc-rotate-flip'))
+    await waitFor(() => expect(rotated).toHaveBeenCalledWith(7, 31, 0, true, expect.anything()))
+
+    for (let i = 0; i < 4; i += 1) fireEvent.click(screen.getByTestId('doc-rotate-90'))
+    await waitFor(() =>
+      expect(screen.getByTestId('doc-asset-pdf').getAttribute('src')).toBe(originalSrc),
+    )
+  })
+
+  it('关闭自动旋转回到原始方向（清空手动调整）', async () => {
+    renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
+    const frame = await screen.findByTestId('doc-asset-pdf')
+    const originalSrc = frame.getAttribute('src')
+
+    fireEvent.click(screen.getByTestId('doc-rotate-90'))
+    await waitFor(() =>
+      expect(screen.getByTestId('doc-asset-pdf').getAttribute('src')).not.toBe(originalSrc),
+    )
+
+    fireEvent.click(screen.getByTestId('doc-rotate-auto'))
+    expect(screen.getByTestId('doc-rotate-auto')).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() =>
+      expect(screen.getByTestId('doc-asset-pdf').getAttribute('src')).toBe(originalSrc),
+    )
+  })
+
+  it('派生副本失败时提示且保留上一次可用方向', async () => {
+    vi.spyOn(documentsApi, 'assetRotated').mockRejectedValue(new Error('422'))
+    renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
+    await screen.findByTestId('doc-asset-pdf')
+
+    fireEvent.click(screen.getByTestId('doc-rotate-90'))
+    expect(await screen.findByTestId('doc-rotate-error')).toHaveTextContent('该 PDF 无法旋转')
+  })
+
+  it('切换文档后方向状态重置（再次旋转从 90° 起算）', async () => {
+    const rotated = vi.spyOn(documentsApi, 'assetRotated')
+    const first = renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
+    await screen.findByTestId('doc-asset-pdf')
+    fireEvent.click(screen.getByTestId('doc-rotate-90'))
+    await waitFor(() => expect(rotated).toHaveBeenLastCalledWith(7, 31, 90, false, expect.anything()))
+
+    first.rerender(
+      <DocumentAssetView workspaceId={7} doc={docOf({ id: 32, title: '第二份' })} />,
+    )
+    await screen.findByTestId('doc-asset-pdf')
+    fireEvent.click(screen.getByTestId('doc-rotate-90'))
+    await waitFor(() => expect(rotated).toHaveBeenLastCalledWith(7, 32, 90, false, expect.anything()))
+  })
+
+  it('图片旋转是纯前端显示变换，不请求派生副本', async () => {
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({ content_type: 'image', asset_mime: 'image/png', title: '照片' })}
+      />,
+    )
+    await screen.findByTestId('doc-asset-image')
+
+    fireEvent.click(screen.getByTestId('doc-rotate-90'))
+    await waitFor(() =>
+      expect(screen.getByTestId('doc-asset-image').style.transform).toContain('rotate(90deg)'),
+    )
+    fireEvent.click(screen.getByTestId('doc-rotate-flip'))
+    await waitFor(() =>
+      expect(screen.getByTestId('doc-asset-image').style.transform).toContain('scaleX(-1)'),
+    )
+    expect(documentsApi.assetRotated).not.toHaveBeenCalled()
   })
 })

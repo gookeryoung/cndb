@@ -11134,3 +11134,78 @@ body.cn-doc-focus-view .cn-doc-stats {
   gap: var(--cn-space-sm);
   font-weight: var(--cn-weight-semibold);
 }
+
+/* ── 原件阅读器方向控件（ADR 0164）：浮在阅读区右上角 ─────────────── */
+.cn-asset-rotate-bar {
+  position: absolute;
+  top: var(--cn-space-lg);
+  right: var(--cn-space-xl);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+  box-shadow: 0 2px 8px rgb(var(--cn-shadow-color) / 0.12);
+}
+
+.cn-asset-rotate-divider {
+  width: 1px;
+  height: var(--cn-space-xl);
+  background: var(--cn-border);
+}
+
+.cn-asset-rotate-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+}
+
+.cn-asset-rotate-notice {
+  position: absolute;
+  left: var(--cn-space-3xl);
+  bottom: var(--cn-space-xl);
+  z-index: 5;
+  padding: var(--cn-space-xs) var(--cn-space-md);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+}
+
+/* 可旋转图片舞台：按旋转后包围盒 contain，90°/270° 不裁切、不溢出 */
+.cn-asset-image-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.cn-asset-image-frame {
+  position: relative;
+  flex: none;
+}
+
+.cn-asset-image-frame > img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;
+  max-width: none;
+  max-height: none;
+}
+
+@media (max-width: 575.98px) {
+  .cn-asset-rotate-bar {
+    top: var(--cn-space-md);
+    right: var(--cn-space-md);
+  }
+}
+

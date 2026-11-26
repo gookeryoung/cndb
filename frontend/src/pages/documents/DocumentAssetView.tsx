@@ -8,13 +8,24 @@
  * PPTX：先纯前端渲染（PptxPreview 懒加载）保证首屏；服务端 PDF 就绪后原位替换为
  * PDF iframe（ADR 0129），转换不可用 / 失败时静默保留客户端预览。旧版 .ppt 仍回落下载卡。
  */
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, Empty, Spin } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 import { formatMeta } from '@/components/Document/docFormat'
 import OfficeHtmlPreview from './OfficeHtmlPreview'
+import AssetRotationControls from './AssetRotationControls'
+import RotatableImage from './RotatableImage'
+import {
+  combineOrientations,
+  detectAutoOrientation,
+  isDefaultOrientation,
+  readExifOrientation,
+  rotateBy,
+  toggleFlip,
+  type Orientation,
+} from './assetOrientation'
 import {
   isPreviewablePptx, PPTX_ASSET_GC_MS, PPTX_ASSET_STALE_MS,
 } from './pptxLoader'
@@ -74,6 +85,37 @@ export default function DocumentAssetView({
   // Excel / Word 预览走后端 HTML：仅标准 .xlsx 与 archive 存档的 .docx；
   // 旧版二进制 .xls / .doc 保持下载卡（后端也会 400）
   const isOfficePreview = (doc.content_type === 'xlsx' && suffix === 'xlsx') || doc.content_type === 'word'
+  const isPdfAsset = doc.content_type === 'pdf'
+  const isImageAsset = doc.content_type === 'image'
+
+  // 方向状态（ADR 0164）：自动旋转默认开启；手动调整叠加在自动基线之上，切文档重置
+  const [autoEnabled, setAutoEnabled] = useState(true)
+  const [manualOrientation, setManualOrientation] = useState<Orientation>({ rotate: 0, flip: false })
+  const [exifOrientation, setExifOrientation] = useState<number | null>(null)
+  const [imageNaturalSize, setImageNaturalSize] = useState<{ width: number; height: number } | null>(null)
+  const [viewport, setViewport] = useState({ width: 0, height: 0 })
+  const [rotateNotice, setRotateNotice] = useState<string | null>(null)
+  const viewerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setAutoEnabled(true)
+    setManualOrientation({ rotate: 0, flip: false })
+    setExifOrientation(null)
+    setImageNaturalSize(null)
+    setRotateNotice(null)
+  }, [workspaceId, doc.id])
+
+  // 阅读区尺寸用于长宽比兜底判定（横置页面 + 竖置阅读区）
+  useEffect(() => {
+    const node = viewerRef.current
+    if (!node) return
+    const measure = () => setViewport({ width: node.clientWidth, height: node.clientHeight })
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
 
   const assetQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset'],
@@ -124,6 +166,89 @@ export default function DocumentAssetView({
     setObjectUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [blob])
+
+  // 图片 EXIF 方向：显式关闭浏览器原生方向后由本功能单点应用（ADR 0164 D5 / I2）
+  useEffect(() => {
+    let cancelled = false
+    setExifOrientation(null)
+    setImageNaturalSize(null)
+    if (!blob || doc.content_type !== 'image') return
+    blob
+      .arrayBuffer()
+      .then(buffer => {
+        if (!cancelled) setExifOrientation(readExifOrientation(buffer))
+      })
+      .catch(() => {
+        if (!cancelled) setExifOrientation(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [blob, doc.content_type])
+
+  // PDF 页面方向信息（P0 端点）：仅 PDF 原件请求，失败按「无信息」处理
+  const orientationQuery = useQuery({
+    queryKey: ['documents', workspaceId, doc.id, 'asset-orientation'],
+    queryFn: () => documentsApi.assetOrientation(workspaceId, doc.id),
+    retry: false,
+    enabled: isPdfAsset,
+    staleTime: PPTX_ASSET_STALE_MS,
+    gcTime: PPTX_ASSET_GC_MS,
+  })
+
+  const autoResult = useMemo(
+    () =>
+      detectAutoOrientation({
+        kind: isPdfAsset ? 'pdf' : 'image',
+        exifOrientation,
+        imageSize: imageNaturalSize,
+        pdf: isPdfAsset ? (orientationQuery.data ?? null) : null,
+        viewport,
+      }),
+    [isPdfAsset, exifOrientation, imageNaturalSize, orientationQuery.data, viewport],
+  )
+
+  const orientation: Orientation = autoEnabled
+    ? combineOrientations(autoResult.orientation, manualOrientation)
+    : manualOrientation
+  const rotatedEnabled = isPdfAsset && !isDefaultOrientation(orientation)
+
+  // 派生副本：方向非默认时向服务端取旋转 / 镜像后的 PDF（不改原件，ADR 0164 C5）
+  const rotatedQuery = useQuery({
+    queryKey: ['documents', workspaceId, doc.id, 'asset-rotated', orientation.rotate, orientation.flip],
+    queryFn: ({ signal }) =>
+      documentsApi.assetRotated(workspaceId, doc.id, orientation.rotate, orientation.flip, signal),
+    retry: false,
+    enabled: rotatedEnabled,
+    staleTime: PPTX_ASSET_STALE_MS,
+    gcTime: PPTX_ASSET_GC_MS,
+    placeholderData: previous => previous,
+  })
+  const rotatedBlob = rotatedEnabled ? rotatedQuery.data : undefined
+  const [rotatedUrl, setRotatedUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!rotatedBlob) {
+      setRotatedUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(rotatedBlob)
+    setRotatedUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [rotatedBlob])
+
+  useEffect(() => {
+    setRotateNotice(rotatedQuery.isError ? '该 PDF 无法旋转，已保留上一次可用方向' : null)
+  }, [rotatedQuery.isError])
+
+  const pdfViewerUrl = rotatedUrl ?? objectUrl
+
+  const toggleAutoRotate = () => {
+    setAutoEnabled(previous => !previous)
+    setManualOrientation({ rotate: 0, flip: false })
+  }
+  const rotateViewer = () => setManualOrientation(previous => rotateBy(previous, 90))
+  const flipViewer = () => setManualOrientation(previous => toggleFlip(previous))
 
   const previewBlob = previewQuery.data
   useEffect(() => {
@@ -202,29 +327,25 @@ export default function DocumentAssetView({
   }
 
   const viewer = (() => {
-    if (doc.content_type === 'pdf') {
+    if (isPdfAsset) {
       return (
         <iframe
           title={doc.title}
-          src={objectUrl ?? undefined}
+          src={pdfViewerUrl ?? undefined}
           data-testid="doc-asset-pdf"
           style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
         />
       )
     }
-    if (doc.content_type === 'image') {
+    if (isImageAsset) {
+      // 可旋转 / 镜像阅读器：方向由本组件单点应用（ADR 0164 D5），SVG 仍走 <img> 不执行脚本
       return (
-        <div
-          style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          {/* 用 <img> 而非 <object>：SVG 里的脚本不会执行 */}
-          <img
-            src={objectUrl ?? undefined}
-            alt={doc.title}
-            data-testid="doc-asset-image"
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-          />
-        </div>
+        <RotatableImage
+          src={objectUrl ?? ''}
+          alt={doc.title}
+          orientation={orientation}
+          onNaturalSize={setImageNaturalSize}
+        />
       )
     }
     if (isPptx && blob) {
@@ -320,10 +441,32 @@ export default function DocumentAssetView({
 
   return (
     <div
+      ref={viewerRef}
       style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '12px 24px', position: 'relative' }}
       data-testid="doc-asset-view"
     >
       {viewer}
+      {Boolean(objectUrl) && (isPdfAsset || isImageAsset) && (
+        <AssetRotationControls
+          autoEnabled={autoEnabled}
+          onToggleAuto={toggleAutoRotate}
+          onRotate={rotateViewer}
+          onFlip={flipViewer}
+          loading={rotatedQuery.isFetching}
+          reason={autoResult.reason}
+          confident={autoResult.confident}
+        />
+      )}
+      {isPdfAsset && rotatedQuery.isFetching && (
+        <div className="cn-asset-rotate-loading" data-testid="doc-rotate-loading">
+          <Spin size="small" />
+        </div>
+      )}
+      {rotateNotice && (
+        <div className="cn-asset-rotate-notice" data-testid="doc-rotate-error">
+          {rotateNotice}
+        </div>
+      )}
       {presenting && blob && (
         <Suspense fallback={null}>
           <PptxSlideshow

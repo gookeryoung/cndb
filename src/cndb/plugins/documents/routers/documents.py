@@ -884,6 +884,115 @@ def download_document_asset(
     return FileResponse(path, media_type=media_type, headers=headers)
 
 
+def _load_pdf_asset(doc: Document) -> bytes:
+    """读取 PDF 原件字节（ADR 0164 派生副本输入，只读）."""
+    from cndb.plugins.files.services import resolve_workspace_file
+
+    if not doc.asset_file_key:
+        raise NotFoundError("该文档没有原件")
+    path = resolve_workspace_file(doc.workspace_id, doc.asset_file_key)
+    if not path.is_file():
+        raise NotFoundError("原件不存在或已被清理")
+    return path.read_bytes()
+
+
+@router.get("/{doc_id}/asset/orientation")
+def document_asset_orientation(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """PDF 原件页面方向信息（ADR 0164）：每页 ``/Rotate`` 与 MediaBox 尺寸.
+
+    - 仅 ``content_type=pdf``；其余 404（与「没有可旋转原件」同文案口径）；
+    - 权限与 ``/asset`` 同源：工作区成员 + 文档可见性；
+    - 解析失败 422 ``pdf_unreadable``，由前端降级为「只保留手动旋转」。
+    """
+    from cndb.plugins.documents.services.preview import pdf_rotation
+
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    if doc.content_type != "pdf":
+        raise NotFoundError("该文档没有可旋转的 PDF 原件")
+
+    try:
+        pages = pdf_rotation.read_page_orientations(_load_pdf_asset(doc))
+    except pdf_rotation.PdfRotationError as exc:
+        raise BadRequestError(str(exc), code="pdf_unreadable", status_code=422) from exc
+
+    rotates = {page.rotate for page in pages}
+    aspects = set()
+    for page in pages:
+        if page.height <= 0:
+            aspects.add("mixed")
+            continue
+        ratio = page.width / page.height
+        if ratio >= 1.1:
+            aspects.add("landscape")
+        elif ratio <= 0.9:
+            aspects.add("portrait")
+        else:
+            aspects.add("square")
+
+    return {
+        "page_count": len(pages),
+        "uniform_rotate": next(iter(rotates)) if len(rotates) == 1 else None,
+        "uniform_aspect": next(iter(aspects)) if len(aspects) == 1 else "mixed",
+        "pages": [
+            {"rotate": page.rotate, "width": round(page.width, 2), "height": round(page.height, 2)}
+            for page in pages[:64]
+        ],
+    }
+
+
+@router.get("/{doc_id}/asset/rotated")
+def document_asset_rotated(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    rotate: Annotated[int, Query(description="顺时针旋转角度：0 / 90 / 180 / 270")] = 0,
+    flip: Annotated[bool, Query(description="是否水平镜像")] = False,
+) -> Response:
+    """PDF 派生副本（ADR 0164 P0）：旋转 / 水平镜像后返回，不改原件.
+
+    - 仅 ``content_type=pdf``；参数越界 / 解析失败 422；非 PDF / 缺原件 404；
+    - 权限与 ``/asset`` 同源；原件字节永不改写（ADR 0164 I1）；
+    - 页面既有 ``/Rotate`` 先烘焙进内容，再应用用户方向（ADR 0164 I2）。
+    """
+    from cndb.plugins.documents.services.preview import pdf_rotation
+
+    if rotate not in pdf_rotation.VALID_ROTATIONS:
+        raise BadRequestError("rotate 仅支持 0 / 90 / 180 / 270", code="pdf_rotation_invalid", status_code=422)
+
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    if doc.content_type != "pdf":
+        raise NotFoundError("该文档没有可旋转的 PDF 原件")
+
+    try:
+        result = pdf_rotation.get_derived(
+            _load_pdf_asset(doc),
+            doc_id=doc.id,
+            file_key=doc.asset_file_key or "",
+            rotate=rotate,
+            flip=flip,
+        )
+    except pdf_rotation.PdfRotationError as exc:
+        raise BadRequestError(str(exc), code="pdf_unreadable", status_code=422) from exc
+
+    return Response(
+        content=result,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="document-rotated.pdf"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
 @router.get("/{doc_id}/asset/preview")
 def preview_document_asset(
     workspace_id: int,
