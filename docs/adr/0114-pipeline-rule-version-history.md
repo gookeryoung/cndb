@@ -1,6 +1,6 @@
 # ADR 0114: 流水线规则版本历史（手动保存 / 恢复版本 / 两版 DIFF）
 
-Status: Accepted（2026-11-06 用户评审通过，进入实现）
+Status: Implemented（2026-11-06 用户评审通过，进入实现）
 Date: 2026-11-06
 Related: `src/cndb/plugins/pipeline/models.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/schemas.py`、`src/cndb/core/textdiff.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/pages/pipelines/PipelinesPage.tsx`、`frontend/src/api/pipelines.ts`、`frontend/src/components/DiffView/DocumentDiffView.tsx`、`docs/adr/0076-pipeline-check-dsl.md`、`docs/adr/0113-design-version-history-and-diff.md`
 需求卡片: `docs/requirements/0114-pipeline-rule-version-history.md`（需求原文与约束编号的唯一副本）
@@ -247,8 +247,8 @@ def workflow_diff(
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地并提交（`abc52d26`），Status 保持 Accepted，待人工验收
+- 当前阶段：P0-P2 已落地并提交（`abc52d26`）；Status 已由人工评审确认为 Implemented（2026-11-28）
 - 已完成：版本表 + 迁移、落版服务、4 个版本端点、前端抽屉与双入口、备份 `versions[]` 往返、后端 / 前单测与 e2e
-- 下一步：人工验收后由人决定 `Status` 是否置 `Implemented`；本轮无后续期
+- 下一步：无未落地分期（Status 已由人工评审确认为 `Implemented`，2026-11-28）；本轮无后续期
 - 已知坑：迁移 head 现为 `4c6e8a0b2d3f`；备份协议保持 v13，导入需兼容无 `versions` 的旧载荷并去重版本号；恢复必须排除自身做名称唯一校验；恢复保留当前 `enabled`
 - 最近一次全绿：`make check-fast` / `make test` @ 2026-11-06

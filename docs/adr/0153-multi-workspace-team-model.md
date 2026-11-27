@@ -1,6 +1,6 @@
 # ADR 0153: 多工作区统一管理（团队层 + 工作区权限边界）
 
-Status: Accepted（P0 / P1 / P2 / P3 全部落地，2026-11-27 人工评审通过；P3「工作区链接」由 ADR 0154 承接实现）
+Status: Implemented（P0 / P1 / P2 / P3 全部落地，2026-11-27 人工评审通过；P3「工作区链接」由 ADR 0154 承接实现）
 Date: 2026-11-25
 Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/deps.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/design/models.py`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`docs/CONSTRAINTS.md`
 需求卡片: `docs/requirements/0153-multi-workspace-team-model.md`（需求原文与约束编号的唯一副本）

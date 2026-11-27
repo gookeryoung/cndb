@@ -1,6 +1,6 @@
 # ADR 0129: PPTX 后台异步转 PDF 预览（衍生件缓存 + 独立转换容器 + 失败降级）
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 Date: 2026-11-09
 Related: `src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/core/config.py`、`src/cndb/app.py`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/api/documents.ts`、`deploy/Dockerfile.prod`、`deploy/Dockerfile.base`、`docker-compose.prod.yml`、`docs/adr/0087-docx-xlsx-online-preview.md`、`docs/requirements/0128-pptx-preview-performance.md`
 需求卡片: `docs/requirements/0129-pptx-async-pdf-preview.md`（需求原文与约束编号的唯一副本）

@@ -1,6 +1,6 @@
 # ADR 0136: 评分矩阵（矩阵视图内按「对象 × 月份」录入）
 
-Status: Accepted（2026-11-15 人工评审通过）
+Status: Implemented（2026-11-15 人工评审通过）
 Date: 2026-11-15
 Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/row_access.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/views/MatrixView.tsx`、`frontend/src/pages/grid/views/matrixBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/GridPage.tsx`
 需求卡片: `docs/requirements/0136-matrix-score-entry.md`（需求原文与约束编号的唯一副本）
@@ -230,6 +230,6 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 
 - 当前阶段：P0-P2 已落地（2026-11-15 人工评审通过并确认实现）
 - 已完成：视图配置校验、`matrix-upsert`（创建 / 更新 / 置空 / 重复 409）、行级权限与隐藏字段闸门、`row_rules_active`、矩阵固定行列与单元格录入、只读降级、搜索入口隐藏、帮助文案、单测与 e2e 用例
-- 下一步：CI 跑 `make cov` / `make e2e`；本地 `make cov` 为 94.84%，HEAD 基线为 94.81%（均低于 95%，非本 ADR 引入）；e2e 未在本地执行（pnpm/bun shim 损坏），用例已提交
+- 下一步：无未落地分期（Status 已由人工评审确认为 `Implemented`，2026-11-28）。收尾项（人工）：CI 跑 `make cov` / `make e2e`；e2e 未在本地执行（pnpm/bun shim 损坏），用例已提交
 - 已知坑：可编辑矩阵必须用专用查询（不能套视图 filters / search）；行级权限表非豁免用户只读；月份按 [当月1日, 次月1日) 匹配历史数据；同一单元格并发首次写入仍可能产生重复行，加载与写入端点会检测并拒绝；202 载荷无 `action` 字段（与其它记录写接口一致），前端只能用 `isChangeRequestResponse` 判定，不能读 `res.action`
 - 最近一次全绿：`make test` 6968 passed / 17 skipped（2026-11-15）；前端 `npx vitest run` 3279 passed（2026-11-15）

@@ -1,6 +1,6 @@
 # ADR 0164: 文档阅读器旋转 / 水平镜像（自动判定 + 手动纠偏）
 
-Status: Accepted（2026-11-26 评审通过，P0-P2 已落地）
+Status: Implemented（2026-11-26 评审通过，P0-P2 已落地）
 Date: 2026-11-26
 Related: `frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/api/documents.ts`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/preview/`、ADR 0025（原件族阅读器）、ADR 0129（PPTX 衍生 PDF）
 需求卡片: `docs/requirements/0164-document-viewer-rotation.md`（需求原文与约束编号的唯一副本）

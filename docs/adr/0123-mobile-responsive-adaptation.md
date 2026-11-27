@@ -1,6 +1,6 @@
 # ADR 0123: 全站移动端显示适配专项（响应式优先）
 
-Status: Accepted（2026-11-08 人工评审通过）
+Status: Implemented（2026-11-08 人工评审通过）
 Date: 2026-11-08
 Related: `frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/**`、ADR 0044（文档页移动端紧凑化范式）、ADR 0026（Chrome 81 兼容基线）
 需求卡片: `docs/requirements/0123-mobile-responsive-adaptation.md`（需求原文与约束编号的唯一副本）

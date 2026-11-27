@@ -1,6 +1,6 @@
 # ADR 0180: content 模块拆分（单文件 1529 行 → 10 个内聚模块，公开面零变更）
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 Date: 2026-11-26
 Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/0180-content-module-split.md`、`docs/adr/0130-plugin-boundary-convergence.md`、`docs/adr/0177-document-template-integration.md`、`docs/REFACTOR_BACKLOG.md`
 需求卡片: `docs/requirements/0180-content-module-split.md`（需求原文与约束编号的唯一副本）

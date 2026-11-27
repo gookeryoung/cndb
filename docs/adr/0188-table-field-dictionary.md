@@ -1,6 +1,6 @@
 # ADR 0188: 数据表字段字典（字段业务元数据 + 一源三态导出 + 标准符合度）
 
-Status: Accepted（2026-11-28 用户「执行P0-P2」，P0–P2 已落地）
+Status: Implemented（2026-11-28 用户「执行P0-P2」，P0–P2 已落地）
 Date: 2026-11-28
 Related: `src/cndb/plugins/tables/models.py`、`src/cndb/plugins/tables/routers/dictionary.py`、`src/cndb/plugins/tables/services/dictionary/`、`src/cndb/render/markdown_export/`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/fields/FieldManager/`、`frontend/src/pages/settings/TableSettingsPage.tsx`
 需求卡片: `docs/requirements/0188-table-field-dictionary.md`（需求原文与约束编号的唯一副本）

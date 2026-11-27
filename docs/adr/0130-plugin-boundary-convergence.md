@@ -1,6 +1,6 @@
 # 0130 插件边界收敛与布局治理（本轮只做收敛项，包化 / 内核化留待触发）
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 
 Related: `src/cndb/core/plugin_registry.py`、`src/cndb/core/http.py`、`src/cndb/plugins/files/__init__.py`、`docs/adr/0020-llm-platform-capability.md`、`CHANGELOG.md`
 

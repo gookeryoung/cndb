@@ -1,6 +1,6 @@
 # ADR 0118: 结构设计 DSL 可复用模块库与跨工作区引用
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 Date: 2026-11-07
 Related: `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/services/files.py`、`src/cndb/plugins/design/services/keys.py`、`src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/dsl/limits.py`、`src/cndb/plugins/design/services/dsl/nodes.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/designLang.ts`；上游 ADR 0079 / 0083 / 0084 / 0086 / 0103 / 0109 / 0075 / 0080
 需求卡片: `docs/requirements/0118-design-reusable-module-library.md`（需求原文与约束编号的唯一副本）

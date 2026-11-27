@@ -1,6 +1,6 @@
 # ADR 0163: 工作区多团队数据共享（团队授权扩展为 viewer / editor）
 
-Status: Accepted（2026-11-26 人工确认，含 H57 修订放行）
+Status: Implemented（2026-11-26 人工确认，含 H57 修订放行）
 Date: 2026-11-26
 Related: ADR 0153（团队层）、ADR 0154（工作区链接与团队数据授权，D11 被本 ADR 修订）、ADR 0161（权限边界）、ADR 0047（403 文案）、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/team_access.py`、`src/cndb/plugins/workspaces/schemas/models.py`
 需求卡片: `docs/requirements/0163-workspace-multi-team-data-sharing.md`（需求原文与约束编号的唯一副本）

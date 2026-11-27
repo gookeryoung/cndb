@@ -1,6 +1,6 @@
 # ADR 0177: 文档模板整合（导出模板 / 内容模板双表并存，契约与入口收敛 + 文档级排版模板绑定）
 
-Status: Accepted（2026-11-26 人工评审通过，含 H68 登记；P0–P3 已落地并提交）
+Status: Implemented（2026-11-26 人工评审通过，含 H68 登记；P0–P3 已落地并提交）
 Date: 2026-11-26
 Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/services/export_template_store.py`、`src/cndb/plugins/documents/services/content_templates.py`、`src/cndb/plugins/documents/routers/templates.py`、`src/cndb/plugins/documents/routers/content_templates.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/documents/ExportTemplatePanel.tsx`、`frontend/src/pages/documents/ContentTemplatePanel.tsx`
 需求卡片: `docs/requirements/0177-document-template-integration.md`（需求原文与约束编号的唯一副本）

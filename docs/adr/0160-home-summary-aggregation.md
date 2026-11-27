@@ -1,6 +1,6 @@
 # ADR 0160: 主页待办聚合端点（`GET /api/v1/home/summary`）
 
-Status: Accepted（2026-11-27 人工确认「开工 P2」；实现与测试已落地）
+Status: Implemented（2026-11-27 人工确认「开工 P2」；实现与测试已落地）
 Date: 2026-11-27
 Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/change_requests/models.py`、`src/cndb/plugins/issues/models.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/core/cache.py`、`frontend/src/components/HomeNav.tsx`、`docs/CONSTRAINTS.md`
 需求卡片: `docs/requirements/0160-home-navigation-layout.md`（需求原文与约束编号的唯一副本）
@@ -121,7 +121,7 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P2 已落地（`GET /api/v1/home/summary` + rail「全部工作区」徽标）；Status 由 `Proposed` 改为 `Accepted`（人工确认「开工 P2」），是否再改 `Implemented` 待人工确认。
+- 当前阶段：P2 已落地（`GET /api/v1/home/summary` + rail「全部工作区」徽标）；Status 已由人工评审确认为 `Implemented`（2026-11-28）。
 - 已完成：只读聚合端点（`cached_home_summary`，20s 进程内缓存，key 含 `user_id` + 库标识）；逐工作区判定复用 `readable_tables` / `can_write_directly` / `resolve_capabilities(MANAGE_LINKS)`；单块异常降级 `partial=true` 仍 200；写路径失效挂在 `_persist_request` / `merge_request` / `merge_row_requests` / `close_request` / `reopen_request` / `create_issue` / `close_issue` / `reopen_issue` / 链接 `_invalidate` / `invalidate_workspace_list_cache`；前端 `homeApi.summary` + 徽标（0 不渲染、失败静默）。
-- 下一步：回填本表提交 sha → 真机验收（多工作区 + 有待办场景）→ 视需要把徽标下沉到团队 / 工作区行（需另立 ADR 扩展 `by_workspace`）。
+- 下一步：无未落地分期（Status 已由人工评审确认为 `Implemented`，2026-11-28）。收尾项（人工）：回填本表提交 sha → 真机验收（多工作区 + 有待办场景）；视需要把徽标下沉到团队 / 工作区行（需另立 ADR 扩展 `by_workspace`）。
 - 已知坑：待办写路径分散在三个插件（提交 / 审批修改申请、开 / 关问题、申请 / 审批链接），失效调用点漏挂只影响新鲜度（TTL 20s 兜底）不影响安全；徽标只做聚合数，不要顺手加「最近 5 条待办列表」或 `by_workspace`（会变成新的跨工作区业务读通路 / 枚举面，需另立 ADR）。

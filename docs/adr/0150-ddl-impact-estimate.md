@@ -1,6 +1,6 @@
 # ADR 0150: 大表 DDL 影响预估（抽样估算 + 可选强制确认）
 
-Status: Accepted（2026-11-24 需求方指示「继续」实施，范围沿用已评审的路线图 0141 P2）
+Status: Implemented（2026-11-24 需求方指示「继续」实施，范围沿用已评审的路线图 0141 P2）
 Date: 2026-11-24
 Related: `src/cndb/plugins/tables/services/core/ddl_impact.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/core/config.py`、`src/cndb/plugins/tables/services/core/ddl.py`
 需求卡片: `docs/requirements/0150-ddl-dry-run.md`（需求原文与约束编号的唯一副本）

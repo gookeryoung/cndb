@@ -1,6 +1,6 @@
 # ADR 0113: 设计结构版本历史区分主动保存 / 自动小版本与版本 DIFF
 
-Status: Accepted（2026-11-06 用户评审通过，进入实现）
+Status: Implemented（2026-11-06 用户评审通过，进入实现）
 Date: 2026-11-06
 Related: `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/services/files.py`、`src/cndb/plugins/documents/services/parse.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/api/design.ts`、`frontend/src/hooks/useDebouncedCallback.ts`、`frontend/src/components/DiffView/DocumentDiffView.tsx`、`docs/adr/0057-document-draft-diff-view.md`、`docs/adr/0079-design-3d-dsl-module.md`、`docs/adr/0086-design-file-library-assembly-constraints-and-open-performance.md`
 需求卡片: `docs/requirements/0113-design-version-history-and-diff.md`（需求原文与约束编号的唯一副本）
@@ -232,6 +232,6 @@ Related: `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/routers.
 
 - 当前阶段：P0-P2 已落地并提交（38fdd507，回填 4d1b01fa，2026-11-06），等待人工验收
 - 已完成：`change_type` 模型 / 迁移 / 四类来源赋值与保存去重提升；`core/textdiff` 下沉 + `GET /diff` + 结构摘要；前端 3s 自动保存（单飞 / 静默失败）、类型徽标与连续 auto 折叠、任选两版对比；备份 `change_type` 往返与旧备份默认 `manual`
-- 下一步：人工验收 e2e 与门禁后确认是否将 Status 改为 `Implemented`；发版按 H4 / H6 走人工卡点
+- 下一步：无未落地分期（Status 已由人工评审确认为 `Implemented`，2026-11-28）；发版按 H4 / H6 走人工卡点
 - 已知坑：自动保存与手动保存竞态靠「单飞 + `cancel()` + 服务端去重」三层兜底；`structure_summary` 依赖版本 `compiled.nodes`，v1 老快照会降级为 `available=false`；`unified_diff` 已从 `documents/services/parse.py` 删除，其他分支若有新调用需改从 `cndb.core.textdiff` 导入
 - 最近一次全绿：`make flow`（6685 passed）/ `make cov`（95.29%）/ `make frontend-coverage`（核心 97.79%）@ 2026-11-06；e2e 待 CI 跑 `make e2e`

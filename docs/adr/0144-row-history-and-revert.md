@@ -1,6 +1,6 @@
 # ADR 0144: 行级历史与撤销（只存 diff + 撤销生成新版本）
 
-Status: Accepted（2026-11-24 需求方指示「P1+P2」实施，范围沿用已评审的路线图 0141 P1）
+Status: Implemented（2026-11-24 需求方指示「P1+P2」实施，范围沿用已评审的路线图 0141 P1）
 Date: 2026-11-24
 Related: `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/ea1b2c3d4e5f_add_row_revision_and_idempotency.py`、`src/cndb/plugins/tables/services/core/row_history.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`
 需求卡片: `docs/requirements/0144-row-history-and-revert.md`（需求原文与约束编号的唯一副本）

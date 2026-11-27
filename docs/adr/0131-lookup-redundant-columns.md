@@ -1,6 +1,6 @@
 # ADR 0131: lookup 显示值写入冗余列（`_lk_*`）后过滤 / 排序 / COUNT 下推
 
-Status: Accepted（2026-11-11 人工批准并落地）
+Status: Implemented（2026-11-11 人工批准并落地）
 Date: 2026-11-10（2026-11-11 落地）
 Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/lookups.py`、`src/cndb/plugins/tables/services/core/links.py`、`src/cndb/plugins/tables/services/core/lookup_sync.py`、`src/cndb/plugins/tables/services/core/lookup_columns.py`、`src/cndb/plugins/tables/services/core/query.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/core/config.py`、ADR 0046
 需求卡片: 无卡片（需求直接立项）

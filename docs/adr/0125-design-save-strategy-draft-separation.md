@@ -1,6 +1,6 @@
 # ADR 0125: 设计结构保存策略改为草稿 / 版本分离（3s 草稿 + 手动里程碑 + 10 分钟检查点）
 
-Status: Accepted（2026-11-08 人工评审通过）
+Status: Implemented（2026-11-08 人工评审通过）
 Date: 2026-11-08
 Related: `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/services/`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/services/drafts.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/api/design.ts`、`docs/adr/0113-design-version-history-and-diff.md`、`docs/adr/0057-document-draft-diff-view.md`
 需求卡片: `docs/requirements/0125-design-save-strategy.md`（需求原文与约束编号的唯一副本）

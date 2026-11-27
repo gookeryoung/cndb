@@ -1,6 +1,6 @@
 # ADR 0152: 文档导出模板（可配置字体 / 标题 / 段落，一套模板同时供电 Word 与 PDF）
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 Date: 2026-11-25
 Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/services/export/theme.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/pdf_fonts.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/layouts/MainLayout.tsx`
 需求卡片: `docs/requirements/0152-document-export-templates.md`（需求原文与约束编号的唯一副本）

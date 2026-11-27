@@ -1,6 +1,6 @@
 # ADR 0161: 工作区 / 团队权限边界收紧（私有可见性统一判定 + 管理面不得提权到 owner）
 
-Status: Accepted（2026-11-26 人工确认）
+Status: Implemented（2026-11-26 人工确认）
 Date: 2026-11-26
 Related: ADR 0153（团队层与两平面分离）、ADR 0154（链接与团队数据授权）、ADR 0047（403 文案）、ADR 0075（覆盖恢复）、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/tables/services/core/access.py`
 需求卡片: 无卡片（由权限审计直接立项；口径 C1..C6 就地定义）

@@ -1,6 +1,6 @@
 # ADR 0117: 低版本浏览器性能专项（Chromium 81 交互时延与兜底成本）
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 Date: 2026-11-07
 Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend/src/compat/flexGap.ts`、`frontend/src/compat/index.ts`、`frontend/src/main.tsx`、`frontend/scripts/chrome81-smoke.mjs`、`frontend/scripts/browser-baseline.mjs`、`frontend/src/pages/grid/gridTableSection.tsx`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0116-frontend-performance-program.md`
 需求卡片: `docs/requirements/0117-legacy-browser-performance.md`（需求原文与约束编号的唯一副本）

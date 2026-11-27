@@ -1,6 +1,6 @@
 # ADR 0155: 文档跨工作区移动（子树 + 多选真移动、文件搬迁、分享保留、申请随行、配额先判）
 
-Status: Accepted
+Status: Implemented（2026-11-28 人工评审确认全期落地）
 Date: 2026-11-25
 Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/documents/services/search.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/storage_snapshot.py`、`src/cndb/core/events.py`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`
 需求卡片: `docs/requirements/0155-cross-workspace-document-move.md`（需求原文与约束编号的唯一副本）

@@ -1,6 +1,6 @@
 # ADR 0186: 文档编号单一权威（导出模板 `mode` + 显式序号让位 + 内置内容模板去号）
 
-Status: Accepted（2026-11-27 人工确认「均按照建议」，含 H72 登记；P0–P3 已落地）
+Status: Implemented（2026-11-27 人工确认「均按照建议」，含 H72 登记；P0–P3 已落地）
 Date: 2026-11-27
 Related: `src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/services/export/numbering.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/markdown_blocks.py`、`src/cndb/plugins/documents/services/content_builtins.py`、`frontend/src/pages/documents/templateOptions.ts`、`frontend/src/pages/documents/ExportTemplatePanel.tsx`、`frontend/src/pages/documents/ContentTemplatePanel.tsx`、`frontend/src/api/exportTemplates.ts`
 需求卡片: `docs/requirements/0186-document-numbering-single-authority.md`（需求原文与约束编号的唯一副本）

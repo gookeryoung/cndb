@@ -1,6 +1,6 @@
 # ADR 0116: 前端性能提升专项（首屏 / 文档按需加载 / 路由预取 / 性能门禁）
 
-Status: Accepted（评审通过 2026-11-06）
+Status: Implemented（评审通过 2026-11-06）
 Date: 2026-11-06
 Related: `frontend/src/main.tsx`、`frontend/src/components/ProtectedRoute.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/workspace/TablesList.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/useGridData.ts`、`frontend/scripts/bundle-budget.mjs`、`frontend/tests/e2e/perf/grid-lcp.spec.ts`、`docs/adr/0046-web-performance-bottlenecks.md`
 需求卡片: `docs/requirements/0116-frontend-performance-program.md`（需求原文与约束编号的唯一副本）
