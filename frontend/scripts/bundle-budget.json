@@ -2,10 +2,6 @@
   "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；'entryCss'=主入口样式表；'fonts'=全部 woff2 传输量；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件；{moduleMarker}=按 dist/.vite/chunk-modules.json 的模块归属定位 chunk（hash 改名后仍有效，可命中多个 chunk 时求和）。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
   "tolerancePct": 5,
   "history": [
-    "2026-11-06 feat(perf): ADR 0116 P1 axios 改为按需加载 + rc-form 摇树优化，入口 gzip 230→198 KiB（C5）",
-    "2026-11-06 feat(perf): ADR 0116 P0 首轮实测回填主入口 CSS 基线（C2）",
-    "2026-11-06 feat(perf): ADR 0116 P1 字体裁剪到 7 个字重（Inter 4 + Outfit 2 + Mono 1），233→142 KiB（C4）",
-    "2026-11-06 feat(perf): ADR 0116 P2 编辑器与图表弹窗改 lazy，文档页 118→29 KiB（C6）",
     "2026-11-06 [set-budget] feat(perf): ADR 0116 P1 入口上限按 C5 目标收紧到 215 KiB",
     "2026-11-06 [set-budget] feat(perf): ADR 0116 P2 文档页上限按 C6 目标收紧到 150 KiB",
     "2026-11-08 docs: 9b40a157 补充项目级管理与流水线帮助（设计草稿/检查点、流水线版本、四份 YAML 示例），纯静态文案随教程 chunk 加载，无弹层/重型依赖可再 lazy",
@@ -21,7 +17,11 @@
     "2026-11-25 [set-budget] perf(bundle): 结果视图与模板 Drawer 按需加载后实测 19.84 KiB，上限从 23.44 收紧到 21.82 KiB（留约 10%）",
     "2026-11-25 perf(bundle): AnalyticsResultView / AnalyticsManagerDrawer 拆出按需 chunk 后按实测收口基线（22.74→19.84 KiB）",
     "2026-11-26 help: 教程正文改写导出模板口径（原文案称模板预设导出格式/范围属事实错误）并补内容模板复制/拖拽说明（ADR 0177 P0/P2），属内容增长",
-    "2026-11-26 [set-budget] help: 教程正文为散文内容而非 UI chunk，无 lazy 可拆；ADR 0177 P0/P2 改写导出模板口径与补内容模板说明后 31.32 KiB 已超原上限 32000，上调至 33500（约 1.4 KiB 余量）"
+    "2026-11-26 [set-budget] help: 教程正文为散文内容而非 UI chunk，无 lazy 可拆；ADR 0177 P0/P2 改写导出模板口径与补内容模板说明后 31.32 KiB 已超原上限 32000，上调至 33500（约 1.4 KiB 余量）",
+    "2026-11-27 fix(bundle): 96a6528a 给帮助示例加「机械设计示例」工作区下载入口后 chunk 涨到 3.57KiB，基线未同步；本提交只记录实测基线，不抬上限",
+    "2026-11-27 [set-budget] fix(bundle): 96a6528a 的帮助示例新增「机械设计示例」11 份 .cnmd 下载入口（ExamplesSection 内联文件清单），实测 3.57KiB 超原上限 3.32KiB；散文+清单无按需可拆，按 H32 抬上限至 3.71KiB（+11.8%，<20%）",
+    "2026-11-27 docs(help): ADR 0186 新增「标题编号为什么不重复」小节并把去号口径补进内容模板小节",
+    "2026-11-27 [set-budget] docs(help): ADR 0186 帮助小节使 tutorials chunk 由 31.32 涨到 32.59KiB，上限同步留 5% 余量"
   ],
   "chunks": [
     {
@@ -93,22 +93,22 @@
       "resolve": {
         "assetPattern": "^tutorials-.*\\.js$"
       },
-      "baseline": 32071,
-      "budget": 33500,
-      "reason": "help: 教程正文为散文内容而非 UI chunk，无 lazy 可拆；ADR 0177 P0/P2 改写导出模板口径与补内容模板说明后 31.32 KiB 已超原上限 32000，上调至 33500（约 1.4 KiB 余量）",
-      "updatedAt": "2026-11-26",
-      "commit": "b0c98bf6"
+      "baseline": 33371,
+      "budget": 34500,
+      "reason": "docs(help): ADR 0186 帮助小节使 tutorials chunk 由 31.32 涨到 32.59KiB，上限同步留 5% 余量",
+      "updatedAt": "2026-11-27",
+      "commit": "96a6528a"
     },
     {
       "name": "HelpExamples（帮助·示例正文）",
       "resolve": {
         "assetPattern": "^examples-.*\\.js$"
       },
-      "baseline": 2405,
-      "budget": 3400,
-      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
-      "updatedAt": "2026-11-05",
-      "commit": "f8e61e72"
+      "baseline": 3663,
+      "budget": 3800,
+      "reason": "fix(bundle): 96a6528a 的帮助示例新增「机械设计示例」11 份 .cnmd 下载入口（ExamplesSection 内联文件清单），实测 3.57KiB 超原上限 3.32KiB；散文+清单无按需可拆，按 H32 抬上限至 3.71KiB（+11.8%，<20%）",
+      "updatedAt": "2026-11-27",
+      "commit": "96a6528a"
     },
     {
       "name": "HelpConfiguration（帮助·配置正文）",
