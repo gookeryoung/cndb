@@ -160,7 +160,7 @@ def resolve_heading_numbering(mode: str, heading: str, blocks: Sequence[Block]) 
 - `ExportTemplatePanel.test.tsx`：编号方式下拉三档、`force` 提示、`mode` 进入保存载荷。
 - `ContentTemplatePanel.test.tsx`：「去除标题序号」按钮的变更条数与撤销。
 
-**e2e**：`critical/document-numbering-authority.spec.ts`——用含手写序号的内置模板建文档 → 导出 docx → 断言标题文本只出现一次序号且与绑定模板风格一致。
+**e2e**：`critical/document-numbering-authority.spec.ts`——用 API 建两篇文档（正文自带序号 / 纯语义标题），改模板 `mode` 后导出 docx 并解 `word/document.xml` 断言真实字节：`auto` 让位后「一、」只出现一次、`auto` 无序号正文照常出「一、/二、」、`force` 出现「一、 一、」的显式叠加、`off` 从不编号、`md` 三档字节完全一致。
 
 ### 8. 分期
 
