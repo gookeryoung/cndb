@@ -14,7 +14,20 @@
 | 设计标尺 | `src/theme/tokens.ts` ↔ `index.css` 的 `:root` 标尺块 | 间距 / 字号 / 圆角 / 控件高度 / 断点的**数值** | 全员（新增档位先改这里） |
 
 标尺是双写的（TS 常量给行内 style 与 antd token 用，CSS 变量给样式表用），
-`src/theme/tokens.test.ts` 会解析 `index.css` 逐条比对，**漂移即测试失败**。
+`src/theme/tokens.test.ts` 会遍历 `src` 下**全部**样式表，按 `index.css` 的 `:root` 逐条比对，**漂移即测试失败**。
+
+### 1.1 样式放哪个文件
+
+| 场景 | 落点 | 加载时机 |
+| --- | --- | --- |
+| 主题变量、标尺、通用原语（`.cn-page` / `.cn-state` / `.cn-box` / `.cn-qc-*` …）、跨 2+ 页面复用的类 | `src/index.css`（唯一全局样式表） | 首屏 |
+| 只被单个**懒加载页面**使用、且类名带页面前缀的样式（如 `.cn-graph-*`） | 页面同级 `Xxx.css`，由该页 `import './Xxx.css'` | 随页面 chunk |
+
+判断标准是「有没有第二个使用者」，不是「好不好看」：只在 lazy 页出现的样式写进全局样式表，等于让首屏为不可见界面白付体积，`docs/BUNDLE_BUDGET.md` 的门禁会把它计成超限。
+反过来，只要有第二个页面复用，就回到 `index.css`，否则同一套视觉会分叉成两份。
+
+页面级样式表仍受全部样式硬约束（只用 `--cn-*` token、断点 `767.98px` / `575.98px`、禁止 `:where()` / `:focus-visible` 等 Chrome 81 禁则），
+校验方式与全局表相同：`tokens.test.ts` 扫 `src` 下所有 `.css`，`scripts/check-browser-compat.mjs` 扫源码与产物 CSS。
 
 ## 2. 标尺
 
@@ -110,7 +123,7 @@
 
 ### 工作台原语：`.cn-page-head` / `.cn-box`
 
-数据分析、质量检查与修改申请三页共用一套 GitHub 方盒语言，样式只在 `index.css` 定义一次，组件实现为 `components/SectionBox.tsx`（方盒）：
+数据分析、质量检查与修改申请三页共用一套 GitHub 方盒语言，样式只在 `index.css` 定义一次（三页共用，按 §1.1 属全局原语），组件实现为 `components/SectionBox.tsx`（方盒）：
 
 | 类名 | 用途 |
 | --- | --- |

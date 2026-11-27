@@ -1,15 +1,19 @@
 /**
  * 设计标尺一致性测试.
  *
- * index.css 与 src/theme/tokens.ts 是同一把尺子的两个落点（CSS 变量 / TS 常量），
- * 双写必然漂移，这里用测试把两边钉死：
+ * 样式表（全局 index.css 与随页面 lazy 加载的页面级 *.css）与 src/theme/tokens.ts
+ * 是同一把尺子的两个落点（CSS 变量 / TS 常量），双写必然漂移，这里用测试把两边钉死：
  *   1. tokens.ts 声明的每个变量都必须在 :root 里存在且数值一致
- *   2. index.css 里不允许再出现游离的离散步长（字号 9/15px、圆角 3/10px、间距 3/5/7/10/14px）
+ *   2. 样式表里不允许再出现游离的离散步长（字号 9/15px、圆角 3/10px、间距 3/5/7/10/14px）
+ *   3. max-width 断点只允许登记过的几个口径
  *
- * 违反第 2 条说明有人绕过了标尺就地写字面量——请把新档位加进 tokens.ts 再引用变量。
+ * 违反第 2/3 条说明有人绕过了标尺就地写字面量——请把新档位加进 tokens.ts 再引用变量。
+ *
+ * 需求 0183 起，src 下除 index.css 外还有页面级样式（如
+ * pages/documents/DocumentGraphPage.css）；扫描面是整个 src，搬出 index.css 不会漏检。
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -29,10 +33,28 @@ import {
 // 直接读磁盘：vitest 会拦截 .css 的模块加载（?raw 也可能被 CSS 插件接管），
 // 这里要的是「写进文件的字面文本」，不经过任何转换。
 // jsdom 环境下 import.meta.url 不是 file:// 协议，只能从 cwd 推断。
-const INDEX_CSS = [
-  path.resolve(process.cwd(), 'src/index.css'),
-  path.resolve(process.cwd(), 'frontend/src/index.css'),
+const SRC_DIR = [
+  path.resolve(process.cwd(), 'src'),
+  path.resolve(process.cwd(), 'frontend/src'),
 ].find(p => existsSync(p)) ?? ''
+
+const INDEX_CSS = path.join(SRC_DIR, 'index.css')
+
+/** 递归收集 src 下的全部样式表（全局 + 页面级），排序保证扫描结果稳定 */
+function collectStylesheets(dir: string): string[] {
+  if (!dir || !existsSync(dir)) return []
+  const found: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules') continue
+      found.push(...collectStylesheets(full))
+      continue
+    }
+    if (entry.name.endsWith('.css')) found.push(full)
+  }
+  return found.sort()
+}
 
 /** 去掉注释，避免注释里的示例值被当成声明 */
 function stripComments(css: string): string {
@@ -47,11 +69,13 @@ function scaleBlock(css: string): string {
   return css.slice(start, end)
 }
 
-const css = stripComments(readFileSync(INDEX_CSS, 'utf8'))
+const STYLESHEETS = collectStylesheets(SRC_DIR)
+
+/** 全部样式表去注释后拼接：字面量与断点断言按合并文本跑，单个文件不必重复实现 */
+const css = STYLESHEETS.map(f => stripComments(readFileSync(f, 'utf8'))).join('\n')
 
 describe('tokens ↔ index.css 同步', () => {
-  const block = scaleBlock(css)
-
+  const block = scaleBlock(stripComments(readFileSync(INDEX_CSS, 'utf8')))
   it('每个标尺变量都在 :root 中声明且数值一致', () => {
     for (const [name, value] of Object.entries(CSS_VARS)) {
       expect(block, `:root 缺少 ${name}`).toContain(`${name}: ${value};`)
@@ -88,7 +112,12 @@ describe('tokens ↔ index.css 同步', () => {
   })
 })
 
-describe('index.css 不出现游离字面量', () => {
+describe('样式表不出现游离字面量', () => {
+  it('扫描面覆盖 src 下全部样式表', () => {
+    expect(STYLESHEETS.length, 'src 下应至少有一个样式表').toBeGreaterThan(0)
+    expect(STYLESHEETS.some(f => f.endsWith('index.css'))).toBe(true)
+  })
+
   it('字号只走 --cn-text-*（9/15/17px 等离散步长已废弃）', () => {
     const offenders = [...css.matchAll(/font-size:\s*([0-9.]+px)/g)].map(m => m[1])
     expect(offenders).toEqual([])

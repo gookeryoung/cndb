@@ -38,6 +38,8 @@ import { STATUS_LABELS } from './documentDisplay'
 import { useTheme } from '@/theme/ThemeProvider'
 import { SPACE } from '@/theme/tokens'
 import { copyText } from '@/utils/clipboard'
+// 本页样式随 chunk 加载：.cn-graph-* 只被这一页使用，留在 index.css 会让首屏 CSS 白付体积。
+import './DocumentGraphPage.css'
 
 // LabelLayout 让 labelLayout.hideOverlap 生效：节点密集时自动丢弃互相压盖的标签，
 // 这是「显示效果差」的主要来源之一（标签糊成一团）。
