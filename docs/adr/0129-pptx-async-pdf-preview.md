@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-11-09
-Related: `src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/core/config.py`、`src/cndb/app.py`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/api/documents.ts`、`deploy/Dockerfile.prod`、`deploy/Dockerfile.base`、`docker-compose.prod.yml`、`docs/adr/0087-docx-xlsx-online-preview.md`、`docs/requirements/0128-pptx-preview-performance.md`
+Related: `src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/core/config.py`、`src/cndb/app.py`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/api/documents.ts`、`deploy/Dockerfile.prod`、`deploy/Dockerfile.base`、`docker-compose.prod.yml`、`docs/adr/0087-docx-xlsx-online-preview.md`、`docs/requirements/0128-pptx-preview-performance.md`
 需求卡片: `docs/requirements/0129-pptx-async-pdf-preview.md`（需求原文与约束编号的唯一副本）
 
 > 本 ADR 只新增「PPTX → PDF 衍生预览件」链路；ADR 0025 的原件族只读模型、ADR 0087 的 Office HTML 预览、需求 0128 的前端逐页渲染均保持不变。衍生件是可丢弃缓存，不进入备份、配额与内容版本。
@@ -282,7 +282,7 @@ def stop_pptx_pdf_sweeper() -> None: ...
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/preview/pptx_pdf.py`、`src/cndb/plugins/documents/services/preview/pdf_converter.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/core/config.py` | `tests/test_pptx_pdf_preview.py`、`tests/test_pptx_pdf_preview_api.py` | aa621f8c |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/preview/pptx_pdf.py`、`src/cndb/plugins/documents/services/preview/pdf_converter.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/core/config.py` | `tests/test_pptx_pdf_preview.py`、`tests/test_pptx_pdf_preview_api.py` | aa621f8c |
 | P1 | 已落地 | `src/cndb/plugins/documents/services/preview/pdf_worker.py`、`deploy/Dockerfile.pdf-worker`、`docker-compose.prod.yml`、`deploy/deploy.sh`、`deploy/.env.prod.example`、`frontend/src/pages/documents/pptxPdf.ts`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/DocumentAssetView.test.tsx`、`frontend/src/pages/documents/pptxPdf.test.ts`、`tests/test_pptx_pdf_worker.py` | 9bf8fd1c |
 | P2 | 已落地 | `src/cndb/plugins/documents/services/preview/pptx_pdf.py`、`src/cndb/app.py`、`frontend/src/pages/help/content/tutorials.tsx`、`CONTEXT.md`、`CHANGELOG.md` | `tests/test_pptx_pdf_preview.py`（补扫 / GC 12 例）、`tests/test_backup.py`、`frontend/tests/e2e/critical/pptx-async-pdf.spec.ts` | 7904bfa8 |
 

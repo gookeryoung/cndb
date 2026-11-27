@@ -34,6 +34,8 @@
 | H11 | e2e 是硬门禁，不得通过跳过用例规避失败（抖动由 CI retries 兜底） | `make e2e` | 全局 |
 | H12 | 分层覆盖：判定层单测 / 接口层 / 迁移 / 备份往返（含旧备份兼容）/ 前端单测 / e2e | `make test` | 全局 |
 | H28 | 拆分模块时 mock / monkeypatch 目标必须指向 canonical 模块；测试依赖的具名导出须在原文件用 `export { ... } from` 或 `__all__` 保留 | `make test` | 全局 |
+| H69 | 模块分层单向无环：拆分后的子包内底层模块（如 `content/storage.py`）不得 import 同包其它模块，上一层的模块只能向下依赖，包内依赖图必须无环 | `make test` | ADR 0180 I2 |
+| H70 | 单一可变状态：模块级可变状态（如 `_DOCS_DIR`、`_graph_cache`）全仓只有一份物理定义，其余子模块经延迟属性读取使用，不得在 import 期快照，也不得多处实例化 | `make test` | ADR 0180 I3 |
 
 ## 数据与迁移
 

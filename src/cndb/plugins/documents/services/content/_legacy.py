@@ -12,22 +12,18 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
-import gzip
 import logging
 import shutil
 import time
 import uuid
 import zlib
 from collections import defaultdict
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
-from cndb.core.config import settings
 from cndb.core.errors import ConflictError, NotFoundError
 from cndb.plugins.documents.models import (
     CHANGE_TYPE_MANUAL,
@@ -35,7 +31,6 @@ from cndb.plugins.documents.models import (
     CONTENT_TYPE_FOLDER,
     CONTENT_TYPE_MARKDOWN,
     DOC_STATUS_PUBLISHED,
-    EXTERNAL_MIN_SIZE,
     Document,
     DocumentChangeRequest,
     DocumentIssue,
@@ -48,193 +43,18 @@ from cndb.plugins.documents.models import (
     Tag,
 )
 from cndb.plugins.documents.services import parse
-from cndb.plugins.workspaces.models import WorkspaceRole
-from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 if TYPE_CHECKING:
     from cndb.plugins.accounts.models import User
 
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
+from cndb.plugins.documents.services import content as _pkg
 
-_COMPRESSED_PREFIX = "gz:"
+from . import access, storage
 
-# 低于该体积直接内联原文：压缩收益不足以抵消解压与 base64 膨胀开销。
-# 4KB 起压缩可显著降低「长文档 × 多版本」的 DB / 备份体积（格式与读取路径不变）。
-RAW_INLINE_MAX_SIZE = 4 * 1024
-
-# 外存根目录：跟随数据库目录（data/docs）
-_DOCS_DIR = (
-    Path(settings.DATABASE_URL.replace("sqlite:///", "")).parent / "docs"
-    if (settings.DATABASE_URL.startswith("sqlite:///"))
-    else Path("data/docs")
-)
-
-
-def _external_dir(doc_id: int, root: Path | None = None) -> Path:
-    return (root if root is not None else _DOCS_DIR) / str(doc_id)
-
-
-def external_version_path(doc_id: int, version_number: int, root: Path | None = None) -> Path:
-    """外存内容文件路径：``data/docs/{doc_id}/v{n}.md.gz``.
-
-    文件名自描述版本号，是外存内容的唯一权威定位方式；``Document.content_path``
-    只是"最新外存版本"的兼容冗余字段，多版本时会被后来者覆盖，**不可**用于读取
-    历史版本（否则所有历史版本都会串到最新内容）。
-
-    Args:
-        root: 自定义外存根目录（体检/回收集成测试用；默认跟随数据库目录）。
-    """
-    return _external_dir(doc_id, root) / f"v{version_number}.md.gz"
-
-
-# ── 读取辅助 ──
-
-
-def get_document_or_404(db: Session, workspace_id: int, doc_id: int) -> Document:
-    """取工作区下未删除文档，不存在抛 NotFoundError."""
-    doc = db.execute(
-        select(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == workspace_id,
-            Document.is_deleted == False,  # noqa: E712
-        )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise NotFoundError("文档不存在")
-    return doc
-
-
-def get_deleted_document_or_404(db: Session, workspace_id: int, doc_id: int) -> Document:
-    """取工作区下**已删除**文档（回收站操作专用），不存在抛 NotFoundError."""
-    doc = db.execute(
-        select(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == workspace_id,
-            Document.is_deleted == True,  # noqa: E712
-        )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise NotFoundError("回收站中不存在该文档")
-    return doc
-
-
-def get_document_any_state_or_404(db: Session, workspace_id: int, doc_id: int) -> Document:
-    """取工作区下文档（不过滤删除态），不存在抛 NotFoundError.
-
-    供"先判断删除态再决定语义"的流程使用（如彻底删除对未删除文档返回 409）。
-    """
-    doc = db.execute(
-        select(Document).where(
-            Document.id == doc_id,
-            Document.workspace_id == workspace_id,
-        )
-    ).scalar_one_or_none()
-    if doc is None:
-        raise NotFoundError("文档不存在")
-    return doc
-
-
-def require_editor(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
-    """校验用户是工作区 editor/owner（viewer 或非成员拒绝写操作）."""
-    ws = _get_workspace(db, workspace_id)
-    role = workspace_data_role(user, ws, db)
-    if role is None or role == WorkspaceRole.VIEWER:
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, user, requirement="仅编辑者及以上角色可执行此操作")
-    return role
-
-
-def _get_workspace(db: Session, workspace_id: int):
-    from cndb.plugins.workspaces.models import Workspace
-
-    ws = db.get(Workspace, workspace_id)
-    if ws is None:
-        raise NotFoundError("工作区不存在")
-    return ws
-
-
-def load_content(version: DocumentVersion | None, doc: Document) -> str:
-    """从版本记录加载内容，自动识别压缩/外存策略.
-
-    外存版本按 ``data/docs/{doc_id}/v{version_number}.md.gz`` 定位（文件名自描述
-    版本号）；内容缺失/损坏时降级为空串并记 warning —— 读取路径（详情 / 版本 /
-    diff / 检索 / 分享）不应因单个坏文件整体 500。
-    """
-    if version is None:
-        return ""
-    raw = version.content or ""
-    if raw == "" and version.content_size > 0:
-        return _read_external_content(doc, version)
-    if raw.startswith(_COMPRESSED_PREFIX):
-        return decode_inline_compressed(raw)
-    return raw
-
-
-def _read_external_content(doc: Document, version: DocumentVersion) -> str:
-    """读取外存版本内容，失败降级为空串."""
-    path = external_version_path(doc.id, version.version_number)
-    if not path.is_file() and doc.content_path:
-        # 兼容历史非标准落盘位置：仅当冗余路径确为当前版本的文件名时才采用，
-        # 避免"多版本共用 doc.content_path"把历史版本读成最新内容。
-        legacy = Path(doc.content_path)
-        if legacy.name == path.name and legacy.is_file():
-            path = legacy
-    if not path.is_file():
-        logger.warning("外存内容文件缺失: %s（doc=%s v%s）", path, doc.id, version.version_number)
-        return ""
-    try:
-        return gzip.decompress(path.read_bytes()).decode("utf-8")
-    except (OSError, EOFError, ValueError, zlib.error) as exc:
-        logger.warning("外存内容文件损坏，已降级为空内容: %s（%s）", path, exc)
-        return ""
-
-
-def decode_inline_compressed(raw: str) -> str:
-    """解码内联 gzip+base64 内容，失败降级为空串."""
-    try:
-        return gzip.decompress(base64.b64decode(raw[len(_COMPRESSED_PREFIX) :])).decode("utf-8")
-    except (OSError, EOFError, ValueError, zlib.error) as exc:
-        logger.warning("内联压缩内容损坏，已降级为空内容: %s", exc)
-        return ""
-
-
-def latest_version(db: Session, doc_id: int) -> DocumentVersion | None:
-    """最新版本记录（version_number 最大）。"""
-    return db.execute(
-        select(DocumentVersion)
-        .where(DocumentVersion.document_id == doc_id)
-        .order_by(DocumentVersion.version_number.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-
-
-def version_count(db: Session, doc_id: int) -> int:
-    return int(db.execute(select(func.count()).where(DocumentVersion.document_id == doc_id)).scalar_one())
-
-
-# ── 写入 ──
-
-
-def store_content_bytes(doc: Document, next_num: int, content: str, raw_size: int) -> str:
-    """按分级存储策略落盘，返回 DB content 字段应存的值.
-
-    - ≤4KB：原文内联
-    - 4KB–2MB：gz base64 内联（``gz:`` 前缀）
-    - >2MB：gzip 写 ``data/docs/{doc_id}/v{n}.md.gz``，返回 ""；同时刷新
-      ``doc.content_path``（仅作"最新外存版本"冗余标记，读取以版本号定位为准）
-    """
-    if raw_size <= RAW_INLINE_MAX_SIZE:
-        return content
-    compressed = gzip.compress(content.encode("utf-8"), compresslevel=6)
-    if raw_size > EXTERNAL_MIN_SIZE:
-        path = external_version_path(doc.id, next_num)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(compressed)
-        doc.content_path = str(path)
-        return ""
-    return _COMPRESSED_PREFIX + base64.b64encode(compressed).decode("ascii")
+# 固定全名而非 __name__：拆包后日志分类必须仍是 …services.content（ADR 0180 D7）
+logger = logging.getLogger("cndb.plugins.documents.services.content")
 
 
 def create_document(
@@ -262,7 +82,7 @@ def create_document(
     跳过 Markdown 元数据解析，正文为空版本，不建 TOC / 摘要，只按标题进检索。
     """
     if parent_id is not None:
-        parent = get_document_or_404(db, workspace_id, parent_id)
+        parent = access.get_document_or_404(db, workspace_id, parent_id)
         if not parent.is_folder:
             raise ConflictError("父节点必须是文件夹")
 
@@ -297,7 +117,7 @@ def create_document(
 
     if not is_folder:
         raw_size = content_size if asset and content_size is not None else len(content.encode("utf-8"))
-        stored = "" if asset else store_content_bytes(doc, 1, content, raw_size)
+        stored = "" if asset else storage.store_content_bytes(doc, 1, content, raw_size)
         version = DocumentVersion(
             document_id=doc.id,
             version_number=1,
@@ -333,8 +153,8 @@ def replace_document_asset(
 
     旧原件由调用方在事务提交后删除（DB 先落新值，避免「文件删了事务回滚」）。
     """
-    doc = get_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    doc = access.get_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
     if doc.is_folder:
         raise ConflictError("文件夹没有原件")
     if not doc.asset_file_key:
@@ -374,8 +194,8 @@ def update_content(
     Args:
         base_updated_at: 客户端持有的 updated_at ISO 字符串；None 表示跳过冲突检测。
     """
-    doc = get_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    doc = access.get_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
 
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
@@ -386,7 +206,7 @@ def update_content(
     ):
         raise ConflictError("文档已被他人修改，请刷新获取最新版本后重试（您的本地修改未丢失）")
 
-    v = latest_version(db, doc.id)
+    v = _pkg.latest_version(db, doc.id)
     next_num = (v.version_number + 1) if v else 1
     raw_size = len(content.encode("utf-8"))
     content_hash = parse.content_hash(content)
@@ -395,7 +215,7 @@ def update_content(
     if v and v.content_hash == content_hash:
         return doc
 
-    stored = store_content_bytes(doc, next_num, content, raw_size)
+    stored = storage.store_content_bytes(doc, next_num, content, raw_size)
 
     version = DocumentVersion(
         document_id=doc.id,
@@ -465,8 +285,8 @@ def _mark_open_change_requests_stale(db: Session, document_id: int) -> None:
 
 def rollback_version(db: Session, workspace_id: int, doc_id: int, user: User, target_version: int) -> Document:
     """回滚到指定版本：内容恢复并以 rollback 类型创建新版本（历史不可变）."""
-    doc = get_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    doc = access.get_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
 
     target = db.execute(
         select(DocumentVersion).where(
@@ -482,7 +302,7 @@ def rollback_version(db: Session, workspace_id: int, doc_id: int, user: User, ta
         workspace_id,
         doc_id,
         user,
-        content=load_content(target, doc),
+        content=_pkg.load_content(target, doc),
         change_summary=f"回滚到 v{target_version}",
         base_updated_at=None,
         change_type=CHANGE_TYPE_ROLLBACK,
@@ -523,7 +343,7 @@ def move_target_reason(db: Session, workspace_id: int, doc: Document, parent_id:
 
 def soft_delete_documents(db: Session, workspace_id: int, docs: list[Document], user: User) -> int:
     """批量软删除（同一删除时间戳，最后统一刷新标签计数）；返回处理的根节点数."""
-    require_editor(db, workspace_id, user)
+    access.require_editor(db, workspace_id, user)
     deleted_at = dt.datetime.now(dt.UTC)
     count = 0
     for doc in docs:
@@ -541,8 +361,8 @@ def soft_delete_documents(db: Session, workspace_id: int, docs: list[Document], 
 
 def soft_delete_document(db: Session, workspace_id: int, doc_id: int, user: User) -> Document:
     """软删除文档（文件夹级联整棵子树，同一删除批次；刷新标签计数）."""
-    doc = get_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    doc = access.get_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
 
     deleted_at = dt.datetime.now(dt.UTC)
     _mark_deleted_subtree(db, doc, user, deleted_at)
@@ -595,9 +415,6 @@ def _mark_deleted_subtree(
     return marked
 
 
-# ── 回收站：列表 / 恢复 / 彻底删除 ──
-
-
 def list_deleted_documents(
     db: Session,
     workspace_id: int,
@@ -640,8 +457,8 @@ def restore_document(db: Session, workspace_id: int, doc_id: int, user: User) ->
     - 迁移前历史数据 deleted_at 为空：按整棵子树宽松恢复；
     - 父节点仍处于删除态时重挂到根目录，避免产生"可见但父级不可见"的悬空层级。
     """
-    doc = get_deleted_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    doc = access.get_deleted_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
 
     restored = _restore_subtree(db, doc, batch=doc.deleted_at)
     reparented = False
@@ -669,7 +486,7 @@ def _restore_subtree(db: Session, node: Document, batch: dt.datetime | None, vis
     node.deleted_at = None
     node.deleted_by_id = None
     if not node.is_folder:
-        sync_fts(db, node, load_content(latest_version(db, node.id), node))
+        sync_fts(db, node, _pkg.load_content(_pkg.latest_version(db, node.id), node))
 
     children = (
         db.execute(
@@ -708,14 +525,14 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
       不随父节点一起销毁；
     - 一并清理版本 / 标签关联 / 分享 / FTS 索引与外存内容目录。
     """
-    doc = get_document_any_state_or_404(db, workspace_id, doc_id)
+    doc = access.get_document_any_state_or_404(db, workspace_id, doc_id)
     # 先判可见性再判角色：彻底删除不可逆，「看不见的草稿」不允许被销毁。
     # 已发布文档在回收站中仍按文档策略对全员可见，故不受影响。
     from cndb.plugins.documents.services import visibility
 
     if not visibility.can_view_document(db, doc, user):
         raise NotFoundError("文档不存在")
-    require_editor(db, workspace_id, user)
+    access.require_editor(db, workspace_id, user)
     if not doc.is_deleted:
         raise ConflictError("文档尚未删除，请先移入回收站再彻底删除", code="doc_not_deleted")
 
@@ -749,7 +566,7 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
     # 外存文件在事务提交后删除：DB 侧已作废，避免"文件已删但事务回滚"
     files_removed = 0
     for doc_id_ in ids:
-        external = _external_dir(doc_id_)
+        external = storage._external_dir(doc_id_)
         if external.is_dir():
             shutil.rmtree(external, ignore_errors=True)
             files_removed += 1
@@ -787,9 +604,6 @@ def _collect_purge_targets(db: Session, node: Document, targets: list[Document],
             child.parent_id = None  # 已恢复的子项挂根，不销毁
             detached += 1
     return detached
-
-
-# ── 反向链接 ──
 
 
 def find_backlinks(
@@ -842,7 +656,7 @@ def find_backlinks(
     return [
         doc
         for doc, version in rows
-        if any(link["target"] == title for link in parse.iter_wikilinks(load_content(version, doc)))
+        if any(link["target"] == title for link in parse.iter_wikilinks(_pkg.load_content(version, doc)))
     ]
 
 
@@ -855,8 +669,8 @@ def resolve_outgoing_links(db: Session, workspace_id: int, doc: Document) -> lis
     同一目标标题的多种写法（带锚点/别名）合并为一行，``raw`` 取首次出现的原文，
     便于前端原样展示；``anchor`` / ``alias`` 供修复与提示使用。
     """
-    version = latest_version(db, doc.id)
-    links = parse.iter_wikilinks(load_content(version, doc))
+    version = _pkg.latest_version(db, doc.id)
+    links = parse.iter_wikilinks(_pkg.load_content(version, doc))
     if not links:
         return []
 
@@ -922,17 +736,17 @@ def repair_wikilinks(
     - 全部条目都未产生替换时抛 409，避免写入无意义的新版本；
     - 链接修复走 ``update_content``，因此同样保留完整版本历史。
     """
-    doc = get_document_or_404(db, workspace_id, doc_id)
-    require_editor(db, workspace_id, user)
+    doc = access.get_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
     if doc.is_folder:
         raise ConflictError("文件夹没有正文，无法修复链接")
 
-    content = load_content(latest_version(db, doc.id), doc)
+    content = _pkg.load_content(_pkg.latest_version(db, doc.id), doc)
     applied: list[dict[str, Any]] = []
     replaced = 0
     for item in repairs:
         title = str(item.title)
-        target = get_document_or_404(db, workspace_id, item.target_document_id)
+        target = access.get_document_or_404(db, workspace_id, item.target_document_id)
         if title == target.title:
             continue
         content, count = parse.rewrite_wikilink_target(content, title, target.title)
@@ -956,7 +770,7 @@ def repair_wikilinks(
         change_summary=f"修复文档链接（{replaced} 处）",
         base_updated_at=None,
     )
-    latest = latest_version(db, doc_id)
+    latest = _pkg.latest_version(db, doc_id)
     return {
         "document_id": doc_id,
         "version_number": latest.version_number if latest else 0,
@@ -964,9 +778,6 @@ def repair_wikilinks(
         "replaced": replaced,
         "document": serialize_document(db, updated),
     }
-
-
-# ── 标签辅助 ──
 
 
 def _apply_tags(db: Session, doc: Document, tag_ids: list[int], user: User) -> None:
@@ -1007,9 +818,6 @@ def _refresh_tag_counts(db: Session, workspace_id: int) -> None:
     tags = db.execute(select(Tag).where(Tag.workspace_id == workspace_id)).scalars().all()
     for t in tags:
         t.doc_count = counts.get(t.id, 0)
-
-
-# ── FTS5 同步 ──
 
 
 def sync_fts(db: Session, doc: Document, content: str) -> None:
@@ -1064,7 +872,7 @@ def serialize_document(db: Session, doc: Document, *, pinned: bool = False) -> d
     tag_ids = [
         row.tag_id for row in db.execute(select(DocumentTag.tag_id).where(DocumentTag.document_id == doc.id)).all()
     ]
-    total = 0 if doc.is_folder else version_count(db, doc.id)
+    total = 0 if doc.is_folder else storage.version_count(db, doc.id)
     return _serialize_document(
         doc,
         version_total=total,
@@ -1186,14 +994,13 @@ def _serialize_document(
     }
 
 
-# ── 知识图谱聚合（需求 0168） ──────────────────────────────────────────
-# 零新表、零迁移：实时复用 iter_wikilinks 解析最新版本正文；只缓存解析结构，
-# 不缓存正文。缓存键含工作区与可见性身份（管理员看全集，成员看自己可见集）。
-
 GRAPH_MAX_NODES = 500
+
 _GRAPH_CACHE_TTL_SECONDS = 30.0
+
 # 缓存条目上限（用户 × 工作区维度会累积）：超出时丢弃最旧条目，避免长驻进程无界增长。
 _GRAPH_CACHE_MAX_ENTRIES = 256
+
 _graph_cache: dict[tuple[int, str | int, int], tuple[float, dict[str, Any]]] = {}
 
 
@@ -1319,7 +1126,7 @@ def build_link_graph(
         }
     for doc in docs:
         version = versions.get(doc.id)
-        for link in parse.iter_wikilinks(load_content(version, doc)):
+        for link in parse.iter_wikilinks(_pkg.load_content(version, doc)):
             target_title = link["target"]
             if not target_title:
                 continue  # [[#锚点]] 无目标标题，不构成跨文档边
@@ -1373,10 +1180,6 @@ def build_link_graph(
     _graph_cache[cache_key] = (now, payload)
     return payload
 
-
-# ── 文档副本（需求 0172） ──────────────────────────────────────────────
-# 复制「最新正文 + 元数据 + 标签」，不复制版本链 / 置顶 / 分享 / 问题 / 修改申请；
-# 原件族复制文件字节并登记新归属，避免两个文档共享同一 file_key 后互相影响。
 
 DUPLICATE_SUFFIX = " 副本"
 
@@ -1434,11 +1237,11 @@ def duplicate_document(
     - 文件夹递归复制整棵子树；原件族复制文件字节并登记新 `FileOwner`；
     - 每个节点经 ``create_document`` 落库，因此只有 v1 版本。
     """
-    require_editor(db, workspace_id, user)
-    source = get_document_or_404(db, workspace_id, doc_id)
+    access.require_editor(db, workspace_id, user)
+    source = access.get_document_or_404(db, workspace_id, doc_id)
     target_parent = source.parent_id if parent_id is None else parent_id
     if target_parent is not None:
-        parent = get_document_or_404(db, workspace_id, target_parent)
+        parent = access.get_document_or_404(db, workspace_id, target_parent)
         if not parent.is_folder:
             raise ConflictError("父节点必须是文件夹")
     created = _duplicate_node(db, workspace_id, source, user, target_parent, is_root=True)
@@ -1458,7 +1261,7 @@ def _duplicate_node(
 ) -> Document:
     title = _unique_duplicate_title(db, workspace_id, source.title) if is_root else source.title
     if source.is_folder:
-        new_doc = create_document(
+        new_doc = _pkg.create_document(
             db,
             workspace_id,
             user,
@@ -1487,7 +1290,7 @@ def _duplicate_node(
     tag_ids = _document_tag_ids(db, source.id)
     if source.asset_file_key:
         new_key, mime, size = _copy_asset_file(workspace_id, source)
-        new_doc = create_document(
+        new_doc = _pkg.create_document(
             db,
             workspace_id,
             user,
@@ -1513,8 +1316,8 @@ def _duplicate_node(
         )
         return new_doc
 
-    content = load_content(latest_version(db, source.id), source)
-    return create_document(
+    content = _pkg.load_content(_pkg.latest_version(db, source.id), source)
+    return _pkg.create_document(
         db,
         workspace_id,
         user,

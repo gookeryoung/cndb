@@ -1,8 +1,8 @@
-# ADR 0180: content 模块拆分（单文件 1493 行 → 10 个内聚模块，公开面零变更）
+# ADR 0180: content 模块拆分（单文件 1529 行 → 10 个内聚模块，公开面零变更）
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-11-26
-Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0180-content-module-split.md`、`docs/adr/0130-plugin-boundary-convergence.md`、`docs/adr/0177-document-template-integration.md`、`docs/REFACTOR_BACKLOG.md`
+Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/0180-content-module-split.md`、`docs/adr/0130-plugin-boundary-convergence.md`、`docs/adr/0177-document-template-integration.md`、`docs/REFACTOR_BACKLOG.md`
 需求卡片: `docs/requirements/0180-content-module-split.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」「以后备用」段落；整节不适用写「无」。ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用（git 历史可追溯），不在仓库保留 `Superseded` / `Deprecated` 文档；编号不复用。
@@ -15,13 +15,13 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 「已 1400+ 行」→ 包内单文件 ≤ 400 行 | 实测 `src/cndb/plugins/documents/services/content.py` 1493 行 / 62 个顶层符号（48 个函数 + 9 个模块级常量 + `logger`）。按 D1 切为 10 个模块，**实测最大单文件 `write.py` 约 290 行、`trash.py` 约 265 行**，均远低于 400。四个大函数整块搬运不切分：`build_link_graph` 132 行留在 `graph.py`、`_duplicate_node` 80 行留在 `duplicate.py`、`create_document` 78 行与 `update_content` 76 行留在 `write.py` |
+| C1 | 「已 1400+ 行」→ 包内单文件 ≤ 400 行 | 实测 `src/cndb/plugins/documents/services/content.py` 1529 行 / 66 个顶层符号（48 个函数 + 9 个模块级常量 + `logger`）。按 D1 切为 10 个模块，**实测最大单文件 `write.py` 约 290 行、`trash.py` 约 265 行**，均远低于 400。四个大函数整块搬运不切分：`build_link_graph` 132 行留在 `graph.py`、`_duplicate_node` 80 行留在 `duplicate.py`、`create_document` 78 行与 `update_content` 76 行留在 `write.py` |
 | C2 | 「按 … 拆」→ 按内聚块分层，单向无环 | 分层方向 `storage → access → {write, trash, links, tags, fts, serialize, graph, duplicate}`；`tags` / `fts` 为叶子服务层（`write` / `trash` / `links` / `serialize` 可下依赖）。**`storage.py` 的 import 列表只允许标准库 + 数据模型 + `cndb.core`，禁止 import 同包任何其它模块**；`access.py` 只可 import `storage`。模块清单见 D1 |
-| C3 | 公开面不变 | `content` 由模块变包（`content/__init__.py`），`__init__.py` 用 `from .storage import load_content, …` 逐名再导出并在 `__all__` 中显式列出 **62 个顶层符号全部名称**（保持现有 `src/` 20 处 from-import、30 处 `content_service.X` 属性访问、以及 `documents/services/__init__.py:1-21` 的 `from . import (…, content, …)` 全不改） |
+| C3 | 公开面不变 | `content` 由模块变包（`content/__init__.py`），`__init__.py` 用 `from .storage import load_content, …` 逐名再导出并在 `__all__` 中显式列出 **66 个顶层符号全部名称**（保持现有 `src/` 20 处 from-import、30 处 `content_service.X` 属性访问、以及 `documents/services/__init__.py:1-21` 的 `from . import (…, content, …)` 全不改） |
 | C4 | H28 兼容：具名导出与可 patch 目标留在顶层 | 两类目标分别用两种手段保证 patch 生效（见 D3）：**① 可写模块常量 `_DOCS_DIR` 物理定义在 `content/__init__.py`**，包内 `storage.py` 用函数内延迟读取 `content._DOCS_DIR`（不在 import 期快照），于是 `monkeypatch.setattr(content_service, "_DOCS_DIR", …)` 依旧写后生效；**② 可 patch 的函数名**（`create_document` / `latest_version` / `build_link_graph` / `reset_link_graph_cache`）在 `__init__.py` 中是普通赋值再导出，同包内调用一律写成 `from .write import create_document` 的**模块属性访问**（`write.create_document(...)`）而不是 `from .write import create_document` 的本地绑定，因此 patch 包顶层属性对内部调用同样生效 |
 | C5 | 零行为变更 | 不动 `migrations/`、`frontend/`、`routers/*` 任何语义；`RAW_INLINE_MAX_SIZE = 4 * 1024`、`_COMPRESSED_PREFIX = "gz:"`、外存路径 `data/docs/{doc_id}/v{n}.md.gz`、`_external_dir(doc_id, root=None)` 的 `root` 重定向参数、`GRAPH_MAX_NODES = 500` / 30s / 256 条缓存口径全部逐字保留 |
 | C6 | 门禁 | L2：每期 `make check-fast` 绿、收尾 `make test` 全绿；覆盖率门槛与口径零调整 |
-| C7 | 口径统一 | `docs/REFACTOR_BACKLOG.md:47` 的行数 1156 → 1493，建议列改为「已按 ADR 0180 拆为 10 个内聚模块」；`docs/requirements/BACKLOG.md` 批次 3 第 2 项回填（P3 收尾）；`CHANGELOG.md` 写 `(ADR 0180 Pn)` |
+| C7 | 口径统一 | `docs/REFACTOR_BACKLOG.md:47` 的行数 1156 → 1529，建议列改为「已按 ADR 0180 拆为 10 个内聚模块」；`docs/requirements/BACKLOG.md` 批次 3 第 2 项回填（P3 收尾）；`CHANGELOG.md` 写 `(ADR 0180 Pn)` |
 | C8 | 分期与提交 | P0 建包 + `storage`/`access`；P1 `write`/`trash`；P2 `links`/`tags`/`fts`/`serialize`；P3 `graph`/`duplicate` + 文档回填。每期一个 `refactor:` 提交，每期结束时包仍可 import、测试可跑 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -45,7 +45,7 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 | 11 | 管道检查与检索只读正文 | `src/cndb/plugins/pipeline/services/checks/base.py:27`、`checks/document/links.py:13`、`documents/services/search.py:645`、`documents/services/attachments.py:25` | 只消费 `latest_version` / `load_content` / `resolve_outgoing_links` | 确认（C3） |
 | 12 | 模块无 `__all__`，且从未定义过 | `src/cndb/plugins/documents/services/content.py`（全文无 `__all__`） | 现状「公开面」实为全部非下划线名字 + 被外部引用的 3 个下划线名字（`_DOCS_DIR`、`_apply_tags`、`_refresh_tag_counts`）；拆分前必须把这条隐式契约显式化，否则重构无法自证「公开面不变」 | 新增（D2） |
 
-**核心缺陷（需求要补的）**：一个 1493 行的扁平模块同时承载存储分级、权限门控、写路径、回收站子树、双链解析、标签计数、FTS 同步、序列化、图谱构建、副本递归十种关注点，任何一处改动都要在整份文件里做全量 grep 才能判断影响面；且模块至今**没有显式导出清单**，「谁是公开面」只存在于调用方的 grep 结果里。
+**核心缺陷（需求要补的）**：一个 1529 行的扁平模块同时承载存储分级、权限门控、写路径、回收站子树、双链解析、标签计数、FTS 同步、序列化、图谱构建、副本递归十种关注点，任何一处改动都要在整份文件里做全量 grep 才能判断影响面；且模块至今**没有显式导出清单**，「谁是公开面」只存在于调用方的 grep 结果里。
 
 设计目标（不变量）：
 
@@ -100,7 +100,7 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 
 **判定层（单测）**：
 
-- `tests/test_documents_content_split.py`（新增）：包顶层导出清单断言——① `set(dir(content)) ⊇ 62 个符号名` 的显式清单比对（I1）；② 6 个被外部引用的下划线名逐个 `hasattr` 断言；③ `content.__all__` 与清单一致、无重复项；④ 分层约束断言：解析 `content/storage.py` 的 AST，**其 import 节点不含同包模块**（I2，落地为可执行的静态检查）；⑤ `_DOCS_DIR` patch 后 `content.storage._docs_root()` 读到新值、`_external_dir(1)` 返回新根下路径（I3）。
+- `tests/test_documents_content_split.py`（新增）：包顶层导出清单断言——① `set(dir(content)) ⊇ 66 个符号名` 的显式清单比对（I1）；② 6 个被外部引用的下划线名逐个 `hasattr` 断言；③ `content.__all__` 与清单一致、无重复项；④ 分层约束断言：解析 `content/storage.py` 的 AST，**其 import 节点不含同包模块**（I2，落地为可执行的静态检查）；⑤ `_DOCS_DIR` patch 后 `content.storage._docs_root()` 读到新值、`_external_dir(1)` 返回新根下路径（I3）。
 
 **接口层**：
 
@@ -131,7 +131,7 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 | D5 | 私有符号是否借机转公开 | **不转**，8 个被外部引用的下划线名原样保留 | C5 零行为变更；转公开需同时改 `routers/tags.py:24`、`obsidian.py:1301`、4 个测试文件，属独立议题（ADR 0130 D4 已为「私有转公开」立过范式，应另开 ADR 复用该范式） | 本次顺手把 `_apply_tags` / `_refresh_tag_counts` 转公开：扩大改动面、混入两个语义不同的变更，且会让本次「纯结构搬运」的门禁失去可对比基线 | `content/__init__.py` |
 | D6 | 常量 `logger` / `_COMPRESSED_PREFIX` / `RAW_INLINE_MAX_SIZE` / `DUPLICATE_SUFFIX` / `GRAPH_MAX_NODES` 归属 | `logger` / `_COMPRESSED_PREFIX` / `RAW_INLINE_MAX_SIZE` → `storage.py`；`DUPLICATE_SUFFIX` → `duplicate.py`；`GRAPH_MAX_NODES` 与另两个图谱常量 → `graph.py`；全部照旧从包顶层再导出 | 各常量只被本块使用（`src/` 无外部引用），按内聚就地安放；再导出保证 `content_service.RAW_INLINE_MAX_SIZE` 等旧写法仍可用 | 全部集中到 `constants.py`：会造出一个「所有模块都依赖它」的伪底层，反而弱化分层信息 | `content/storage.py`、`content/graph.py`、`content/duplicate.py` |
 | D7 | `logger` 名称怎么取 | 各模块统一 `logger = logging.getLogger("cndb.plugins.documents.services.content")`（固定全名，不用 `__name__`） | 用 `__name__` 会让日志分类从 `…services.content` 碎成 `…services.content.write` 等 10 个 logger，改变现有日志过滤与告警口径（属 C5 之外的行为变化） | 用 `__name__`：日志分类漂移，运维侧按 logger 名的过滤规则失效 | 各子模块 |
-| D8 | 过渡期怎么组织 | P0 引入 `_legacy.py` 承载尚未搬走的符号，`__init__.py` 同时从子模块与 `_legacy` 导出；P3 删除 `_legacy.py` | C8 要求每期可独立编译与全绿；一次性搬迁 1493 行会让单个提交无法评审、也无法定位回归 | 一次性提交全量拆分：违反 C8，且 `git diff` 无法区分「搬运」与「改动」 | `content/_legacy.py`（P3 删除） |
+| D8 | 过渡期怎么组织 | P0 引入 `_legacy.py` 承载尚未搬走的符号，`__init__.py` 同时从子模块与 `_legacy` 导出；P3 删除 `_legacy.py` | C8 要求每期可独立编译与全绿；一次性搬迁 1529 行会让单个提交无法评审、也无法定位回归 | 一次性提交全量拆分：违反 C8，且 `git diff` 无法区分「搬运」与「改动」 | `content/_legacy.py`（P3 删除） |
 | D9 | 是否需要为拆分补测试 | 新增 1 个结构性测试文件 `tests/test_documents_content_split.py`（导出清单 / 分层 AST 检查 / `_DOCS_DIR` 延迟读取），**其余测试零改动** | I1–I3 是本次的可验证不变量，需要留成回归网；H28 的验证靠「旧测试零改动通过」而非新增 mock 用例 | 只依赖现有测试：`__all__` 遗漏与依赖反向这两类问题现有用例覆盖不到（删掉一个未被调用的导出，全量测试仍绿） | `tests/test_documents_content_split.py` |
 | D10 | 是否顺带拆 `obsidian.py`（1712 行，全仓最大） | **不拆**，留作独立需求 | 卡片未决问题已结论；`obsidian.py` 的导入 / 导出 / vault 转换与 content 的耦合仅是调用关系，混入本次会让「零行为变更」无法自证 | 一并拆分：范围从 1 个文件扩到 3212 行，超出批次 3 的成本收益口径 | 无 |
 
@@ -139,7 +139,7 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 
 ## Consequences
 
-- **正向**：单文件 1493 行 → 最大约 290 行；「改存储策略」「改回收站子树」「改图谱」各自只需读一个模块；首次显式化公开面（`__all__` 62 项），后续任何导出调整都变成一次显式 diff 而不是隐式副作用；分层约束可静态校验（`storage` 不 import 同包），防止重构后重新长出环。
+- **正向**：单文件 1529 行 → 最大约 290 行；「改存储策略」「改回收站子树」「改图谱」各自只需读一个模块；首次显式化公开面（`__all__` 66 项），后续任何导出调整都变成一次显式 diff 而不是隐式副作用；分层约束可静态校验（`storage` 不 import 同包），防止重构后重新长出环。
 - **负向**：文件数从 1 增到 11，`grep` 单个符号的定位成本变为「先在 `__init__.py` 看归属再去子模块」；`__init__.py` 成为新的高频改动点（新增导出必须同步 `__all__`，否则 `test_documents_content_split.py` 会红）；`_legacy.py` 过渡期存在「同名符号两处定义」的短暂状态。
 - **风险与缓解**：① 导出遗漏 → D9 的清单测试 + `make test` 双保险；② `_DOCS_DIR` 延迟读取写错导致用例写真实目录 → P0 单独跑 `test_documents_storage_gc.py` / `test_workspace_storage_usage.py` 并核对 `tmp_path` 下确有文件；③ 图谱缓存双实例 → D4 单点持有 + `test_documents_link_graph.py` 零改动通过；④ 单期过大 → 按 D8 的 `_legacy` 过渡逐期搬迁。
 
@@ -156,7 +156,7 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/content/` | `tests/test_documents_content_split.py` | ``b5f86148`` |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
@@ -165,8 +165,10 @@ Related: `src/cndb/plugins/documents/services/content.py`、`docs/requirements/0
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 之前——ADR 已提交人工评审（H5），评审通过前不写实现代码
-- 已完成：需求卡片 `docs/requirements/0180-content-module-split.md`；AST 调用图测绘（62 个顶层符号的精确行区间与跨块引用）；对外依赖全量清点（20 处 from-import、30 处属性访问、3 处外部私有名引用、12 个测试文件的 patch 点）；本 ADR
-- 下一步：① 人工评审本 ADR（重点看 D1 的 10 模块边界、D3 的 monkeypatch 双轨方案）；② 通过后把 I2 / I3 登记为 CONSTRAINTS 新条目（`ADR 0180 I2/I3`），Status 改 Accepted；③ 起 P0
-- 已知坑：`_DOCS_DIR` 仍是唯一被外部**运行时读取 + 测试写后生效**的常量，任何「把它搬进子模块」的改法都会让 `tests/conftest.py:228` 的 session 级重定向静默失效（全仓外存用例写进真实 `data/docs`）；`tests/test_cov_workspaces_extra.py:289` 用**字符串** patch `…services.content.create_document`，包顶层必须是实际取值点；`docs/REFACTOR_BACKLOG.md:47` 的行数仍是过期的 1156（P3 一并更正为 1493）
-- 最近一次全绿：`make check-fast` @ `1bce17d5`（2026-11-26，adr-check 91 ADR / 0 error，后端基线未重跑；`make flow` 上次全绿见 ADR 0177 交接记录 7778 passed / 17 skipped）
+- 当前阶段：P0 已落地（包结构 + `storage` / `access` + `_legacy.py`，原 `content.py` 删除），P1-P3 未开始。
+- 下一步：P1 搬 `write.py` / `trash.py`——`create_document` 被字符串 patch（`tests/test_cov_workspaces_extra.py:289`），搬走后**必须保证包顶层仍是调用实际取值点**（D3 双轨），`_legacy.py` 内跨模块调用保持 `import ... as _pkg` 再 `_pkg.create_document(...)`。
+- 已知坑：
+  - `EXTERNAL_MIN_SIZE` 原先是从 `cndb.plugins.documents.models` 导入到 `content` 模块命名空间的**隐式转发**，拆包后三个测试（`test_documents_robustness.py:29`、`test_documents_storage_gc.py:17`、`test_workspace_storage_usage.py:157`）通过 `content_service.EXTERNAL_MIN_SIZE` 取它——P0 已在 `__init__.py` 显式再导出，否则收集期直接 `AttributeError`。
+  - 包顶层 `_DOCS_DIR` 的赋值块必须放在 import 之后（放到前面会触发 ruff `E402`）。
+  - 删掉 `content.py` 会让 `make adr-check` 报一批 `Related 路径不存在`（历史 ADR 里 `services/content.py` 与带行号的 `content.py:87-96` 全部失效），已统一改成 `services/content/` 目录；改的是「当时的证据路径」，行号一并失效属预期。
+  - `_legacy.py` 是过渡文件（1332 行），结构测试对它放宽到 1400 行上限；P3 删除后该放宽项要一起去掉。

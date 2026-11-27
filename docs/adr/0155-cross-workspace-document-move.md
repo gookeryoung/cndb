@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-11-25
-Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/search.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/storage_snapshot.py`、`src/cndb/core/events.py`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`
+Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/documents/services/search.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/storage_snapshot.py`、`src/cndb/core/events.py`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`
 需求卡片: `docs/requirements/0155-cross-workspace-document-move.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）

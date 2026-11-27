@@ -2,7 +2,7 @@
 
 Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-20
-Related: `plugins/documents/routers/vault.py`、`plugins/documents/services/obsidian.py`、`plugins/documents/services/parse.py`、`plugins/documents/services/content.py`、`plugins/documents/services/export/docx.py`、`frontend/src/pages/documents/ObsidianImportModal.tsx`
+Related: `plugins/documents/routers/vault.py`、`plugins/documents/services/obsidian.py`、`plugins/documents/services/parse.py`、`plugins/documents/services/content/`、`plugins/documents/services/export/docx.py`、`frontend/src/pages/documents/ObsidianImportModal.tsx`
 需求卡片: `docs/requirements/0010-document-file-import.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」段落；ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档。

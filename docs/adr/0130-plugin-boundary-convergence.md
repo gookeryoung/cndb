@@ -30,7 +30,7 @@ Related: `src/cndb/core/plugin_registry.py`、`src/cndb/core/http.py`、`src/cnd
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0-1 | 已落地 | `src/cndb/core/plugin_registry.py`（find_spec 分流 + 环境相关失败口径）、`src/cndb/plugins/files/__init__.py`（定性）、删除 plugins/acquisition 目录 | `tests/test_plugin_registry.py` | `ec456e23` |
-| P0-2 | 已落地 | `src/cndb/core/http.py`（__all__ 同步公开名）、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/workspaces/services/backup_io.py`（公共入口）、`src/cndb/plugins/workspaces/services/workspace_backup.py` | `tests/test_api_fetch.py`、`tests/test_workspace_backup_v13.py`、`tests/test_workspace_backup_v16.py` | `c13cfce8` |
+| P0-2 | 已落地 | `src/cndb/core/http.py`（__all__ 同步公开名）、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/workspaces/services/backup_io.py`（公共入口）、`src/cndb/plugins/workspaces/services/workspace_backup.py` | `tests/test_api_fetch.py`、`tests/test_workspace_backup_v13.py`、`tests/test_workspace_backup_v16.py` | `c13cfce8` |
 | P1 | 未开始 | 插件布局包化（D5 未触发，依据见「触发条件核对」） | 无 | — |
 | P2 | 未开始 | 共享内核化（D6 未触发，依据见「触发条件核对」） | 无 | — |
 

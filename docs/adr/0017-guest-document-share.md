@@ -2,7 +2,7 @@
 
 Status: Implemented（已落地）
 Date: 2026-10-21
-Related: `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/share.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/tables/routers/files.py`、`frontend/src/App.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/DocumentImage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`docs/adr/0003-view-visibility-permission-model.md`
+Related: `src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/share.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/tables/routers/files.py`、`frontend/src/App.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/DocumentImage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`docs/adr/0003-view-visibility-permission-model.md`
 需求卡片: `docs/requirements/0017-guest-document-share.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）

@@ -2,7 +2,7 @@
 
 Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-24
-Related: `plugins/documents/models.py`、`plugins/documents/services/importers/`、`plugins/documents/services/content.py`、`plugins/documents/routers/file_import.py`、`plugins/documents/routers/documents.py`、`plugins/files/services.py`、`frontend/src/pages/documents/`、`docs/adr/0010-document-file-import.md`
+Related: `plugins/documents/models.py`、`plugins/documents/services/importers/`、`plugins/documents/services/content/`、`plugins/documents/routers/file_import.py`、`plugins/documents/routers/documents.py`、`plugins/files/services.py`、`frontend/src/pages/documents/`、`docs/adr/0010-document-file-import.md`
 需求卡片: `docs/requirements/0025-document-asset-formats.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」段落；ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档。
@@ -203,7 +203,7 @@ SUPPORTED_SUFFIXES = CONVERTIBLE_SUFFIXES + tuple(ASSET_FORMATS)
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 模型 + 格式注册表 + 导入落库 | 已落地 | `src/cndb/plugins/documents/services/importers/formats.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/d0c1b2a3f4e5_add_document_asset_columns.py` | `tests/test_documents_asset_import.py` | 2a8ff3fd |
-| P1 原件端点 + 清理 | 已落地 | `src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/files/services.py` | `tests/test_documents_asset_import.py` | 2a8ff3fd |
+| P1 原件端点 + 清理 | 已落地 | `src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/files/services.py` | `tests/test_documents_asset_import.py` | 2a8ff3fd |
 | P2 前端图标 + 阅读器 | 已落地 | `frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentImportModal.tsx` | `frontend/src/components/Document/docFormat.test.ts`、`frontend/src/pages/documents/DocumentAssetView.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | 2a8ff3fd |
 
 ## 交接（会话结束更新）

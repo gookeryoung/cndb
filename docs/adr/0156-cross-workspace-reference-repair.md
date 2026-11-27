@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-11-25
-Related: `src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/parse.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/models.py`、`frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`
+Related: `src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/documents/services/parse.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/models.py`、`frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`
 需求卡片: `docs/requirements/0156-cross-workspace-reference-repair.md`（需求原文与约束编号的唯一副本）
 上位: ADR 0155（文档跨工作区移动，P2 条目由本 ADR 承接）
 
