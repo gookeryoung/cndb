@@ -261,6 +261,41 @@ def test_moved_symbols_live_in_their_module() -> None:
     assert not hasattr(legacy, "purge_document")
 
 
+def test_links_tags_fts_serialize_depend_only_downward() -> None:
+    """I2：P2 拆出的四个模块只允许向下依赖，跨模块一律经包属性解析（P2）."""
+    allowed = {
+        "links.py": {"access"},
+        "tags.py": set(),
+        "fts.py": set(),
+        "serialize.py": {"storage"},
+    }
+    for name, ok in allowed.items():
+        deps = _module_imports(PKG_DIR / name)
+        assert deps <= ok, f"{name} 依赖越界：{sorted(deps - ok)}"
+        source = (PKG_DIR / name).read_text(encoding="utf-8")
+        if name == "links.py":
+            assert "_pkg." in source, f"{name} 跨模块调用未经包属性解析"
+
+
+def test_p2_symbols_live_in_their_module() -> None:
+    """P2：四个模块的符号已搬离 _legacy，包顶层仍指向同一对象."""
+    from cndb.plugins.documents.services.content import fts as fts_mod
+    from cndb.plugins.documents.services.content import links as links_mod
+    from cndb.plugins.documents.services.content import serialize as serialize_mod
+    from cndb.plugins.documents.services.content import tags as tags_mod
+
+    assert links_mod.find_backlinks is content_pkg.find_backlinks
+    assert links_mod.repair_wikilinks is content_pkg.repair_wikilinks
+    assert tags_mod._refresh_tag_counts is content_pkg._refresh_tag_counts
+    assert fts_mod.sync_fts is content_pkg.sync_fts
+    assert serialize_mod.serialize_document is content_pkg.serialize_document
+    assert serialize_mod.serialize_documents is content_pkg.serialize_documents
+
+    legacy = importlib.import_module(f"{PKG_PREFIX}._legacy")
+    for name in ("find_backlinks", "sync_fts", "serialize_document", "_apply_tags"):
+        assert not hasattr(legacy, name), f"_legacy 仍持有 {name}"
+
+
 def test_reexported_mutable_state_reads_through_package() -> None:
     """D3：包顶层 patch 的函数/常量，包内调用点必须经包属性解析才能生效."""
     source = (PKG_DIR / "_legacy.py").read_text(encoding="utf-8")

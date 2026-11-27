@@ -17,33 +17,17 @@ from ._legacy import (
     _GRAPH_CACHE_TTL_SECONDS,
     DUPLICATE_SUFFIX,
     GRAPH_MAX_NODES,
-    _apply_tags,
     _broken_node_id,
     _copy_asset_file,
     _document_tag_ids,
-    _document_visibility,
     _duplicate_node,
-    _fts_upsert_sql,
     _graph_cache,
-    _normalize_ts,
     _prune_graph_cache,
-    _refresh_tag_counts,
-    _serialize_document,
-    _sync_fts_delete,
     _unique_duplicate_title,
     build_link_graph,
     duplicate_document,
-    find_backlinks,
     invalidate_link_graph_cache,
-    pinned_document_ids,
-    repair_wikilinks,
     reset_link_graph_cache,
-    resolve_outgoing_links,
-    serialize_document,
-    serialize_documents,
-    set_document_pin,
-    sort_pinned_first,
-    sync_fts,
 )
 from .access import (
     _get_workspace,
@@ -51,6 +35,26 @@ from .access import (
     get_document_any_state_or_404,
     get_document_or_404,
     require_editor,
+)
+from .fts import (
+    _fts_upsert_sql,
+    _sync_fts_delete,
+    sync_fts,
+)
+from .links import (
+    find_backlinks,
+    repair_wikilinks,
+    resolve_outgoing_links,
+)
+from .serialize import (
+    _document_visibility,
+    _normalize_ts,
+    _serialize_document,
+    pinned_document_ids,
+    serialize_document,
+    serialize_documents,
+    set_document_pin,
+    sort_pinned_first,
 )
 from .storage import (
     _COMPRESSED_PREFIX,
@@ -64,6 +68,10 @@ from .storage import (
     logger,
     store_content_bytes,
     version_count,
+)
+from .tags import (
+    _apply_tags,
+    _refresh_tag_counts,
 )
 from .trash import (
     _collect_purge_targets,
