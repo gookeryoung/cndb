@@ -54,6 +54,11 @@ const ZOOM_MAX = 4
 /** 标签淡化阈值（C7）：低于该倍率时标签整体隐藏，避免缩小后糊成一片 */
 const LABEL_ZOOM_THRESHOLD = 0.6
 
+/** 箭头淡化阈值（C7）：比标签更早收起，缩小后先丢的是细节噪声 */
+const ARROW_ZOOM_THRESHOLD = 0.4
+
+/** 边箭头尺寸：series 级与逐边覆盖共用同一常量 */
+const EDGE_SYMBOL_SIZE = 7
 /** 枢纽清单取度数的前 N 个（C8） */
 const HUB_TOP_N = 10
 
@@ -137,6 +142,48 @@ function buildDegrees(nodes: GraphNode[], edges: GraphEdge[]): Map<number, numbe
     if (degree.has(edge.target)) degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1)
   }
   return degree
+}
+
+/** 折叠互引后的画布边：`mutual` 决定画两端箭头，`reverseRaw` 是反向那条边的原始写法（C1） */
+export interface DisplayEdge extends GraphEdge {
+  mutual: boolean
+  reverseRaw?: string
+}
+
+/** 无序节点对：互引的两条有向边落到同一个键上 */
+function pairKey(edge: GraphEdge): string {
+  return `${Math.min(edge.source, edge.target)}-${Math.max(edge.source, edge.target)}`
+}
+
+/**
+ * 互引折叠（C1）：A→B 与 B→A 合成一条画布边，`mutual` 标记双向。
+ * 只折叠方向相反的成对边；同向重复边（后端已去重，防御性保留）仍各自成线。
+ * 折叠只作用于画布与聚合计数，`visible.edges` 的有向明细仍供 Inspector 使用（D6）。
+ */
+export function foldReciprocal(edges: GraphEdge[]): DisplayEdge[] {
+  const folded: DisplayEdge[] = []
+  const indexByKey = new Map<string, number>()
+  for (const edge of edges) {
+    const key = pairKey(edge)
+    const at = indexByKey.get(key)
+    if (at == null) {
+      indexByKey.set(key, folded.length)
+      folded.push({ ...edge, mutual: false })
+      continue
+    }
+    const previous = folded[at]
+    const reverse = previous.source === edge.target && previous.target === edge.source && edge.source !== edge.target
+    const next: DisplayEdge = {
+      ...previous,
+      // 断链 / 同名多文档：任一方向成立即整体成立，折叠后只有一条线可着色
+      broken: previous.broken || edge.broken,
+      ambiguous: previous.ambiguous || edge.ambiguous,
+      mutual: previous.mutual || reverse,
+    }
+    if (reverse) next.reverseRaw = edge.raw
+    folded[at] = next
+  }
+  return folded
 }
 
 /** 度数 → 直径：12px 起步，按 log 缓增到 40px，避免单个超级枢纽吃掉整张画布 */
@@ -257,7 +304,7 @@ export function findHubs(
 
 function buildOption(
   nodes: GraphNode[],
-  edges: GraphEdge[],
+  edges: DisplayEdge[],
   colors: ThemeColors,
   force: ForceParams,
 ): EChartsCoreOption {
@@ -271,12 +318,14 @@ function buildOption(
       formatter: (params: { dataType?: string; data?: GraphNode | (GraphEdge & { name?: string }) }) => {
         const data = params.data
         if (params.dataType === 'edge') {
-          const edge = data as GraphEdge
+          const edge = data as DisplayEdge
+          const raw = edge.reverseRaw ? `${edge.raw} ⇄ ${edge.reverseRaw}` : edge.raw
           const hints = [
             ...(edge.broken ? ['断链'] : []),
             ...(edge.ambiguous ? ['同名多文档，指向首个'] : []),
+            ...(edge.mutual ? ['互相引用'] : []),
           ]
-          return `${edge.raw || '双链引用'}${hints.length ? `（${hints.join('；')}）` : ''}`
+          return `${raw || '双链引用'}${hints.length ? `（${hints.join('；')}）` : ''}`
         }
         const node = data as GraphNode
         const suffix = node.broken ? '（断链目标）' : node.is_folder ? '（文件夹）' : ''
@@ -311,9 +360,9 @@ function buildOption(
           color: colors.text,
         },
         labelLayout: { hideOverlap: true },
-        // 有向双链：箭头指向被引用方，方向感是同类图谱应用的标配
+        // 单向：一个箭头指向被引用方；互引折叠成一条线时由逐边 symbol 补成两端箭头（C2）
         edgeSymbol: ['none', 'arrow'],
-        edgeSymbolSize: 7,
+        edgeSymbolSize: EDGE_SYMBOL_SIZE,
         lineStyle: { curveness: 0.06, opacity: 0.55, width: 1.2 },
         data: nodes.map(node => ({
           id: String(node.id),
@@ -333,6 +382,8 @@ function buildOption(
         links: edges.map(edge => ({
           source: String(edge.source),
           target: String(edge.target),
+          // link 级 symbol 逐条覆盖 series 默认：两端箭头即互引（C2），无需拆第二个 series（D2）
+          ...(edge.mutual ? { symbol: ['arrow', 'arrow'] } : {}),
           lineStyle: {
             color: edge.broken ? colors.error : colors.border,
             type: edge.broken ? 'dashed' : 'solid',
@@ -343,6 +394,8 @@ function buildOption(
           broken: edge.broken,
           ambiguous: edge.ambiguous,
           raw: edge.raw,
+          reverseRaw: edge.reverseRaw,
+          mutual: edge.mutual,
         })),
         // 悬停一个节点时压暗无关部分，只看它的邻接关系
         emphasis: {
@@ -373,6 +426,7 @@ export default function DocumentGraphPage() {
   const [force, setForce] = useState<ForceParams>(DEFAULT_FORCE)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showLabels, setShowLabels] = useState(true)
+  const [showArrows, setShowArrows] = useState(true)
 
   const graphQuery = useQuery({
     queryKey: ['document-link-graph', workspaceId],
@@ -394,7 +448,9 @@ export default function DocumentGraphPage() {
     return Math.min(MAX_FOCUS_DEPTH, Math.max(1, Math.round(parsed)))
   }, [searchParams])
 
-  const degrees = useMemo(() => buildDegrees(nodes, edges), [nodes, edges])
+  /** 度数按折叠后的唯一关联数算（C3）：互引只算一条线，读数与画布才不打架（D3） */
+  const folded = useMemo(() => foldReciprocal(edges), [edges])
+  const degrees = useMemo(() => buildDegrees(nodes, folded), [nodes, folded])
   const scope = useMemo(
     () => (focusId != null ? collectNeighborhood(edges, focusId, focusDepth) : null),
     [edges, focusId, focusDepth],
@@ -407,6 +463,19 @@ export default function DocumentGraphPage() {
     [nodes, edges, filters, scope, hiddenFormats, degrees],
   )
 
+  /** 画布与关系计数都走折叠后的边（C1/C4）；Inspector 仍读 `visible.edges` 的有向明细 */
+  const displayEdges = useMemo(() => foldReciprocal(visible.edges), [visible.edges])
+  const mutualCount = useMemo(() => displayEdges.filter(edge => edge.mutual).length, [displayEdges])
+  /** 折叠后每条线只保留首次出现的朝向：判断某条有向明细是否属互引要两头都比 */
+  const mutualPairs = useMemo(
+    () => new Set(displayEdges.filter(edge => edge.mutual).map(edge => `${edge.source}-${edge.target}`)),
+    [displayEdges],
+  )
+  const isMutual = useCallback(
+    (edge: GraphEdge) => mutualPairs.has(`${edge.source}-${edge.target}`) || mutualPairs.has(`${edge.target}-${edge.source}`),
+    [mutualPairs],
+  )
+
   const { mode: themeMode } = useTheme()
   const colors = useMemo(
     () => readThemeColors(),
@@ -415,8 +484,8 @@ export default function DocumentGraphPage() {
     [themeMode],
   )
   const option = useMemo(
-    () => buildOption(visible.nodes, visible.edges, colors, force),
-    [visible, colors, force],
+    () => buildOption(visible.nodes, displayEdges, colors, force),
+    [visible.nodes, displayEdges, colors, force],
   )
 
   /** 图例条目按「当前可见图里有出现的格式」生成，避免列出 8 个全没节点的格式 */
@@ -528,13 +597,21 @@ export default function DocumentGraphPage() {
   }, [option])
 
   /**
-   * 标签显隐单独下发：把它塞进主 option 会让每次缩放都 notMerge 重建，
-   * 力导向布局随之重排，画布会「跳」一下。
+   * 标签与箭头的显隐单独下发：把它们塞进主 option 会让每次缩放都 notMerge 重建，
+   * 力导向布局随之重排，画布会「跳」一下。两者合成一次下发，互不覆盖。
    */
   const labelsVisible = showLabels && zoomPct >= LABEL_ZOOM_THRESHOLD * 100
+  // 箭头比标签更早收起（C7）：缩小后先丢的是细节噪声
+  const arrowsVisible = showArrows && zoomPct >= ARROW_ZOOM_THRESHOLD * 100
   useEffect(() => {
-    chartRef.current?.setOption({ series: [{ label: { show: labelsVisible } }] })
-  }, [labelsVisible, option])
+    chartRef.current?.setOption({
+      series: [{
+        label: { show: labelsVisible },
+        edgeSymbol: arrowsVisible ? ['none', 'arrow'] : 'none',
+        edgeSymbolSize: arrowsVisible ? EDGE_SYMBOL_SIZE : 0,
+      }],
+    })
+  }, [labelsVisible, arrowsVisible, option])
 
   /** 复位：'restore' 会把 option 重置回初始提交态，同时让力导向重新收敛 */
   const reset = useCallback(() => {
@@ -614,6 +691,14 @@ export default function DocumentGraphPage() {
               onClick={() => setShowLabels(v => !v)}
             >
               {showLabels ? '隐藏标签' : '显示标签'}
+            </Button>
+            <Button
+              size="small"
+              data-testid="graph-arrows-toggle"
+              aria-pressed={showArrows}
+              onClick={() => setShowArrows(v => !v)}
+            >
+              {showArrows ? '隐藏箭头' : '显示箭头'}
             </Button>
             <Text type="secondary" data-testid="graph-zoom-pct" style={{ fontSize: 'var(--cn-text-xs)' }}>
               {zoomPct}%
@@ -743,6 +828,9 @@ export default function DocumentGraphPage() {
                 </button>
               )
             })}
+            <span className="cn-graph-legend-note" data-testid="graph-legend-edge-direction">
+              → 引用 · ⇄ 互引
+            </span>
           </div>
           <div className="cn-graph-force" data-testid="graph-force-panel">
             <div className="cn-graph-force-row">
@@ -818,6 +906,7 @@ export default function DocumentGraphPage() {
                           {nodeTitleById(edge.target) || edge.raw || `#${edge.target}`}
                         </a>
                         {edge.broken && <Tag color="error">断链</Tag>}
+                        {isMutual(edge) && <Tag>⇄ 互引</Tag>}
                       </li>
                     ))}
                   </ul>
@@ -839,6 +928,7 @@ export default function DocumentGraphPage() {
                         >
                           {nodeTitleById(edge.source) || `#${edge.source}`}
                         </a>
+                        {isMutual(edge) && <Tag>⇄ 互引</Tag>}
                       </li>
                     ))}
                   </ul>
@@ -932,7 +1022,8 @@ export default function DocumentGraphPage() {
       </div>
 
       <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="graph-footer-stats">
-        显示 {visible.nodes.length} / 共 {graph?.nodes?.length ?? 0} 个节点 · 关系 {visible.edges.length}
+        显示 {visible.nodes.length} / 共 {graph?.nodes?.length ?? 0} 个节点 · 关系 {displayEdges.length}
+        {mutualCount > 0 ? `（互引 ${mutualCount}）` : ''}
         {hiddenCount > 0 ? `（隐藏 ${hiddenCount}）` : ''}（拖拽平移，滚轮缩放，悬停高亮关联）
       </Text>
     </div>

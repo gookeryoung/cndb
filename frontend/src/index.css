@@ -11417,6 +11417,17 @@ body.cn-doc-focus-view .cn-doc-stats {
   text-decoration: line-through;
 }
 
+/* 单双向说明项：只作图例，不参与格式显隐，所以不用 button 也不给 hover */
+.cn-graph-legend-note {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--cn-space-xs);
+  color: var(--cn-text-tertiary);
+  font-size: var(--cn-text-xs);
+  cursor: default;
+  user-select: none;
+}
+
 .cn-graph-legend-dot {
   width: 8px;
   height: 8px;

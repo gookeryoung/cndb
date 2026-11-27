@@ -10,7 +10,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
-import DocumentGraphPage, { collectNeighborhood, filterGraph, findHubs, findIsolated } from './DocumentGraphPage'
+import DocumentGraphPage, {
+  collectNeighborhood,
+  filterGraph,
+  findHubs,
+  findIsolated,
+  foldReciprocal,
+} from './DocumentGraphPage'
 import type { GraphEdge, GraphNode } from '@/api/documents'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
@@ -506,5 +512,148 @@ describe('图谱判定纯函数（需求 0182）', () => {
     const hubs = findHubs(nodes, degrees)
     expect(hubs.map(n => n.id)).toEqual([1, 3, 2])
     expect(findHubs(nodes, degrees, 1).map(n => n.id)).toEqual([1])
+  })
+})
+
+/** 需求 0183：互引折叠成一条线、两端箭头表义、箭头显隐开关 */
+describe('图谱单双向边表达（需求 0183）', () => {
+  const mutualPayload = {
+    nodes: [
+      { id: 1, title: '甲', content_type: 'markdown', status: 'published', is_folder: false, broken: false },
+      { id: 2, title: '乙', content_type: 'markdown', status: 'published', is_folder: false, broken: false },
+      { id: 3, title: '丙', content_type: 'markdown', status: 'published', is_folder: false, broken: false },
+    ],
+    edges: [
+      { source: 1, target: 2, broken: false, ambiguous: false, raw: '[[乙]]' },
+      // 反向边：与上一条构成互引（C1）
+      { source: 2, target: 1, broken: false, ambiguous: false, raw: '[[甲]]' },
+      { source: 1, target: 3, broken: false, ambiguous: false, raw: '[[丙]]' },
+    ],
+    truncated: false,
+    total: 3,
+  }
+
+  /** 箭头显隐是单独一次 setOption 下发的：只带 edgeSymbol，不带 data */
+  const lastArrowOption = () => {
+    for (let i = echartsMock.setOption.mock.calls.length - 1; i >= 0; i -= 1) {
+      const series = echartsMock.setOption.mock.calls[i][0]?.series?.[0]
+      if (series && 'edgeSymbol' in series && !Array.isArray(series.data)) return series
+    }
+    return undefined
+  }
+
+  beforeEach(() => {
+    echartsMock.init.mockClear()
+    echartsMock.setOption.mockClear()
+    echartsMock.on.mockClear()
+    echartsMock.dispose.mockClear()
+    echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(graphPayload)),
+    )
+  })
+
+  it('foldReciprocal 合并互引、双向标记、断链与歧义取并集（C1）', () => {
+    const folded = foldReciprocal([
+      { source: 2, target: 1, broken: false, ambiguous: false, raw: '[[甲]]' },
+      { source: 1, target: 2, broken: true, ambiguous: true, raw: '[[乙]]' },
+      { source: 1, target: 3, broken: false, ambiguous: false, raw: '[[丙]]' },
+    ])
+    expect(folded).toHaveLength(2)
+    const mutual = folded[0]
+    expect(mutual.mutual).toBe(true)
+    expect([mutual.source, mutual.target]).toEqual([2, 1])
+    expect(mutual.raw).toBe('[[甲]]')
+    expect(mutual.reverseRaw).toBe('[[乙]]')
+    // 任一方向断链 / 歧义即整体成立：折叠后只剩一条线可着色
+    expect(mutual.broken).toBe(true)
+    expect(mutual.ambiguous).toBe(true)
+    // 单向边不折叠、不带反向原文
+    expect(folded[1].mutual).toBe(false)
+    expect(folded[1].reverseRaw).toBeUndefined()
+  })
+
+  it('互引只画一条线：两端箭头 + 页脚互引计数 + tooltip 提示（C1/C2/C4/C6）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(mutualPayload)),
+    )
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const option = echartsMock.setOption.mock.calls[0][0]
+    const series = option.series[0]
+    // 三条有向边 → 两条线（互引合并）
+    expect(series.links).toHaveLength(2)
+    expect(series.edgeSymbol).toEqual(['none', 'arrow'])
+
+    const mutual = series.links.find((link: { mutual?: boolean }) => link.mutual === true)
+    expect(mutual.symbol).toEqual(['arrow', 'arrow'])
+    // 单向边沿用 series 默认，不额外下发 symbol
+    const single = series.links.find((link: { mutual?: boolean }) => !link.mutual)
+    expect(single.symbol).toBeUndefined()
+
+    const tooltip = option.tooltip.formatter({ dataType: 'edge', data: mutual })
+    expect(tooltip).toContain('互相引用')
+    expect(tooltip).toContain('[[甲]]')
+
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('关系 2（互引 1）')
+  })
+
+  it('度数按唯一关联数算：互引不重复计数（C3）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(mutualPayload)),
+    )
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    clickNode(1)
+    const detail = await screen.findByTestId('graph-inspector-detail')
+    // 有向 3 条（1→2、2→1、1→3），唯一邻居只有 2 和 3
+    expect(detail).toHaveTextContent('关联 2 条')
+    // Inspector 仍给有向明细，互引条目补角标（D6）
+    expect(detail).toHaveTextContent('出链 2')
+    expect(detail).toHaveTextContent('反链 1')
+    expect(detail).toHaveTextContent('⇄ 互引')
+  })
+
+  it('箭头开关与低倍率自动收起都走独立 setOption（C7）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const toggle = screen.getByTestId('graph-arrows-toggle')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle).toHaveTextContent('隐藏箭头')
+    await waitFor(() => expect(lastArrowOption()?.edgeSymbol).toEqual(['none', 'arrow']))
+
+    fireEvent.click(toggle)
+    await waitFor(() => expect(lastArrowOption()?.edgeSymbol).toBe('none'))
+    // 关掉箭头时尺寸同时归零，避免只剩无法命中的空 symbol 占位
+    expect(lastArrowOption()?.edgeSymbolSize).toBe(0)
+    expect(screen.getByTestId('graph-arrows-toggle')).toHaveTextContent('显示箭头')
+
+    // 重新打开后缩放：0.8^5 ≈ 33%，低于 40% 阈值自动收起箭头
+    fireEvent.click(screen.getByTestId('graph-arrows-toggle'))
+    await waitFor(() => expect(lastArrowOption()?.edgeSymbol).toEqual(['none', 'arrow']))
+    for (let i = 0; i < 5; i += 1) fireEvent.click(screen.getByTestId('graph-zoom-out'))
+    await waitFor(() => expect(lastArrowOption()?.edgeSymbol).toBe('none'))
+  })
+
+  it('图例给出单双向说明项，且不参与格式显隐（C5）', async () => {
+    renderPage()
+    // 先等数据落地，否则页脚还是空图的 0 / 0
+    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByTestId('graph-legend-edge-direction')).toBeInTheDocument()
+    const note = screen.getByTestId('graph-legend-edge-direction')
+    // 说明项不是按钮：点它不应触发任何格式过滤
+    expect(note.tagName).toBe('SPAN')
+    expect(note).not.toHaveAttribute('aria-pressed')
+    expect(note).toHaveTextContent('互引')
+    fireEvent.click(note)
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 4 / 共 4')
   })
 })
