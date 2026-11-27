@@ -1,11 +1,12 @@
-"""结束占用开发端口的旧进程（供 ``make dev`` / ``make free-dev-ports`` 调用）.
+"""Terminate stale processes holding the dev ports (called by ``make dev`` / ``make free-dev-ports``).
 
-用法::
+Usage::
 
     python scripts/free_ports.py 8772 5173
 
-先 SIGTERM，等待 ``SHUTDOWN_TIMEOUT`` 秒仍未释放则 SIGKILL；Windows 走
-``netstat`` + ``taskkill /T /F``。任一端口无法释放时退出码为 1。
+Sends SIGTERM first, then SIGKILL if the port is still held after ``SHUTDOWN_TIMEOUT`` seconds;
+on Windows it uses ``netstat`` + ``taskkill /T /F``. Exit code is 1 when any port cannot be
+released.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ _TAG = "[dev]"
 
 
 def _pids_via_proc(port: int) -> set[int]:
-    """在 Linux 上通过 /proc 扫描监听 *port* 的进程."""
+    """Scan /proc for processes listening on *port* (Linux)."""
     inodes: set[str] = set()
     for name in ("/proc/net/tcp", "/proc/net/tcp6"):
         try:
@@ -33,7 +34,7 @@ def _pids_via_proc(port: int) -> set[int]:
             continue
         for line in lines[1:]:
             fields = line.split()
-            # fields[3] == "0A" 表示 LISTEN，fields[1] 为本地地址:端口（十六进制）
+            # fields[3] == "0A" means LISTEN, fields[1] is the local address:port (hex)
             if len(fields) < 10 or fields[3] != "0A":
                 continue
             if int(fields[1].rsplit(":", 1)[1], 16) == port:
@@ -60,7 +61,7 @@ def _pids_via_proc(port: int) -> set[int]:
 
 
 def _pids_via_lsof(port: int) -> set[int]:
-    """在 macOS / 未提供 /proc 的系统上通过 lsof 查询."""
+    """Query with lsof on macOS / systems without /proc."""
     try:
         result = subprocess.run(
             ["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
@@ -75,7 +76,7 @@ def _pids_via_lsof(port: int) -> set[int]:
 
 
 def _pids_via_netstat(port: int) -> set[int]:
-    """在 Windows 上通过 netstat 查询监听 *port* 的进程."""
+    """Query with netstat for processes listening on *port* (Windows)."""
     try:
         result = subprocess.run(
             ["netstat", "-ano", "-p", "tcp"],
@@ -99,7 +100,7 @@ def _pids_via_netstat(port: int) -> set[int]:
 
 
 def pids_on_port(port: int) -> set[int]:
-    """返回在 *port* 上监听的进程 PID 集合."""
+    """Return the set of PIDs listening on *port*."""
     if sys.platform == "win32":
         pids = _pids_via_netstat(port)
     elif Path("/proc/net").is_dir():
@@ -124,7 +125,7 @@ def _terminate(pid: int, *, force: bool = False) -> None:
         else:
             os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"{_TAG} 无法结束进程 {pid}: {exc}", file=sys.stderr)
+        print(f"{_TAG} cannot terminate process {pid}: {exc}", file=sys.stderr)
 
 
 def _wait_released(port: int, timeout: float) -> bool:
@@ -137,37 +138,37 @@ def _wait_released(port: int, timeout: float) -> bool:
 
 
 def free_port(port: int) -> bool:
-    """结束占用 *port* 的进程，成功释放返回 True."""
+    """Terminate the process on *port*; return True once the port is free."""
     pids = pids_on_port(port)
     if not pids:
-        print(f"{_TAG} 端口 {port}: 可用")
+        print(f"{_TAG} port {port}: free")
         return True
-    print(f"{_TAG} 端口 {port}: 结束占用进程 {sorted(pids)}")
+    print(f"{_TAG} port {port}: terminating {sorted(pids)}")
     for pid in pids:
         _terminate(pid)
     if _wait_released(port, SHUTDOWN_TIMEOUT):
-        print(f"{_TAG} 端口 {port}: 已释放")
+        print(f"{_TAG} port {port}: released")
         return True
     remaining = pids_on_port(port)
     if remaining:
-        print(f"{_TAG} 端口 {port}: 未响应 SIGTERM，强制结束 {sorted(remaining)}")
+        print(f"{_TAG} port {port}: no response to SIGTERM, force killing {sorted(remaining)}")
         for pid in remaining:
             _terminate(pid, force=True)
         if _wait_released(port, SHUTDOWN_TIMEOUT):
-            print(f"{_TAG} 端口 {port}: 已释放")
+            print(f"{_TAG} port {port}: released")
             return True
-    print(f"{_TAG} 端口 {port} 仍被占用", file=sys.stderr)
+    print(f"{_TAG} port {port} is still in use", file=sys.stderr)
     return False
 
 
 def main(argv: list[str]) -> int:
     if not argv:
-        print("用法: python scripts/free_ports.py <port> [port ...]", file=sys.stderr)
+        print("usage: python scripts/free_ports.py <port> [port ...]", file=sys.stderr)
         return 2
     ports = [int(arg) for arg in argv]
-    print(f"{_TAG} 检查开发端口占用...")
+    print(f"{_TAG} checking dev port usage...")
     ok = True
-    for port in ports:  # 逐个尝试，避免前一个失败导致后面的端口漏检
+    for port in ports:  # try one by one so an early failure does not skip the remaining ports
         ok = free_port(port) and ok
     return 0 if ok else 1
 

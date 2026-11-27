@@ -151,7 +151,7 @@ class TestTerminate:
 
         free_ports._terminate(111)
 
-        assert "无法结束进程 111" in capsys.readouterr().err
+        assert "cannot terminate process 111" in capsys.readouterr().err
 
 
 class TestFreePort:
@@ -189,7 +189,7 @@ class TestFreePort:
 class TestMain:
     def test_requires_ports(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert free_ports.main([]) == 2
-        assert "用法" in capsys.readouterr().err
+        assert "usage" in capsys.readouterr().err
 
     def test_all_ports_freed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(free_ports, "free_port", lambda port: True)

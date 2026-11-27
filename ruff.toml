@@ -1,5 +1,5 @@
-# 排除 isort/UP 等规则不适用的目录：examples 是数据样例，
-# alembic 按 gitignore 语义匹配任意层级的迁移目录（含 src/cndb/alembic）
+# Directories where isort/UP rules do not apply: examples holds data samples,
+# alembic matches migration directories at any level by gitignore semantics (including src/cndb/alembic)
 extend-exclude = ["examples", "alembic"]
 line-length    = 120
 target-version = "py312"
@@ -10,20 +10,21 @@ ignore = [
     "PLC0415", # import should be at top-level (intentional for lazy imports)
     "PLR0911", # too many return statements (intentional for data-processing pipelines)
     "PLR0912", # too many branches (intentional for URL validation / type inference)
-    "PLR0913", # too many arguments (FastAPI 路由天然有多个 path 参数 + Depends)
+    "PLR0913", # too many arguments (FastAPI routes naturally take several path params + Depends)
     "PLR0915", # too many statements (intentional for complex methods)
-    "PLR0917", # too many positional arguments (同上)
+    "PLR0917", # too many positional arguments (same as above)
     "PLR2004", # magic value comparison
-    "PLW2901", # for-loop variable overwritten (acceptable for _resolve_path 简化语法)
+    "PLW2901", # for-loop variable overwritten (acceptable for the simplified _resolve_path syntax)
     "RUF001",  # ambiguous unicode characters in string
     "RUF002",  # ambiguous unicode characters in docstring
     "RUF003",  # ambiguous unicode characters in comment
     "RUF012",  # mutable class attributes (intentional for config)
-    "RUF030",  # FastAPI path params 必须保留 Annotated[type, Path(...)] 即使只有一个注解
+    "RUF030",  # FastAPI path params must keep Annotated[type, Path(...)] even with a single annotation
     "SIM108",  # use ternary operator
-    # UP045：runner.py CLI 用 argparse + typing.get_type_hints() 求值注解，保留 Optional[X] 更稳妥
+    # UP045: runner.py CLI evaluates annotations via argparse + typing.get_type_hints(),
+    # keeping Optional[X] is safer
     "UP045",
-    "B008", # FastAPI Depends 在默认参数里是标准模式，B008 误报
+    "B008", # FastAPI Depends in default arguments is the standard pattern, B008 is a false positive
 ]
 select = [
     "ARG", # flake8-unused-arguments

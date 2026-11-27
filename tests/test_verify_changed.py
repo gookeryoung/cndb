@@ -68,7 +68,7 @@ def fake_index(monkeypatch: pytest.MonkeyPatch, fake_tests_dir: Path) -> dict[st
 def test_plan_backend_skips_without_python_change() -> None:
     tests, why = verify_changed.plan_backend(["docs/README.md", "Makefile"])
     assert tests == []
-    assert "无后端 Python 改动" in why
+    assert "no backend Python change" in why
 
 
 @pytest.mark.parametrize(
@@ -86,7 +86,7 @@ def test_plan_backend_skips_without_python_change() -> None:
 def test_plan_backend_danger_paths_fall_back_to_full(path: str) -> None:
     tests, why = verify_changed.plan_backend([path])
     assert tests is None, "危险路径必须回退全量"
-    assert "共享基础设施" in why
+    assert "shared infrastructure hit" in why
 
 
 def test_plan_backend_selects_by_import_prefix(fake_index: dict[str, set[str]]) -> None:
@@ -104,7 +104,7 @@ def test_plan_backend_zero_hit_falls_back_to_full(fake_index: dict[str, set[str]
     # 模块没有任何测试 import 它 → 不能判定「无需验证」
     tests, why = verify_changed.plan_backend(["src/cndb/plugins/unknown/thing.py"])
     assert tests is None
-    assert "没有任何测试" in why
+    assert "no test references the changed module" in why
 
 
 def test_plan_backend_too_wide_falls_back_to_full(monkeypatch: pytest.MonkeyPatch, fake_tests_dir: Path) -> None:
@@ -116,7 +116,7 @@ def test_plan_backend_too_wide_falls_back_to_full(monkeypatch: pytest.MonkeyPatc
     )
     tests, why = verify_changed.plan_backend(["src/cndb/x/y.py"])
     assert tests is None
-    assert "无提速收益" in why
+    assert "no speed benefit left" in why
 
 
 # ── plan_frontend：共享设施 / 面过宽 / 零改动 ────────────────────────────
@@ -125,14 +125,14 @@ def test_plan_backend_too_wide_falls_back_to_full(monkeypatch: pytest.MonkeyPatc
 def test_plan_frontend_skips_without_frontend_change() -> None:
     tests, why = verify_changed.plan_frontend(["src/cndb/core/config.py"])
     assert tests == []
-    assert "无前端改动" in why
+    assert "no frontend change" in why
 
 
 @pytest.mark.parametrize("path", ["frontend/vite.config.ts", "frontend/src/test/setup.ts", "frontend/package.json"])
 def test_plan_frontend_shared_files_fall_back_to_full(path: str) -> None:
     tests, why = verify_changed.plan_frontend([path])
     assert tests is None
-    assert "共享设施" in why
+    assert "shared infrastructure hit" in why
 
 
 def test_plan_frontend_returns_entries_relative_to_frontend() -> None:
@@ -144,18 +144,18 @@ def test_plan_frontend_config_only_change_is_skip() -> None:
     # 只改 frontend/ 根下的配置文件 / 脚本时没有 src 入口可反查，跳过而不是跑全量
     tests, why = verify_changed.plan_frontend(["frontend/playwright.config.ts"])
     assert tests == []
-    assert "无 TS 改动" in why
+    assert "no TS change" in why
 
     tests, why = verify_changed.plan_frontend(["frontend/scripts/e2e-affected.mjs"])
     assert tests == []
-    assert "无 TS 改动" in why
+    assert "no TS change" in why
 
 
 def test_plan_frontend_too_many_entries_falls_back_to_full() -> None:
     changed = [f"frontend/src/pages/p{i}/X{i}.tsx" for i in range(verify_changed.MAX_FRONTEND_ENTRIES + 1)]
     tests, why = verify_changed.plan_frontend(changed)
     assert tests is None
-    assert "超过 related 入口上限" in why
+    assert "above the related entry cap" in why
 
 
 # ── retest：lastfailed 判空 ─────────────────────────────────────────────
@@ -171,9 +171,11 @@ def test_retest_empty_lastfailed_runs_full_suite(
 
     assert retest.main([]) == 0
     assert len(seen) == 1
-    assert "--lf" not in seen[0], "--lf 在空缓存下会静默跑全量，必须显式给全量命令"
+    assert "--lf" not in seen[0], (
+        "pytest --lf silently runs the full suite on an empty cache; the full command must be explicit"
+    )
     assert "-m" in seen[0] and "not slow" in seen[0]
-    assert "静默跑全量" in capsys.readouterr().out
+    assert "silently run the full suite" in capsys.readouterr().out
 
 
 def test_retest_reuses_lastfailed_when_present(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -185,7 +187,7 @@ def test_retest_reuses_lastfailed_when_present(monkeypatch: pytest.MonkeyPatch, 
 
     assert retest.main(["--tb=long"]) == 0
     assert "--lf" in seen[0]
-    assert "--tb=long" in seen[0], "额外参数须透传"
+    assert "--tb=long" in seen[0], "extra arguments must be passed through"
 
 
 def test_retest_corrupt_cache_is_treated_as_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

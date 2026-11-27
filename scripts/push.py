@@ -1,6 +1,6 @@
-"""推送当前分支到全部 git remote，并同步 tags.
+"""Push the current branch to every git remote and sync tags.
 
-用法::
+Usage::
 
     python scripts/push.py
 """
@@ -14,15 +14,15 @@ import sys
 def main() -> int:
     remotes = subprocess.check_output(["git", "remote"], text=True).split()
     if not remotes:
-        print("[push] 未配置 git remote", file=sys.stderr)
+        print("[push] no git remote configured", file=sys.stderr)
         return 1
     try:
         for remote in remotes:
-            print(f"[push] 推送 {remote} ...", flush=True)
+            print(f"[push] pushing {remote} ...", flush=True)
             subprocess.run(["git", "push", remote], check=True)
             subprocess.run(["git", "push", remote, "--tags"], check=True)
     except subprocess.CalledProcessError as exc:
-        print(f"[push] 失败（退出码 {exc.returncode}），已中止", file=sys.stderr)
+        print(f"[push] failed (exit code {exc.returncode}), aborted", file=sys.stderr)
         return exc.returncode
     return 0
 

@@ -1,4 +1,4 @@
-"""性能基准 — 10k 行导入 / 查询吞吐."""
+"""Performance benchmark — 10k-row import / query throughput."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from cndb.plugins.tables.services.core.ddl import create_table
 
 
 def setup_db() -> tuple[Any, Any]:
-    """创建临时 SQLite 数据库 + 表结构."""
+    """Create a temporary SQLite database + schema."""
     db_path = Path(tempfile.gettempdir()) / "cndb_bench.db"
     if db_path.exists():
         db_path.unlink()
@@ -37,7 +37,7 @@ def setup_db() -> tuple[Any, Any]:
 
 
 def create_bench_table(engine: Any) -> Any:
-    """建一个带 text/number/boolean/date 字段的表."""
+    """Create a table with text/number/boolean/date fields."""
     SessionLocal = sessionmaker(bind=engine)
     db: Session = SessionLocal()
     try:
@@ -72,7 +72,7 @@ def create_bench_table(engine: Any) -> Any:
 
 
 def bench_import(engine: Any, dt: Any, rows: list[dict[str, Any]]) -> None:
-    """10k 行 JSON 导入."""
+    """10k-row JSON import."""
     json_text = json.dumps(rows)
     t0 = time.perf_counter()
     ids = transfer.import_rows_from_json(engine, dt, json_text)
@@ -82,7 +82,7 @@ def bench_import(engine: Any, dt: Any, rows: list[dict[str, Any]]) -> None:
 
 
 def bench_queries(engine: Any, dt: Any) -> None:
-    """查询吞吐：limit(100) x N + count + filter."""
+    """Query throughput: limit(100) x N + count + filter."""
     md = MetaData()
     md.reflect(bind=engine, only=[dt.db_table_name])
     sa_tbl = md.tables[dt.db_table_name]
@@ -104,23 +104,23 @@ def bench_queries(engine: Any, dt: Any) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="cndb 性能基准")
-    parser.add_argument("--rows", type=int, default=10000, help="导入行数（默认 10000）")
-    parser.add_argument("--skip-import", action="store_true", help="跳过导入（表已存在时）")
+    parser = argparse.ArgumentParser(description="cndb performance benchmark")
+    parser.add_argument("--rows", type=int, default=10000, help="rows to import (default 10000)")
+    parser.add_argument("--skip-import", action="store_true", help="skip the import (when the table exists)")
     args = parser.parse_args()
 
     print(f"== cndb benchmark  rows={args.rows} ==")
     engine, db_path = setup_db()
 
     if args.skip_import:
-        # 假设表已存在，只跑查询
+        # Assume the table exists, only run queries
         from sqlalchemy.orm import sessionmaker
 
         S = sessionmaker(bind=engine)
         db = S()
         dt = db.query(DataTable).filter_by(name="bench").first()
         if dt is None:
-            print("  ERROR: skip-import 但 bench 表不存在")
+            print("  ERROR: --skip-import given but the bench table does not exist")
             sys.exit(1)
         db.close()
         bench_queries(engine, dt)
@@ -128,7 +128,7 @@ def main() -> None:
 
     dt = create_bench_table(engine)
 
-    # 生成数据
+    # Generate data
     categories = ["A", "B", "C"]
     rows = [
         {

@@ -1,19 +1,22 @@
-"""校验硬约束台账（docs/CONSTRAINTS.md）的格式与引用完整性.
+"""Verify the format and reference integrity of the hard-constraint ledger (docs/CONSTRAINTS.md).
 
-用法::
+Usage::
 
-    python scripts/check_constraints.py             # 有 error 时退出 1，warning 不阻断
-    python scripts/check_constraints.py --strict    # warning 也视为失败
-    python scripts/check_constraints.py --root PATH # 指定仓库根（测试用）
+    python scripts/check_constraints.py             # exit 1 on errors, warnings do not block
+    python scripts/check_constraints.py --strict    # warnings count as failures too
+    python scripts/check_constraints.py --root PATH # specify the repository root (for tests)
 
-检查项（ADR 0119 §3）：
+Checks (ADR 0119 §3):
 
-- 台账存在且含四列固定列头（``#`` / ``约束`` / ``校验`` / ``来源``）。
-- H 编号格式合法（``H\\d+``）且全局唯一。
-- ``来源`` 含 ``ADR NNNN`` 的：``docs/adr/NNNN-*.md`` 存在（防孤儿约束）。
-- ``校验`` 含 ``make <t>`` 的：``<t>`` 在 Makefile 目标中存在。
-- ``已删除`` 清单中的编号仍出现在正文分组表 → warning。
-- 「使用方式」节缺失「开工前 / 提交前 / 冲突处理」任一关键词 → warning。
+- The ledger exists and has the four fixed column headers (``#`` / ``约束`` / ``校验`` / ``来源``).
+- H ids are well formed (``H\\d+``) and globally unique.
+- Rows whose source mentions ``ADR NNNN``: ``docs/adr/NNNN-*.md`` exists (no orphan constraints).
+- Rows whose check column mentions ``make <t>``: ``<t>`` is a Makefile target.
+- An id in the deleted list that still appears in a body table -> warning.
+- The usage section is missing any of "开工前 / 提交前 / 冲突处理" -> warning.
+
+Note: the ledger headings and column headers below are Chinese because they are the data
+contract of ``docs/CONSTRAINTS.md``; only the console output is English.
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ MAKEFILE_TARGET = re.compile(r"^([A-Za-z0-9_.\-/]+)\s*:", re.MULTILINE)
 
 
 def _table_rows(lines: list[str]) -> list[dict[str, str]]:
-    """解析 Markdown 表格；单元格按 ``|`` 切分（台账不含转义竖线）."""
+    """Parse a Markdown table; cells are split on ``|`` (the ledger has no escaped pipes)."""
     rows = [line.strip() for line in lines if line.strip().startswith("|")]
     if len(rows) < 3:
         return []
@@ -48,7 +51,7 @@ def _table_rows(lines: list[str]) -> list[dict[str, str]]:
 
 
 def _split_tables(text: str) -> list[tuple[list[str], list[dict[str, str]]]]:
-    """把正文按空行切块，返回 (块内非空行, 解析出的表格行)."""
+    """Split the body on blank lines, returning (non-empty lines in the block, parsed rows)."""
     blocks: list[tuple[list[str], list[dict[str, str]]]] = []
     block: list[str] = []
     for line in text.splitlines():
@@ -63,19 +66,19 @@ def _split_tables(text: str) -> list[tuple[list[str], list[dict[str, str]]]]:
 
 
 def _makefile_targets(makefile: Path) -> set[str]:
-    """提取 Makefile 目标名（排除变量赋值 / 模式规则的常规目标）."""
+    """Extract Makefile target names (skipping variable assignments / pattern-rule noise)."""
     if not makefile.exists():
         return set()
     return set(MAKEFILE_TARGET.findall(makefile.read_text(encoding="utf-8")))
 
 
 def check(root: Path) -> tuple[list[str], list[str]]:
-    """返回 (errors, warnings)."""
+    """Return (errors, warnings)."""
     errors: list[str] = []
     warnings: list[str] = []
     path = root / "docs" / "CONSTRAINTS.md"
     if not path.exists():
-        return ["docs/CONSTRAINTS.md 不存在"], []
+        return ["docs/CONSTRAINTS.md does not exist"], []
 
     text = path.read_text(encoding="utf-8")
     blocks = _split_tables(text)
@@ -92,52 +95,52 @@ def check(root: Path) -> tuple[list[str], list[str]]:
             deleted_rows.extend(rows)
 
     if not constraint_rows:
-        errors.append("未找到四列约束表（列头须为 # / 约束 / 校验 / 来源）")
+        errors.append("no four-column constraint table found (headers must be # / 约束 / 校验 / 来源)")
 
     targets = _makefile_targets(root / "Makefile")
     seen_ids: dict[str, int] = {}
     for row in constraint_rows:
         hid = row.get("#", "").strip()
         if not H_ID.match(hid):
-            errors.append(f"编号格式非法: {hid or '<空>'}（应为 H\\d+）")
+            errors.append(f"invalid id: {hid or '<empty>'} (expected H\\d+)")
             continue
         if hid in seen_ids:
-            errors.append(f"编号重复: {hid}")
+            errors.append(f"duplicate id: {hid}")
         seen_ids[hid] = seen_ids.get(hid, 0) + 1
 
         source = row.get("来源", "")
         for adr in ADR_REF.findall(source):
             if not list((root / "docs" / "adr").glob(f"{adr}-*.md")):
-                errors.append(f"{hid}: 来源 ADR {adr} 文件不存在（孤儿约束）")
+                errors.append(f"{hid}: source ADR {adr} does not exist (orphan constraint)")
 
         for target in MAKE_TARGET.findall(row.get("校验", "")):
             if target not in targets:
-                errors.append(f"{hid}: make 目标不存在: {target}")
+                errors.append(f"{hid}: make target does not exist: {target}")
 
     body_ids = set(seen_ids)
     for row in deleted_rows:
         hid = row.get("#", "").strip()
         if H_ID.match(hid) and hid in body_ids:
-            warnings.append(f"已删除清单中的编号 {hid} 仍出现在正文分组表")
+            warnings.append(f"deleted id {hid} still appears in a body table")
 
     usage = re.search(r"^##\s*使用方式.*$", text, re.MULTILINE)
     if usage is None:
-        warnings.append("缺少「使用方式」节")
+        warnings.append("missing the usage section")
     else:
         rest = text[usage.end() :]
         nxt = re.search(r"^##\s+", rest, re.MULTILINE)
         section = rest[: nxt.start()] if nxt else rest
         for keyword in USAGE_KEYWORDS:
             if keyword not in section:
-                warnings.append(f"「使用方式」缺少关键词: {keyword}")
+                warnings.append(f"usage section is missing the keyword: {keyword}")
 
     return errors, warnings
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="校验硬约束台账 docs/CONSTRAINTS.md。")
-    parser.add_argument("--strict", action="store_true", help="warning 也视为失败")
-    parser.add_argument("--root", type=Path, default=ROOT, help="仓库根目录（测试用）")
+    parser = argparse.ArgumentParser(description="Verify the hard-constraint ledger docs/CONSTRAINTS.md.")
+    parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
+    parser.add_argument("--root", type=Path, default=ROOT, help="repository root (for tests)")
     args = parser.parse_args(argv)
 
     errors, warnings = check(args.root)
@@ -146,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  error: {item}")
     for item in warnings:
         print(f"  warn:  {item}")
-    print(f"[constraint-check] {len(errors)} error，{len(warnings)} warning")
+    print(f"[constraint-check] {len(errors)} error, {len(warnings)} warning")
     if errors or (args.strict and warnings):
         return 1
     return 0

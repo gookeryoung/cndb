@@ -1,15 +1,17 @@
-"""只重跑上轮失败用例（``pytest --lf``），并在 lastfailed 为空时显式回退。
+"""Re-run only last round's failing tests (``pytest --lf``), falling back explicitly when empty.
 
-背景（需求 0181 C4）：``pytest --lf`` 在 ``.pytest_cache/v/cache/lastfailed`` 为空时
-不会报错，而是**静默跑全量**——AI 内环以为在跑 3 个用例，实际吃了整轮全量耗时。
+Background (requirement 0181 C4): when ``.pytest_cache/v/cache/lastfailed`` is empty,
+``pytest --lf`` does not fail — it **silently runs the whole suite**, so the AI inner loop
+believes it is running three tests while paying for a full round.
 
-本脚本先判空再决定命令，并把真实行为打印出来：
+This script decides after checking for emptiness and prints what it actually does:
 
-- lastfailed 有内容 → ``pytest --lf``，只跑失败项；
-- lastfailed 缺失 / 为空 → 打印提示后跑全量（``-m "not slow"``），语义显式；
-- 传 ``--`` 之后的参数原样透传（如 ``--tb=long`` / ``-x``）。
+- lastfailed has entries -> ``pytest --lf``, only the failures;
+- lastfailed missing / empty -> print a notice and run the full suite (``-m "not slow"``);
+- arguments after ``--`` are passed through (e.g. ``--tb=long`` / ``-x``).
 
-并发度取环境变量 ``PYTEST_JOBS``（由 Makefile 求值后导出），缺省 8。
+Concurrency comes from the ``PYTEST_JOBS`` environment variable (exported by the Makefile),
+defaulting to 8.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess  # nosec B404 - 门禁脚本需调用 pytest
+import subprocess  # nosec B404 - gate scripts need to call pytest
 import sys
 from pathlib import Path
 
@@ -26,7 +28,7 @@ LASTFAILED = ROOT / ".pytest_cache" / "v" / "cache" / "lastfailed"
 
 
 def _failed_nodes() -> list[str]:
-    """读取 lastfailed 缓存里的用例 nodeid 列表（文件缺失 / 损坏一律视为空）."""
+    """Read the test node ids from the lastfailed cache (missing / corrupt counts as empty)."""
     try:
         data = json.loads(LASTFAILED.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -37,10 +39,12 @@ def _failed_nodes() -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="重跑上轮失败用例（lastfailed 为空时显式回退全量）")
-    parser.add_argument("extra", nargs="*", help="透传给 pytest 的其余参数")
-    # 用 parse_known_args：本脚本的参数只有 --help，其余（--tb=long / -x / -k ...）
-    # 一律原样透传给 pytest，不能让 argparse 因为不认识就退出。
+    parser = argparse.ArgumentParser(
+        description="Re-run last round's failures (falls back to the full suite explicitly)"
+    )
+    parser.add_argument("extra", nargs="*", help="remaining arguments passed through to pytest")
+    # parse_known_args: this script only owns --help, everything else (--tb=long / -x / -k ...)
+    # is passed to pytest verbatim instead of making argparse exit on an unknown option.
     args, extra = parser.parse_known_args(argv)
     extra = [*args.extra, *extra]
 
@@ -48,22 +52,22 @@ def main(argv: list[str]) -> int:
     failed = _failed_nodes()
 
     if failed:
-        print(f"[retest] lastfailed 命中 {len(failed)} 个用例，只重跑这些：", flush=True)
+        print(f"[retest] lastfailed has {len(failed)} test(s), re-running those only:", flush=True)
         for node in failed[:20]:
             print(f"  - {node}", flush=True)
         if len(failed) > 20:
-            print(f"  … 另有 {len(failed) - 20} 个", flush=True)
+            print(f"  ... {len(failed) - 20} more", flush=True)
         cmd = ["uv", "run", "pytest", "--lf", "-n", jobs, *extra]
     else:
         print(
-            "[retest] lastfailed 为空（无失败记录或缓存已清），"
-            "`--lf` 此时会静默跑全量——改为显式跑全量，别误以为只跑了几个用例。",
+            "[retest] lastfailed is empty (no failures recorded or the cache was cleared); "
+            "`--lf` would silently run the full suite here — running the full suite explicitly instead.",
             flush=True,
         )
         cmd = ["uv", "run", "pytest", "-m", "not slow", "-n", jobs, *extra]
 
-    print(f"[retest] 执行: {' '.join(cmd)}", flush=True)
-    return subprocess.call(cmd, cwd=ROOT)  # nosec B603 - 命令为固定常量
+    print(f"[retest] running: {' '.join(cmd)}", flush=True)
+    return subprocess.call(cmd, cwd=ROOT)  # nosec B603 - fixed command constants
 
 
 if __name__ == "__main__":

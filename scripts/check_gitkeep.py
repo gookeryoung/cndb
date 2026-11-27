@@ -1,16 +1,17 @@
-"""校验仓库内关键 .gitkeep 文件是否存在.
+"""Verify that the key .gitkeep files exist in the repository.
 
-这些空占位文件一旦被删除，对应的空目录在 git clone / CI checkout 后就会消失，
-导致 hatchling force-include 等依赖实际目录路径的步骤
-直接报错。本脚本在 pre-commit 阶段和 ``make check`` 流程中被调用，提前阻断。
+These empty placeholders keep otherwise empty directories alive after ``git clone`` / CI
+checkout; once lost, steps such as hatchling force-include that depend on the real directory
+path fail immediately. The script is called from the pre-commit hook and the
+``make check`` flow to fail fast.
 
-用法::
+Usage::
 
-    python scripts/check_gitkeep.py              # 检查默认清单
-    python scripts/check_gitkeep.py --fix        # 缺失时自动补回
-    python scripts/check_gitkeep.py path1 path2   # 检查指定路径（相对仓库根）
+    python scripts/check_gitkeep.py              # check the default list
+    python scripts/check_gitkeep.py --fix        # recreate missing files
+    python scripts/check_gitkeep.py path1 path2  # check the given paths (relative to repo root)
 
-退出码 0 表示全部存在，1 表示有缺失。
+Exit code 0 means everything is present, 1 means something is missing.
 """
 
 from __future__ import annotations
@@ -19,10 +20,10 @@ import argparse
 import sys
 from pathlib import Path
 
-# ── 默认清单：删掉会导致 CI/CD 或打包失败的 .gitkeep ──────────────
-# 路径相对仓库根（本文件位于 scripts/，需回退一层）
+# ── Default list: .gitkeep files whose absence breaks CI/CD or packaging ──────
+# Paths are relative to the repository root (this file lives in scripts/, hence one level up)
 _DEFAULT_KEEPS: tuple[str, ...] = (
-    # hatchling force-include 依赖 src/cndb/static/ 真实存在
+    # hatchling force-include requires src/cndb/static/ to really exist
     "src/cndb/static/.gitkeep",
 )
 
@@ -32,14 +33,14 @@ def _repo_root() -> Path:
 
 
 def check(paths: list[str], *, fix: bool = False) -> int:
-    """检查给定的 .gitkeep 路径是否存在.
+    """Check whether the given .gitkeep paths exist.
 
     Args:
-        paths: 相对仓库根的 .gitkeep 路径列表.
-        fix: 缺失时是否自动创建空文件及其父目录.
+        paths: .gitkeep paths relative to the repository root.
+        fix: create the empty file and its parent directory when missing.
 
     Returns:
-        缺失数量（0 表示全部存在）.
+        Number of missing files (0 means everything is present).
     """
     root = _repo_root()
     missing: list[Path] = []
@@ -51,36 +52,36 @@ def check(paths: list[str], *, fix: bool = False) -> int:
         if fix:
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.touch()
-            print(f"[gitkeep] 已补回 {rel}")
+            print(f"[gitkeep] restored {rel}")
         else:
             missing.append(fp)
-            print(f"[gitkeep] 缺失: {rel}  (目录 {fp.parent})")
+            print(f"[gitkeep] missing: {rel}  (directory {fp.parent})")
 
     if missing:
         print()
-        print(f"共 {len(missing)} 个 .gitkeep 缺失。")
-        print("这些文件一旦从工作树消失，对应的空目录在 git checkout 后也不复存在，")
-        print("会导致 hatchling force-include 等步骤报错。")
-        print("请执行 `python scripts/check_gitkeep.py --fix` 补回，或手动 `touch` 对应文件。")
+        print(f"{len(missing)} .gitkeep file(s) missing.")
+        print("Once these files leave the working tree, the empty directories no longer exist after")
+        print("git checkout, which breaks steps such as hatchling force-include.")
+        print("Run `python scripts/check_gitkeep.py --fix` to restore them, or touch them manually.")
         return 1
 
-    print(f"[gitkeep] 全部就绪（检查了 {len(paths)} 个）")
+    print(f"[gitkeep] all present ({len(paths)} checked)")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="校验关键 .gitkeep 文件是否存在，缺失时可选自动补回。",
+        description="Verify that key .gitkeep files exist, optionally restoring missing ones.",
     )
     parser.add_argument(
         "--fix",
         action="store_true",
-        help="缺失时自动创建空 .gitkeep 及其父目录。",
+        help="Create the missing empty .gitkeep files and their parent directories.",
     )
     parser.add_argument(
         "paths",
         nargs="*",
-        help="要检查的 .gitkeep 相对路径；不传则使用项目默认清单。",
+        help=".gitkeep paths to check, relative to the repository root; defaults to the project list.",
     )
     args = parser.parse_args(argv)
 

@@ -1,18 +1,26 @@
-"""校验 ADR 的落地状态、Related 链接与 CHANGELOG 关联.
+"""Verify ADR landing status, Related links and CHANGELOG references.
 
-用法::
+Usage::
 
-    python scripts/check_adr_landing.py            # 有 error 时退出 1，warning 不阻断
-    python scripts/check_adr_landing.py --strict   # warning 也视为失败
+    python scripts/check_adr_landing.py            # exit 1 on errors, warnings do not block
+    python scripts/check_adr_landing.py --strict   # warnings count as failures too
 
-检查项：
+Checks:
 
-- ``Status`` 只允许 ``Proposed`` / ``Accepted`` / ``Implemented``；``Superseded`` / ``Deprecated`` 属失效文档，应直接删除。
-- ``Accepted`` / ``Implemented`` 必须有「落地状态」表。
-- 标为「已落地」的期：代码落点与测试文件必须存在，提交列应为 sha。
-- 全部期已落地但 ``Status`` 仍为 ``Proposed`` → 告警；CHANGELOG 未出现 ``ADR NNNN`` → 错误。
-- ``Related`` 中的文件路径必须存在；``docs/adr/README.md`` 索引必须覆盖本 ADR、链接可达且 Status 与 ADR 一致。
-- 「交接」节应包含当前阶段 / 下一步 / 已知坑（缺失告警）。
+- ``Status`` may only be ``Proposed`` / ``Accepted`` / ``Implemented``; ``Superseded`` /
+  ``Deprecated`` are retired documents and should be deleted outright.
+- ``Accepted`` / ``Implemented`` must carry a landing-status table (``落地状态``).
+- A phase marked as landed (``已落地``) must have existing code and test paths, and a sha in the
+  commit column.
+- All phases landed while ``Status`` is still ``Proposed`` -> warning; a CHANGELOG without
+  ``ADR NNNN`` -> error.
+- ``Related`` file paths must exist; ``docs/adr/README.md`` must index this ADR, its links must
+  resolve and its Status must match the ADR.
+- The handoff section (``交接``) should list current phase / next step / known pitfalls
+  (missing -> warning).
+
+Note: the section names and column headers below are Chinese because they are the data
+contract of ``docs/adr/*.md``; only the console output is English.
 """
 
 from __future__ import annotations
@@ -27,13 +35,21 @@ ADR_DIR = ROOT / "docs" / "adr"
 SKIP_FILES = {"TEMPLATE.md", "README.md"}
 VALID_STATUS = {"Proposed", "Accepted", "Implemented"}
 REMOVED_STATUS = {"Superseded", "Deprecated"}
-VALID_PHASE = {"未开始", "进行中", "已落地"}
+VALID_PHASE = ("未开始", "进行中", "已落地")
 PATH_BASES = (ROOT, ROOT / "src" / "cndb", ROOT / "frontend", ROOT / "src")
 BACKTICK = re.compile(r"`([^`]+)`")
 
+LANDING_HEADING = "落地状态"
+HANDOFF_HEADING = "交接"
+COL_PHASE = "期"
+COL_STATE = "状态"
+COL_CODE = "代码落点"
+COL_TESTS = "测试"
+COL_COMMIT = "提交"
+
 
 def _section(text: str, name: str) -> str | None:
-    """取 ``## <name>...`` 到下一个二级标题之间的正文."""
+    """Return the body between ``## <name>...`` and the next level-2 heading."""
     match = re.search(rf"^##\s*{re.escape(name)}.*$", text, re.MULTILINE)
     if match is None:
         return None
@@ -43,7 +59,7 @@ def _section(text: str, name: str) -> str | None:
 
 
 def _table_rows(section: str) -> list[dict[str, str]]:
-    """解析 Markdown 表格；单元格按 ``|`` 切分（本仓库 ADR 表格不含转义竖线）."""
+    """Parse a Markdown table; cells are split on ``|`` (ADR tables have no escaped pipes)."""
     lines = [line.strip() for line in section.splitlines() if line.strip().startswith("|")]
     if len(lines) < 3:
         return []
@@ -57,7 +73,7 @@ def _table_rows(section: str) -> list[dict[str, str]]:
 
 
 def _resolve(token: str) -> Path | None:
-    """按仓库根 / src/cndb / frontend / src 依次解析路径，支持 glob."""
+    """Resolve a path against repo root / src/cndb / frontend / src in order, glob supported."""
     token = token.strip().strip("`")
     if not token or "<" in token or ">" in token:
         return None
@@ -96,61 +112,67 @@ def _check_file(path: Path, changelog: str) -> tuple[list[str], list[str]]:
 
     status = _status(text)
     if status is None:
-        errors.append("缺少 Status 行")
+        errors.append("missing Status line")
     elif status in REMOVED_STATUS:
-        errors.append(f"Status 为 {status}：ADR 已失效，应直接删除文件与 README 索引行（git 历史可追溯），不在仓库保留")
+        errors.append(
+            f"Status is {status}: the ADR is retired — delete the file and its README index row directly "
+            "(git history keeps it), do not keep it in the repository"
+        )
     elif status not in VALID_STATUS:
-        errors.append(f"Status 取值非法: {status}")
+        errors.append(f"invalid Status value: {status}")
 
     related = re.search(r"^Related:\s*(.+)$", text, re.MULTILINE)
     if related is not None:
         for token in _file_tokens(related.group(1)):
             if _resolve(token) is None:
-                errors.append(f"Related 路径不存在: {token}")
+                errors.append(f"Related path does not exist: {token}")
 
-    landing = _section(text, "落地状态")
+    landing = _section(text, LANDING_HEADING)
     rows = _table_rows(landing) if landing is not None else []
     if status in {"Accepted", "Implemented"} and landing is None:
-        errors.append(f"Status 为 {status} 但缺少「落地状态」表")
+        errors.append(f"Status is {status} but the '{LANDING_HEADING}' table is missing")
     if landing is not None and not rows:
-        errors.append("「落地状态」表为空或表头不是 期 / 状态 / 代码落点 / 测试 / 提交")
+        errors.append(
+            f"the '{LANDING_HEADING}' table is empty or its header is not "
+            f"{COL_PHASE} / {COL_STATE} / {COL_CODE} / {COL_TESTS} / {COL_COMMIT}"
+        )
 
     for row in rows:
-        phase = row.get("期", "?").strip()
-        state = row.get("状态", "").strip()
+        phase = row.get(COL_PHASE, "?").strip()
+        state = row.get(COL_STATE, "").strip()
         if state not in VALID_PHASE:
-            errors.append(f"{phase}: 状态「{state}」不在 未开始 / 进行中 / 已落地")
+            errors.append(f"{phase}: state '{state}' is not one of {' / '.join(VALID_PHASE)}")
             continue
         if state != "已落地":
             continue
-        code_paths = BACKTICK.findall(row.get("代码落点", ""))
-        test_paths = BACKTICK.findall(row.get("测试", ""))
+        code_paths = BACKTICK.findall(row.get(COL_CODE, ""))
+        test_paths = BACKTICK.findall(row.get(COL_TESTS, ""))
         if not code_paths:
-            errors.append(f"{phase}: 已落地但代码落点为空")
+            errors.append(f"{phase}: landed but the code locations are empty")
         if not test_paths:
-            errors.append(f"{phase}: 已落地但测试为空")
+            errors.append(f"{phase}: landed but the tests are empty")
         for token in code_paths + test_paths:
             if _resolve(token) is None:
-                errors.append(f"{phase}: 路径不存在: {token}")
-        commit = row.get("提交", "").strip().strip("`")
+                errors.append(f"{phase}: path does not exist: {token}")
+        commit = row.get(COL_COMMIT, "").strip().strip("`")
         if not re.fullmatch(r"[0-9a-f]{7,40}", commit):
-            warnings.append(f"{phase}: 已落地但提交列不是 sha: {commit or '<空>'}")
+            warnings.append(f"{phase}: landed but the commit column is not a sha: {commit or '<empty>'}")
 
-    if rows and all(row.get("状态", "").strip() == "已落地" for row in rows):
+    if rows and all(row.get(COL_STATE, "").strip() == "已落地" for row in rows):
         adr_id = _adr_id(path)
         if status == "Proposed":
-            warnings.append("全部阶段已落地，但 Status 仍为 Proposed（需人工评审回填）")
+            warnings.append("all phases landed but Status is still Proposed (needs a human review update)")
         if adr_id and f"ADR {adr_id}" not in changelog:
-            errors.append(f"CHANGELOG 未出现 ADR {adr_id}（已落地的期需带 `(ADR {adr_id} Pn)` 条目）")
+            errors.append(f"CHANGELOG does not mention ADR {adr_id} (landed phases need an `(ADR {adr_id} Pn)` entry)")
 
-    handoff = _section(text, "交接")
+    handoff = _section(text, HANDOFF_HEADING)
     if handoff is None:
         if rows:
-            warnings.append("缺少「交接」节（当前阶段 / 下一步 / 已知坑）")
+            warnings.append(f"missing the '{HANDOFF_HEADING}' section (current phase / next step / known pitfalls)")
     else:
         for key in ("当前阶段", "下一步", "已知坑"):
             if key not in handoff:
-                warnings.append(f"「交接」缺少 {key}")
+                warnings.append(f"the '{HANDOFF_HEADING}' section is missing {key}")
 
     return errors, warnings
 
@@ -158,7 +180,7 @@ def _check_file(path: Path, changelog: str) -> tuple[list[str], list[str]]:
 def _check_index(adr_paths: list[Path]) -> tuple[list[str], list[str]]:
     index = ADR_DIR / "README.md"
     if not index.exists():
-        return [], ["docs/adr/README.md 不存在"]
+        return [], ["docs/adr/README.md does not exist"]
     text = index.read_text(encoding="utf-8")
     errors: list[str] = []
     warnings: list[str] = []
@@ -171,29 +193,30 @@ def _check_index(adr_paths: list[Path]) -> tuple[list[str], list[str]]:
 
     for path in adr_paths:
         if path.name not in text:
-            warnings.append(f"README.md 未索引 {path.name}")
+            warnings.append(f"README.md does not index {path.name}")
             continue
-        # 索引与 ADR 本体双份记录 Status，最容易在需求变更后漂移，故强制一致
+        # Status is recorded twice (index and ADR) and drifts most easily after requirement
+        # changes, so the two are forced to agree.
         listed = indexed_status.get(path.name)
         actual = _status(path.read_text(encoding="utf-8"))
         if listed and actual and listed != actual:
-            errors.append(f"索引 Status({listed}) 与 ADR Status({actual}) 不一致: {path.name}")
+            errors.append(f"index Status({listed}) does not match ADR Status({actual}): {path.name}")
     for target in re.findall(r"\]\(([^)#]+?\.md)\)", text):
         if target.startswith(("http://", "https://")):
             continue
         if not (ADR_DIR / target).exists():
-            errors.append(f"README.md 链接不存在: {target}")
+            errors.append(f"README.md link target does not exist: {target}")
     return errors, warnings
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="校验 ADR 落地状态、Related 链接与 CHANGELOG 关联。")
-    parser.add_argument("--strict", action="store_true", help="warning 也视为失败")
+    parser = argparse.ArgumentParser(description="Verify ADR landing status, Related links and CHANGELOG references.")
+    parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
     args = parser.parse_args(argv)
 
     paths = sorted(path for path in ADR_DIR.glob("*.md") if path.name not in SKIP_FILES)
     if not paths:
-        print("[adr-check] 未找到 ADR")
+        print("[adr-check] no ADR found")
         return 0
 
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8") if (ROOT / "CHANGELOG.md").exists() else ""
@@ -220,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         total_errors += len(errors)
         total_warnings += len(warnings)
 
-    print(f"[adr-check] {len(paths)} 个 ADR，{total_errors} error，{total_warnings} warning")
+    print(f"[adr-check] {len(paths)} ADR(s), {total_errors} error, {total_warnings} warning")
     return 1 if total_errors or (args.strict and total_warnings) else 0
 
 

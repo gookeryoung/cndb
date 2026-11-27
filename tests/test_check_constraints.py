@@ -60,13 +60,13 @@ def test_valid_ledger_passes(tmp_path: Path) -> None:
 
 def test_missing_ledger_is_error(tmp_path: Path) -> None:
     errors, _ = check(_make_root(tmp_path, ledger=None))
-    assert any("不存在" in e for e in errors)
+    assert any("does not exist" in e for e in errors)
 
 
 def test_bad_header_is_error(tmp_path: Path) -> None:
     bad = VALID_LEDGER.replace("| # | 约束 | 校验 | 来源 |", "| # | 内容 | 校验 | 来源 |")
     errors, _ = check(_make_root(tmp_path, ledger=bad))
-    assert any("四列约束表" in e for e in errors)
+    assert any("four-column constraint table" in e for e in errors)
 
 
 def test_duplicate_id_is_error(tmp_path: Path) -> None:
@@ -74,24 +74,24 @@ def test_duplicate_id_is_error(tmp_path: Path) -> None:
         "| H2 | 权限天花板 | `make cov` | ADR 0004 I1 |", "| H1 | 权限天花板 | `make cov` | ADR 0004 I1 |"
     )
     errors, _ = check(_make_root(tmp_path, ledger=bad))
-    assert any("编号重复" in e for e in errors)
+    assert any("duplicate id" in e for e in errors)
 
 
 def test_invalid_id_format_is_error(tmp_path: Path) -> None:
     bad = VALID_LEDGER.replace("| H2 |", "| X2 |")
     errors, _ = check(_make_root(tmp_path, ledger=bad))
-    assert any("编号格式非法" in e for e in errors)
+    assert any("invalid id" in e for e in errors)
 
 
 def test_orphan_adr_source_is_error(tmp_path: Path) -> None:
     errors, _ = check(_make_root(tmp_path, adr_files=["0099-some-other.md"]))
-    assert any("孤儿约束" in e for e in errors)
+    assert any("orphan constraint" in e for e in errors)
 
 
 def test_missing_make_target_is_error(tmp_path: Path) -> None:
     bad = VALID_LEDGER.replace("`make cov`", "`make no-such-target`")
     errors, _ = check(_make_root(tmp_path, ledger=bad))
-    assert any("make 目标不存在" in e for e in errors)
+    assert any("make target does not exist" in e for e in errors)
 
 
 def test_deleted_id_still_in_body_warns(tmp_path: Path) -> None:
@@ -101,7 +101,7 @@ def test_deleted_id_still_in_body_warns(tmp_path: Path) -> None:
     )
     errors, warnings = check(_make_root(tmp_path, ledger=bad))
     assert errors == []
-    assert any("仍出现在正文分组表" in w for w in warnings)
+    assert any("still appears in a body table" in w for w in warnings)
     assert main(["--root", str(tmp_path), "--strict"]) == 1
     assert main(["--root", str(tmp_path)]) == 0
 

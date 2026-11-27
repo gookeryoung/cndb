@@ -1,8 +1,8 @@
-"""从 Makefile 提取 ``## 说明`` 注释，生成 ``make help`` 输出.
+"""Extract ``## description`` comments from the Makefile and print ``make help`` output.
 
-用法::
+Usage::
 
-    python scripts/help.py Makefile [其它 .mk ...]
+    python scripts/help.py Makefile [other .mk ...]
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ _TARGET = re.compile(r"^([a-zA-Z][\w -]*):.*?##\s*(.*)")
 
 
 def collect(makefiles: list[str]) -> list[tuple[str, str]]:
-    """按文件顺序收集 ``目标名: ## 说明`` 形式的条目."""
+    """Collect ``target: ## description`` entries in file order."""
     entries: list[tuple[str, str]] = []
     for name in makefiles:
         for line in Path(name).read_text(encoding="utf-8").splitlines():
@@ -26,7 +26,7 @@ def collect(makefiles: list[str]) -> list[tuple[str, str]]:
 
 
 def main(argv: list[str]) -> int:
-    # 跟随终端编码（Windows 常见 cp936），避免按 UTF-8 输出在控制台显示乱码
+    # Follow the terminal encoding (cp936 on Windows) so output is never mojibake
     sys.stdout.reconfigure(errors="replace")
     entries = collect(argv or ["Makefile"])
     width = max((len(name) for name, _ in entries), default=0)

@@ -1,6 +1,6 @@
-"""清理构建产物与工具缓存（跨平台替代 rm -rf 白名单）.
+"""Clean build artifacts and tool caches (cross-platform replacement for an rm -rf allowlist).
 
-用法::
+Usage::
 
     python scripts/clean.py
 """
@@ -11,7 +11,7 @@ import pathlib
 import shutil
 import sys
 
-# 仓库根下的构建产物 / 工具缓存
+# Build artifacts / tool caches under the repository root
 _ROOT_PATTERNS = (
     "build",
     "dist",
@@ -25,7 +25,7 @@ _ROOT_PATTERNS = (
     ".pyrefly_cache",
     ".mypy_cache",
 )
-# 需要递归清理 __pycache__ / *.pyc 的源码目录
+# Source directories whose __pycache__ / *.pyc are removed recursively
 _SOURCE_DIRS = ("src", "tests")
 
 
@@ -46,7 +46,7 @@ def main() -> int:
         for artifact in base.rglob("*"):
             if artifact.suffix in {".pyc", ".pyo"}:
                 artifact.unlink(missing_ok=True)
-    print("[clean] 构建产物与缓存已清理")
+    print("[clean] build artifacts and caches removed")
     return 0
 
 

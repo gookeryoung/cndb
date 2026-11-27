@@ -75,7 +75,7 @@ class TestLandingRows:
 
         errors, _ = adr_check._check_file(path, "ADR 0007")
 
-        assert any("测试为空" in item for item in errors)
+        assert any("the tests are empty" in item for item in errors)
 
     def test_landed_with_missing_code_path_is_error(self, isolated: Path) -> None:
         path = _write_adr(
@@ -86,7 +86,7 @@ class TestLandingRows:
 
         errors, _ = adr_check._check_file(path, "ADR 0007")
 
-        assert any("路径不存在: nope.py" in item for item in errors)
+        assert any("path does not exist: nope.py" in item for item in errors)
 
     def test_invalid_phase_state_is_error(self, isolated: Path) -> None:
         path = _write_adr(
@@ -97,7 +97,7 @@ class TestLandingRows:
 
         errors, _ = adr_check._check_file(path, "")
 
-        assert any("不在 未开始 / 进行中 / 已落地" in item for item in errors)
+        assert any("is not one of 未开始 / 进行中 / 已落地" in item for item in errors)
 
     def test_accepted_requires_landing_section(self, isolated: Path) -> None:
         path = isolated / "0007-sample.md"
@@ -109,7 +109,7 @@ class TestLandingRows:
 
         errors, _ = adr_check._check_file(path, "")
 
-        assert any("缺少「落地状态」表" in item for item in errors)
+        assert any("'落地状态' table is missing" in item for item in errors)
 
 
 class TestCrossChecks:
@@ -123,7 +123,7 @@ class TestCrossChecks:
         errors, warnings = adr_check._check_file(path, "ADR 0007")
 
         assert errors == []
-        assert any("Status 仍为 Proposed" in item for item in warnings)
+        assert any("Status is still Proposed" in item for item in warnings)
 
     def test_missing_changelog_entry_is_error(self, isolated: Path) -> None:
         path = _write_adr(
@@ -134,7 +134,7 @@ class TestCrossChecks:
 
         errors, _ = adr_check._check_file(path, "## 未发布\n- 与 ADR 无关的条目")
 
-        assert any("CHANGELOG 未出现 ADR 0007" in item for item in errors)
+        assert any("CHANGELOG does not mention ADR 0007" in item for item in errors)
 
     def test_missing_related_path_is_error(self, isolated: Path) -> None:
         path = isolated / "0007-sample.md"
@@ -145,7 +145,7 @@ class TestCrossChecks:
 
         errors, _ = adr_check._check_file(path, "")
 
-        assert any("Related 路径不存在: gone.py" in item for item in errors)
+        assert any("Related path does not exist: gone.py" in item for item in errors)
 
     def test_handoff_missing_keys_warns(self, isolated: Path) -> None:
         path = _write_adr(
@@ -158,7 +158,7 @@ class TestCrossChecks:
         errors, warnings = adr_check._check_file(path, "")
 
         assert errors == []
-        assert any("缺少「交接」节" in item for item in warnings)
+        assert any("missing the '交接' section" in item for item in warnings)
 
 
 class TestLifecycle:
@@ -168,7 +168,7 @@ class TestLifecycle:
 
         errors, _ = adr_check._check_file(path, "ADR 0007")
 
-        assert any("应直接删除" in item for item in errors)
+        assert any("delete the file and its README index row directly" in item for item in errors)
 
     def _write_index(self, directory: Path, adr_name: str, status: str) -> None:
         (directory / "README.md").write_text(
@@ -190,7 +190,7 @@ class TestLifecycle:
 
         errors, _ = adr_check._check_index([path])
 
-        assert any("索引 Status(Proposed) 与 ADR Status(Implemented) 不一致" in item for item in errors)
+        assert any("index Status(Proposed) does not match ADR Status(Implemented)" in item for item in errors)
 
     def test_index_status_consistent_passes(self, isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         path = _write_adr(
