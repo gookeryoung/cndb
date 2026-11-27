@@ -318,3 +318,73 @@ describe('TableSettingsPage 移动端适配', () => {
     expect((document.querySelector('.table-settings-tabs') as HTMLElement).className).toContain('ant-tabs-left')
   })
 })
+
+describe('TableSettingsPage 字段字典导出（ADR 0188）', () => {
+  beforeEach(() => {
+    setupTableHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/:wid/tables/:tid/dictionary/score', () =>
+        HttpResponse.json({
+          table_id: 20,
+          table_name: '任务表',
+          field_count: 3,
+          schema_hash: 'sha256:abc',
+          metrics: {
+            business_meaning: { covered: 1, total: 3, ratio: 0.3333, missing_fields: ['密级', '备注'] },
+            enum_controlled: { covered: 1, total: 3, ratio: 0.3333, missing_fields: ['标题', '备注'] },
+            naming: { covered: 3, total: 3, ratio: 1, missing_fields: [] },
+            required: { covered: 0, total: 3, ratio: 0, missing_fields: ['标题', '密级', '备注'] },
+            sensitivity: { covered: 0, total: 3, ratio: 0, missing_fields: ['标题', '密级', '备注'] },
+            example_value: { covered: 0, total: 3, ratio: 0, missing_fields: ['标题', '密级', '备注'] },
+          },
+          metric_labels: {
+            business_meaning: '业务说明覆盖', enum_controlled: '枚举受控率', naming: '命名规范命中',
+            required: '必填覆盖', sensitivity: '敏感级标注', example_value: '示例值覆盖',
+          },
+          overall: { ratio: 0.4444, covered: 5, total: 18 },
+        }),
+      ),
+    )
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('字段 Tab 提供「导出字段文档」入口与数据标准切换', async () => {
+    renderPage(`/w/${WID}/tables/${TID}/settings?tab=fields`)
+    expect(await screen.findByTestId('open-dictionary-export')).toBeInTheDocument()
+    expect(await screen.findByTestId('fields-pane-switch')).toBeInTheDocument()
+  })
+
+  it('切到数据标准视图渲染六项指标与缺口字段', async () => {
+    renderPage(`/w/${WID}/tables/${TID}/settings?tab=fields`)
+    const switcher = await screen.findByTestId('fields-pane-switch')
+    // Segmented 的「数据标准」选项
+    const standardOption = within(switcher).getByText('数据标准')
+    fireEvent.click(standardOption)
+
+    expect(await screen.findByTestId('standard-score-panel')).toBeInTheDocument()
+    expect(await screen.findByTestId('score-metric-business_meaning')).toBeInTheDocument()
+    expect(await screen.findByTestId('score-metric-example_value')).toBeInTheDocument()
+    // 缺口字段以 Tag 形式展示
+    expect(await screen.findByTestId('score-missing-business_meaning-密级')).toBeInTheDocument()
+  })
+
+  it('打开导出对话框：格式 / 范围 / 内部列开关齐全', async () => {
+    renderPage(`/w/${WID}/tables/${TID}/settings?tab=fields`)
+    fireEvent.click(await screen.findByTestId('open-dictionary-export'))
+
+    expect(await screen.findByTestId('dictionary-format')).toBeInTheDocument()
+    expect(await screen.findByTestId('dictionary-scope')).toBeInTheDocument()
+    expect(await screen.findByTestId('dictionary-include-internal')).toBeInTheDocument()
+    expect(await screen.findByTestId('dictionary-export-confirm')).toBeInTheDocument()
+  })
+
+  it('上次导出指纹与当前不同 → 提示结构已变更', async () => {
+    localStorage.setItem(`cndb_dict_schema_${WID}_${TID}`, 'sha256:old')
+    renderPage(`/w/${WID}/tables/${TID}/settings?tab=fields`)
+    fireEvent.click(await screen.findByTestId('open-dictionary-export'))
+    expect(await screen.findByTestId('dictionary-stale-hint')).toBeInTheDocument()
+  })
+})

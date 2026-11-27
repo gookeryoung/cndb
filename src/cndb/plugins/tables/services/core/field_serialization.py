@@ -35,11 +35,22 @@ def truncate_field_config(config: dict[str, Any] | None, *, full: bool = False) 
 
 
 def field_response(field: DataField, *, full: bool = False) -> FieldResponse:
-    """把 DataField 序列化为响应模型，并按需截断 options."""
+    """把 DataField 序列化为响应模型，并按需截断 options.
+
+    业务元数据（ADR 0188）直接透传；``owner_name`` 从已加载的 ``owner`` 关系取（
+    未预加载时保持 None，不在这里额外发 SQL —— 列表页由调用方按需 selectinload）。
+    """
     from cndb.plugins.tables.schemas import FieldResponse
 
     response = FieldResponse.model_validate(field, from_attributes=True)
-    return response.model_copy(update={"config": truncate_field_config(field.config, full=full) or {}})
+    owner = getattr(field, "owner", None)
+    owner_name = getattr(owner, "username", None) if owner is not None else None
+    return response.model_copy(
+        update={
+            "config": truncate_field_config(field.config, full=full) or {},
+            "owner_name": owner_name,
+        }
+    )
 
 
 __all__ = ["OPTIONS_DISPLAY_LIMIT", "field_response", "truncate_field_config"]

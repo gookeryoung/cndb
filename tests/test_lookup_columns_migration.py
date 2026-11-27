@@ -146,19 +146,38 @@ def _insert_metadata(url: str) -> None:
     engine.dispose()
 
 
+def _add_current_orm_columns(db_path: Path) -> None:
+    """把当前 ORM 相对旧 revision 多出的列补到旧库上（供 ORM 写入测试元数据）.
+
+    - `tables_datatable.group_id`（需求 0137）
+    - `tables_datafield` 的 6 列业务元数据（ADR 0188）
+
+    补列后，对应的加列迁移检测到列已存在会跳过 —— 这正是「create_all 时代旧库」
+    的幂等路径，测试顺便覆盖它。
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("ALTER TABLE tables_datatable ADD COLUMN group_id INTEGER")
+        for column, ddl in (
+            ("business_meaning", "TEXT"),
+            ("unit", "VARCHAR(32)"),
+            ("sensitivity", "VARCHAR(16)"),
+            ("owner_id", "INTEGER"),
+            ("standard_ref", "VARCHAR(255)"),
+            ("example_value", "VARCHAR(255)"),
+        ):
+            conn.execute(f"ALTER TABLE tables_datafield ADD COLUMN {column} {ddl}")  # nosec B608 - 测试内部常量
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _prepare_old_db(tmp_path: Path) -> tuple[Path, str]:
     db_path = tmp_path / "old.db"
     url = f"sqlite:///{db_path.as_posix()}"
     _upgrade_to(url, PRE_REVISION)
     _create_physical_tables(db_path)
-    # 当前 ORM 的 DataTable 新增了 group_id（需求 0137）：旧 revision 的 schema 没有该列，
-    # 用 ORM 写入测试元数据前补一列；后续 add_table_groups 迁移检测到列已存在会跳过。
-    conn = sqlite3.connect(str(db_path))
-    try:
-        conn.execute("ALTER TABLE tables_datatable ADD COLUMN group_id INTEGER")
-        conn.commit()
-    finally:
-        conn.close()
+    _add_current_orm_columns(db_path)
     _insert_metadata(url)
     return db_path, url
 
@@ -219,13 +238,8 @@ class TestLookupColumnsMigration:
         db_path = tmp_path / "missing.db"
         url = f"sqlite:///{db_path.as_posix()}"
         _upgrade_to(url, PRE_REVISION)
-        # 同 _prepare_old_db：当前 ORM 的 DataTable 含 group_id，旧 schema 先补列
-        conn = sqlite3.connect(str(db_path))
-        try:
-            conn.execute("ALTER TABLE tables_datatable ADD COLUMN group_id INTEGER")
-            conn.commit()
-        finally:
-            conn.close()
+        # 同 _prepare_old_db：当前 ORM 比旧 schema 多列，先补列再写元数据
+        _add_current_orm_columns(db_path)
         _insert_metadata(url)  # 不创建物理表
 
         upgrade_to_head(url)  # 不抛 no such table 即通过

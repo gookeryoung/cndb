@@ -82,6 +82,29 @@ KNOWN_VIEW_TYPES: frozenset[str] = frozenset(
 )
 
 
+class FieldSensitivity(enum.StrEnum):
+    """字段敏感级（ADR 0188）：决定数据字典导出时的脱敏口径.
+
+    - ``PUBLIC``       可对外公开（字典默认全文输出）
+    - ``INTERNAL``     内部可见（默认档；NULL 也按此档处理）
+    - ``CONFIDENTIAL`` 机密：数据字典默认口径下把口径 / 示例值脱敏为「（受限）」
+    """
+
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+
+    @classmethod
+    def normalize(cls, value: str | None) -> FieldSensitivity:
+        """把库内值归一为枚举；未知 / 空值回退 ``INTERNAL``（不抛错，避免脏数据阻塞导出）."""
+        if isinstance(value, str):
+            try:
+                return cls(value)
+            except ValueError:
+                return cls.INTERNAL
+        return cls.INTERNAL
+
+
 class FilterType(enum.StrEnum):
     """多条件组合方式."""
 
@@ -239,8 +262,24 @@ class DataField(TimestampMixin, Base):
     trashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ── 业务元数据（ADR 0188）：数据字典 / 企业数据标准的落点 ──
+    # 全部可空：存量行 NULL = 「未填写」，旧行为逐条不变（H16 存量不变）。
+    # 放独立列而不是 config：config 由字段类型 schema 严格校验（schema 外的键会被丢弃），
+    # 且 owner_id 需要外键、sensitivity 需要跨表查询与索引。
+    business_meaning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # 敏感级：public / internal / confidential；NULL 按 internal 处理（FieldSensitivity.DEFAULT）
+    sensitivity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 标准来源：标准字段库 key / 规范条目引用，自由文本
+    standard_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    example_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # 关系
     table: Mapped[DataTable] = relationship(back_populates="fields")
+    owner: Mapped[User | None] = relationship("User", foreign_keys=[owner_id])
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"DataField(id={self.id}, name={self.name!r}, type={self.field_type!r})"
@@ -721,6 +760,7 @@ __all__ = [
     "DataField",
     "DataTable",
     "DataView",
+    "FieldSensitivity",
     "FilterType",
     "GovernanceTask",
     "ImportTask",

@@ -23,8 +23,9 @@ const TeamPage = lazy(() => import('@/pages/team/TeamPage'))
 const LinkedTablePage = lazy(() => import('@/pages/grid/LinkedTablePage'))
 const TablesList = lazy(() => import('@/pages/workspace/TablesList'))
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
-const IssuesPage = lazy(() => import('@/pages/issues/IssuesPage'))
 const IssueDetailPage = lazy(() => import('@/pages/issues/IssueDetailPage'))
+const IssuesPage = lazy(() => import('@/pages/issues/IssuesPage'))
+const TableLinkGraphPage = lazy(() => import('@/pages/tables/TableLinkGraphPage'))
 const ChangeRequestsPage = lazy(() => import('@/pages/changeRequests/ChangeRequestsPage'))
 const ChangeRequestDetailPage = lazy(() => import('@/pages/changeRequests/ChangeRequestDetailPage'))
 const ChangeRequestRowMergePage = lazy(() => import('@/pages/changeRequests/ChangeRequestRowMergePage'))
@@ -105,6 +106,10 @@ function AuthenticatedApp() {
           <Route path="teams/:tid" element={<TeamPage />} />
           <Route path="w/:wid" element={<WorkspaceLanding />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
+          {/* 关联图（需求 0187 P0）：静态段必须先于 tables/:tid 注册，否则被 :tid 吞掉 */}
+          <Route path="w/:wid/tables/graph" element={
+            <Suspense fallback={<PageFallback />}><TableLinkGraphPage /></Suspense>
+          } />
           <Route path="w/:wid/links/:linkId" element={<LinkedTablePage />} />
           <Route path="w/:wid/analytics" element={
             <Suspense fallback={<PageFallback />}><AnalyticsPage /></Suspense>

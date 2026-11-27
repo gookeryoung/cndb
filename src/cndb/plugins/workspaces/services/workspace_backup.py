@@ -270,6 +270,14 @@ def _build_backup(
                 "default_value": f.default_value,
                 "hidden": f.hidden,
                 "order": f.order,
+                # 业务元数据（ADR 0188 C10）：不进备份就会在迁移工作区时丢数据标准。
+                # 旧包缺这些键时导入端按 None 还原，无需升备份版本号。
+                "business_meaning": f.business_meaning,
+                "unit": f.unit,
+                "sensitivity": f.sensitivity,
+                "owner_id": f.owner_id,
+                "standard_ref": f.standard_ref,
+                "example_value": f.example_value,
             }
             for f in fields
         ]

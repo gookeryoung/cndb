@@ -5,13 +5,14 @@
  * 编辑任何字段都在一处完成；form 字段名（required / is_unique / hidden /
  * default_value / config）与重构前完全一致，提交语义不变。
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Form, Input, InputNumber, Radio, Select, Switch, DatePicker, Checkbox, Tooltip } from 'antd'
-import { NumberOutlined, SafetyCertificateOutlined, SlidersOutlined } from '@ant-design/icons'
+import { BookOutlined, NumberOutlined, SafetyCertificateOutlined, SlidersOutlined } from '@ant-design/icons'
 import type { Field, FieldType, TableSummary } from '@/api'
 import dayjs from 'dayjs'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import HelpTip from '@/components/HelpTip'
+import { workspaceApi } from '@/api'
 import { ConfigEditor } from './typeConfigPanel'
 import { formatIncrementExample } from '@/utils/fieldIncrement'
 
@@ -29,6 +30,13 @@ interface FieldConfigPanelProps {
   /** 正在编辑的字段 id（null 表示新建） */
   editTargetId?: Field['id'] | null
 }
+
+/** 敏感级选项（与后端 FieldSensitivity 枚举对齐，ADR 0188） */
+export const SENSITIVITY_OPTIONS = [
+  { value: 'public', label: '公开（可对外）' },
+  { value: 'internal', label: '内部（默认）' },
+  { value: 'confidential', label: '机密（字典默认脱敏）' },
+] as const
 
 /** 分区卡片外壳：标题 + 内容 */
 function Section({ title, icon, children, extra }: { title: string; icon: React.ReactNode; children: React.ReactNode; extra?: React.ReactNode }) {
@@ -174,6 +182,96 @@ function ValidationRulesSection({
   )
 }
 
+/** 业务属性分区（ADR 0188 C11）：口径 / 单位 / 示例值 / 敏感级 / 标准来源 / 责任人.
+ *
+ * 这些键直接落在 `DataField` 的独立列上（不是 config），因此用普通 Form.Item 绑定即可；
+ * 内容会进入「导出字段文档」的数据字典，所以文案要引导用户写业务口径而非技术描述。
+ */
+function BusinessMetadataSection({ form, wid }: { form: FieldConfigPanelProps['form']; wid: string }) {
+  const ownerId = Form.useWatch('owner_id', form) as number | undefined
+  const [members, setMembers] = useState<Array<{ id: number; username: string }>>([])
+  const [membersLoaded, setMembersLoaded] = useState(false)
+
+  /** 责任人候选：工作区成员。
+   *
+   * **懒加载**：只在用户展开「责任人」下拉时才拉取。编辑字段是高频操作，
+   * 为一次不一定会用到的下拉多打一次接口（以及在没有 msw handler 的场景产生噪声请求）
+   * 不值得；打开下拉再加载对用户无感。
+   */
+  const loadMembers = () => {
+    if (membersLoaded) return
+    setMembersLoaded(true)
+    void workspaceApi
+      .members(wid)
+      .then((list) => {
+        const seen = new Set<number>()
+        const options: Array<{ id: number; username: string }> = []
+        for (const m of list ?? []) {
+          const id = Number((m as { user_id?: number | string }).user_id ?? (m as { id?: number }).id)
+          const name = String((m as { username?: string }).username ?? '')
+          if (!Number.isFinite(id) || !name || seen.has(id)) continue
+          seen.add(id)
+          options.push({ id, username: name })
+        }
+        setMembers(options)
+      })
+      .catch(() => setMembers([]))
+  }
+
+  return (
+    <Section title="业务属性（进入导出的字段文档）" icon={<BookOutlined />}>
+      <Form.Item
+        name="business_meaning"
+        label={<span>业务口径<HelpTip title="这个字段算的是什么、含不含税、取值边界。会原样进入数据字典，请写业务口径而不是技术描述。" /></span>}
+        style={{ marginBottom: 8 }}
+      >
+        <Input.TextArea
+          data-testid="field-business-meaning"
+          autoSize={{ minRows: 2, maxRows: 4 }}
+          placeholder="例如：合同金额（含税，人民币，保留两位小数）"
+          maxLength={500}
+          showCount
+        />
+      </Form.Item>
+      <div className="fm-attr-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <Form.Item name="unit" label="计量单位" style={{ marginBottom: 8, flex: '0 1 140px' }}>
+          <Input data-testid="field-unit" placeholder="例如：元 / 件 / %" maxLength={32} />
+        </Form.Item>
+        <Form.Item name="sensitivity" label="敏感级" style={{ marginBottom: 8, flex: '0 1 200px' }}>
+          <Select
+            data-testid="field-sensitivity"
+            allowClear
+            placeholder="内部（默认）"
+            options={[...SENSITIVITY_OPTIONS]}
+          />
+        </Form.Item>
+        <Form.Item name="owner_id" label="责任人" style={{ marginBottom: 8, flex: '1 1 180px' }}>
+          <Select
+            data-testid="field-owner"
+            allowClear
+            showSearch
+            placeholder="未指派"
+            value={ownerId ?? undefined}
+            optionFilterProp="label"
+            onOpenChange={(open) => { if (open) loadMembers() }}
+            options={members.map(m => ({ value: m.id, label: m.username }))}
+            onChange={(v) => form.setFieldValue('owner_id', v ?? null)}
+          />
+        </Form.Item>
+      </div>
+      <div className="fm-attr-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <Form.Item name="example_value" label="示例值" style={{ marginBottom: 8, flex: '1 1 200px' }}>
+          <Input data-testid="field-example-value" placeholder="例如：CNY-2024-0001" maxLength={255} />
+        </Form.Item>
+        <Form.Item name="standard_ref" label="标准来源" style={{ marginBottom: 8, flex: '1 1 200px' }}>
+          <Input data-testid="field-standard-ref" placeholder="例如：CRM-STD-001 / 企业主数据规范 3.2" maxLength={255} />
+        </Form.Item>
+      </div>
+      <HelpTip title="业务属性会进入「导出字段文档」的数据字典：口径与示例值让文档可读，敏感级决定是否脱敏，责任人决定长期由谁维护。" />
+    </Section>
+  )
+}
+
 export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, fields = [], isEdit = false, editTargetId = null }: FieldConfigPanelProps) {
   return (
     <>
@@ -214,7 +312,10 @@ export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, fi
         </Form.Item>
       </section>
 
-      {/* ── 分区 2.5：校验规则（可选，需求 0146 / 0147） ── */}
+      {/* ── 分区 2.5：业务属性（ADR 0188）── */}
+      <BusinessMetadataSection form={form} wid={wid} />
+
+      {/* ── 分区 2.6：校验规则（可选，需求 0146 / 0147） ── */}
       <ValidationRulesSection form={form} fields={fields} editTargetId={editTargetId} />
 
       {/* ── 分区 3：类型专属配置（ConfigEditor 自带卡片与标题） ── */}

@@ -104,10 +104,14 @@ def _backfill() -> int:
     db = Session(bind=bind)
     processed = 0
     try:
-        # 历史迁移不可依赖当前 ORM 列集：后续迁移新增的列（如 0137 的 group_id）
-        # 在这一步尚未建出，用 ORM 查询 DataTable 会 SELECT 不存在的列导致升级链断裂。
-        # 因此只取回填所需的元数据，字段仍走 DataField（该表本迁移未扩列）。
+        # 历史迁移不可依赖当前 ORM 列集：后续迁移新增的列（如 0137 的 group_id、
+        # 0188 的 business_meaning 等）在这一步尚未建出，用 ORM 查询会 SELECT
+        # 不存在的列导致升级链断裂。因此 DataTable 走原生 SQL，DataField 用
+        # ``load_only`` 只取回填真正需要的列（回填逻辑只读 config / field_type /
+        # id / db_column_name / table_id）。
         from types import SimpleNamespace
+
+        from sqlalchemy.orm import load_only
 
         from cndb.plugins.tables.models import DataField
 
@@ -116,7 +120,23 @@ def _backfill() -> int:
         ).all()
         tables: list[Any] = []
         for table_id, db_table_name, table_name in table_rows:
-            fields = db.query(DataField).filter(DataField.table_id == table_id).all()
+            fields = (
+                db.query(DataField)
+                .options(
+                    load_only(
+                        DataField.id,
+                        DataField.table_id,
+                        DataField.name,
+                        DataField.field_type,
+                        DataField.db_column_name,
+                        DataField.config,
+                        DataField.order,
+                        DataField.trashed,
+                    )
+                )
+                .filter(DataField.table_id == table_id)
+                .all()
+            )
             active = sorted((f for f in fields if not f.trashed), key=lambda f: (f.order, f.id))
             tables.append(
                 SimpleNamespace(

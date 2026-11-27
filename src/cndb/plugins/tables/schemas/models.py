@@ -164,6 +164,13 @@ class FieldCreate(BaseModel):
     default_value: Any = None
     hidden: bool = False
     order: int = 0
+    # 业务元数据（ADR 0188）：新建即可带上，缺省为空（「未填写」）
+    business_meaning: str | None = None
+    unit: str | None = None
+    sensitivity: str | None = None
+    owner_id: int | None = None
+    standard_ref: str | None = None
+    example_value: str | None = None
 
 
 class FieldUpdate(BaseModel):
@@ -176,6 +183,13 @@ class FieldUpdate(BaseModel):
     hidden: bool | None = None
     order: int | None = None
     trashed: bool | None = None
+    # 业务元数据（ADR 0188）：显式传 null 表示清空
+    business_meaning: str | None = None
+    unit: str | None = None
+    sensitivity: str | None = None
+    owner_id: int | None = None
+    standard_ref: str | None = None
+    example_value: str | None = None
 
 
 class FieldDetectOptionsRequest(BaseModel):
@@ -250,6 +264,14 @@ class FieldResponse(BaseModel):
     default_value: Any = None
     hidden: bool = False
     order: int
+    # 业务元数据（ADR 0188）
+    business_meaning: str | None = None
+    unit: str | None = None
+    sensitivity: str | None = None
+    owner_id: int | None = None
+    owner_name: str | None = None
+    standard_ref: str | None = None
+    example_value: str | None = None
     # 分组归属（None = 未分组）
     group_id: int | None = None
     trashed: bool

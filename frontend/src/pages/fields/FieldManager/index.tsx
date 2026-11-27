@@ -106,6 +106,13 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       hidden: f.hidden,
       is_unique: f.is_unique ?? false,
       default_value: f.default_value ?? '',
+      // 业务属性（ADR 0188）：空值统一回填 undefined，避免 Input 出现 "null" 字面量
+      business_meaning: f.business_meaning ?? undefined,
+      unit: f.unit ?? undefined,
+      sensitivity: f.sensitivity ?? undefined,
+      owner_id: f.owner_id ?? undefined,
+      standard_ref: f.standard_ref ?? undefined,
+      example_value: f.example_value ?? undefined,
       config,
     })
     programmaticRef.current = false
@@ -129,6 +136,9 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     const sig = JSON.stringify({
       n: liveEditTarget.name, t: liveEditTarget.field_type, r: liveEditTarget.required,
       h: liveEditTarget.hidden, u: liveEditTarget.is_unique, d: liveEditTarget.default_value,
+      // 业务属性（ADR 0188）也参与指纹：否则只改口径时表单不会回流最新值
+      b: [liveEditTarget.business_meaning, liveEditTarget.unit, liveEditTarget.sensitivity,
+        liveEditTarget.owner_id, liveEditTarget.standard_ref, liveEditTarget.example_value],
       c: config,
     })
     if (sig === seededSigRef.current || dirtyRef.current) return
@@ -314,6 +324,13 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     }
   }
 
+  /** 业务属性文本归一：去首尾空白，空串 → null（后端同样归一，这里保证前端不发噪声） */
+  const normalizeOptionalText = (value: unknown): string | null => {
+    if (value == null) return null
+    const text = String(value).trim()
+    return text ? text : null
+  }
+
   /** 提交：组装 config 后发送 */
   function handleSubmit() {
     const values = form.getFieldsValue()
@@ -327,6 +344,13 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       is_unique: !!values.is_unique,
       hidden: !!values.hidden,
       config: configFromStore ?? values.config ?? {},
+      // 业务属性（ADR 0188）：空串 / undefined 归一为 null，让后端按「清空」处理
+      business_meaning: normalizeOptionalText(values.business_meaning),
+      unit: normalizeOptionalText(values.unit),
+      sensitivity: values.sensitivity ?? null,
+      owner_id: values.owner_id ?? null,
+      standard_ref: normalizeOptionalText(values.standard_ref),
+      example_value: normalizeOptionalText(values.example_value),
     }
     // 处理 default_value
     if (values.default_value !== undefined && values.default_value !== null && values.default_value !== '') {

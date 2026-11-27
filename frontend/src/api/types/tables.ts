@@ -3,6 +3,49 @@
 import type { ID } from './common'
 import type { WorkspaceRole } from './workspaces'
 
+// ── 数据表关联图（需求 0187 P0） ──
+
+/** 关联图边的目标形态：ok = 本区可读表；虚拟目标见 target_state */
+export type LinkGraphTargetState = 'ok' | 'other_workspace' | 'trashed' | 'restricted'
+
+/** 关联图节点（真实表或聚合虚拟节点） */
+export interface LinkGraphNode {
+  id: number
+  name: string
+  description: string
+  group_id?: number | null
+  group_name: string
+  field_count: number
+  in_degree: number
+  out_degree: number
+  /** 自关联（树 / WBS 的父字段）：不画自环，改标徽标 */
+  self_loop: boolean
+  /** 虚拟节点（其他工作区 / 已删除不可访问的聚合目标）恒为 true，id 为负 */
+  virtual: boolean
+}
+
+/** 关联图边（一条 link 字段 = 一条边；lookup 只计入 reference_field_count） */
+export interface LinkGraphEdge {
+  id: number
+  field_name: string
+  source: number
+  target: number
+  multiple: boolean
+  reference_field_count: number
+  target_state: LinkGraphTargetState
+}
+
+/** GET /tables/link-graph 响应 */
+export interface LinkGraph {
+  nodes: LinkGraphNode[]
+  edges: LinkGraphEdge[]
+  /** 当前用户可读的表总数（含未展示） */
+  total: number
+  truncated: boolean
+  /** 指向「可读但落在节点窗口外」的边的数量（0182 C2 同口径） */
+  edges_out_of_view: number
+}
+
 export interface TableGroup {
   id: ID
   workspace_id?: ID
@@ -237,6 +280,9 @@ export type FieldType =
   // 历史别名（后端 _FIELD_TYPE_ALIASES 自动归一化，见 field_types/registry.py）
   | 'long_text' | 'decimal' | 'multi_select' | 'json'
 
+/** 字段敏感级（ADR 0188）：public 公开 / internal 内部（缺省）/ confidential 机密 */
+export type FieldSensitivity = 'public' | 'internal' | 'confidential'
+
 export interface Field {
   id: ID; name: string; field_type: FieldType; db_column_name?: string
   order?: number; config?: Record<string, unknown>; required?: boolean
@@ -247,6 +293,21 @@ export interface Field {
   /** 是否在视图中隐藏（后端 FieldUpdate 支持，前端 Field 保留字段） */
   hidden?: boolean
   description?: string; created_at?: string
+  // ── 业务元数据（ADR 0188）：数据字典 / 企业数据标准的落点 ──
+  /** 业务口径（算的是什么、含不含税、取值边界） */
+  business_meaning?: string | null
+  /** 计量单位 */
+  unit?: string | null
+  /** 敏感级：public / internal / confidential；空 = internal */
+  sensitivity?: FieldSensitivity | null
+  /** 字段责任人用户 id */
+  owner_id?: number | null
+  /** 责任人显示名（后端按 owner 关系填充，只读） */
+  owner_name?: string | null
+  /** 标准来源（标准字段库 key / 规范条目） */
+  standard_ref?: string | null
+  /** 示例值 */
+  example_value?: string | null
   /** 所属表 ID（回收站字段列表等场景使用） */
   table_id?: ID
   /** 所属表名称（回收站字段列表等场景使用） */
@@ -257,13 +318,56 @@ export interface Field {
   trashed_at?: string | null
   updated_at?: string
 }
-export interface FieldCreate {
+/** 字段业务元数据（ADR 0188）：新建 / 更新共用 */
+export interface FieldBusinessMetadata {
+  business_meaning?: string | null
+  unit?: string | null
+  sensitivity?: FieldSensitivity | null
+  owner_id?: number | null
+  standard_ref?: string | null
+  example_value?: string | null
+}
+
+export interface FieldCreate extends FieldBusinessMetadata {
   name: string; field_type: FieldType; order?: number
   config?: Record<string, unknown>; required?: boolean; description?: string
   is_unique?: boolean; default_value?: unknown; hidden?: boolean
 }
-export interface FieldUpdate {
+export interface FieldUpdate extends FieldBusinessMetadata {
   name?: string; field_type?: FieldType; order?: number
   config?: Record<string, unknown>; required?: boolean; description?: string; hidden?: boolean
   is_unique?: boolean; default_value?: unknown
+}
+
+// ─────────────────── 数据表字段字典（ADR 0188） ───────────────────
+
+/** 数据字典导出格式 */
+export type TableDictionaryFormat = 'md' | 'xlsx' | 'json' | 'docx' | 'pdf'
+
+export interface TableDictionaryParams {
+  format: TableDictionaryFormat
+  /** 是否输出物理列名 / 物理表名等内部实现细节（默认 false） */
+  include_internal?: boolean
+  /** 排版模板（仅 docx / pdf 生效）：builtin:research / builtin:official 等 */
+  template?: string
+}
+
+/** 标准符合度单项指标（ADR 0188 C4） */
+export interface TableDictionaryMetric {
+  covered: number
+  total: number
+  ratio: number
+  /** 未满足该项的字段名（点击可跳字段编辑） */
+  missing_fields: string[]
+}
+
+/** 标准符合度报告 */
+export interface TableDictionaryScore {
+  table_id: number
+  table_name: string
+  field_count: number
+  schema_hash: string
+  metrics: Record<string, TableDictionaryMetric>
+  metric_labels: Record<string, string>
+  overall: { ratio: number; covered: number; total: number }
 }

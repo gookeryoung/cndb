@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from cndb.plugins.tables.routers.ai import router as ai_router
 from cndb.plugins.tables.routers.audit import router as audit_router
 from cndb.plugins.tables.routers.bulk import router as bulk_router
+from cndb.plugins.tables.routers.dictionary import router as dictionary_router
 from cndb.plugins.tables.routers.fields import router as fields_router
 from cndb.plugins.tables.routers.files import router as files_router
 from cndb.plugins.tables.routers.governance import router as governance_router
@@ -23,6 +24,9 @@ from cndb.plugins.tables.routers.tables import router as tables_router
 from cndb.plugins.tables.routers.views import router as views_router
 
 router = APIRouter()
+# 字典路由必须先挂：`/tables/dictionary`（工作区合订）与 `/tables/{table_id}` 同前缀，
+# 先注册的静态段优先匹配，否则 `dictionary` 会被当成 table_id 解析成 422（ADR 0188）。
+router.include_router(dictionary_router)
 router.include_router(tables_router)
 router.include_router(groups_router)
 router.include_router(views_router)

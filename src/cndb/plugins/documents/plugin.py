@@ -23,6 +23,52 @@ class DocumentsPlugin(PluginBase):
         """导入 models 确保 SQLAlchemy Base.metadata 包含 documents_* 表."""
         from cndb.plugins.documents import models  # noqa: F401
 
+        self._register_export_renderer()
+
+    @staticmethod
+    def _register_export_renderer() -> None:
+        """向跨插件渲染注册表登记 docx / pdf 能力（ADR 0188 D10）.
+
+        docx / pdf 渲染依赖本插件的图表内联与数据表引用能力，因此实现留在本插件，
+        只通过 ``cndb.render.markdown_export`` 的注册表向其他插件（如 tables 的
+        数据字典导出）暴露 —— 避免 tables 反向 import documents（H69）。
+        """
+        from cndb.render.markdown_export import register_renderer
+
+        def _render(markdown_text: str, fmt: str, *, title: str = "", template: str | None = None) -> bytes:
+            from cndb.plugins.documents import services
+            from cndb.plugins.documents.services.export.templates import (
+                BUILTIN_TEMPLATES,
+                DEFAULT_TEMPLATE_KEY,
+                ResolvedTemplate,
+            )
+
+            # 只接受内置模板 key（`builtin:xxx`）：注册表是跨插件入口，不持有 db / workspace
+            # 上下文，因此**不解析工作区自定义模板**（那需要 db 与 workspace_id）。
+            # 数据字典是结构文档，内置模板足够；非法 / 未知 ref 静默回落内置默认（与 H68 同侧）。
+            resolved = None
+            if template:
+                key = template[len("builtin:") :] if template.startswith("builtin:") else template
+                builtin = BUILTIN_TEMPLATES.get(key)
+                if builtin is not None:
+                    resolved = ResolvedTemplate(
+                        ref=builtin.ref, name=builtin.name, source="builtin", config=builtin.config
+                    )
+            if resolved is None:
+                default = BUILTIN_TEMPLATES[DEFAULT_TEMPLATE_KEY]
+                resolved = ResolvedTemplate(ref=default.ref, name=default.name, source="builtin", config=default.config)
+            return services.export.render_export(
+                markdown_text,
+                fmt,
+                title=title,
+                images=None,
+                tables=None,
+                template=resolved,
+            )
+
+        for fmt in ("docx", "pdf"):
+            register_renderer(fmt, _render)
+
     @override
     def register_routes(self, router: APIRouter) -> None:
         """挂载 documents 路由."""

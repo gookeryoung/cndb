@@ -283,7 +283,7 @@ export function ExampleDesigns({ scenarioKey }: { scenarioKey: string }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-testid="help-example-designs">
             <Paragraph type="secondary" style={{ margin: 0, fontSize: 'var(--cn-text-xs)' }}>
                 本场景只提供设计文件（不含数据表）。下载后在设计模块「新建」一份设计并粘贴内容即可编译预览；
-                零件文件（类型「零件」）需先建成零件文件，再被装配以 <Text code>use "文件名"</Text> 引用。
+                零件文件（类型「零件」）需先建成零件文件，再被装配以 <Text code>use &quot;文件名&quot;</Text> 引用。
             </Paragraph>
             <Table<HelpExampleDesign>
                 rowKey="file"

@@ -29,6 +29,13 @@ _MAX_NAME_LEN = 80
 UNGROUPED_GROUP_NAME = "__ungrouped__"
 
 
+def _invalidate_graph(workspace_id: int) -> None:
+    """关联图缓存失效（需求 0187 C6）：分组名进节点载荷，改名 / 删除都会影响图例."""
+    from cndb.plugins.tables.services.core.link_graph import invalidate_link_graph_cache
+
+    invalidate_link_graph_cache(workspace_id)
+
+
 def _clean_name(raw: str | None) -> str:
     name = (raw or "").strip()
     if not name:
@@ -161,6 +168,7 @@ def update_table_group(
         group.order = int(data["order"])
     db.commit()
     db.refresh(group)
+    _invalidate_graph(workspace_id)
     return group
 
 
@@ -186,6 +194,7 @@ def delete_table_group(
     from cndb.plugins.tables.routers.tables import _invalidate_table_list_cache
 
     _invalidate_table_list_cache(workspace_id)
+    # _invalidate_table_list_cache 已连带失效关联图；此处不重复调用
 
 
 __all__ = ["router"]

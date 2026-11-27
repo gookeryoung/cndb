@@ -412,17 +412,19 @@ export default function MainLayout() {
       ? 'documents'
       : location.includes('/design')
         ? 'design'
-        : location.startsWith(`/w/${wid}/tables/change-requests`)
-          ? 'change-requests'
-          : location.startsWith(`/w/${wid}/tables/issues`)
-            ? 'issues'
+        : location.includes(`/w/${wid}/tables/graph`)
+          ? 'table-graph'
+          : location.includes(`/w/${wid}/tables/change-requests`)
+            ? 'change-requests'
+            : location.includes(`/w/${wid}/tables/issues`)
+              ? 'issues'
         : location.includes('/analytics')
           ? 'analytics'
           : location.includes('/datasource')
             ? 'datasource'
             : location.includes('/pipelines')
               ? 'pipelines'
-              : location.startsWith(`/w/${wid}/stats`)
+              : location.includes(`/w/${wid}/stats`)
                 ? 'stats'
                 : location.includes('/settings')
                   ? 'settings'
@@ -436,6 +438,7 @@ export default function MainLayout() {
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
     || activeWsTab === 'pipelines'
     || activeWsTab === 'change-requests' || activeWsTab === 'issues'
+    || activeWsTab === 'table-graph'
 
   /** 当前所在的一级导航段 —— 切换工作区时保持（0081 C4）。
    * 二级派生段（数据分析 / 数据同步 / 质量检查）属数据表域，折算为 `tables`；
@@ -531,6 +534,14 @@ export default function MainLayout() {
       ),
     }] : []),
     ...(wsFeatures.tables && tablesDerivedActive ? [{
+      // 关联图（需求 0187 P0）：跨表聚合视图，与修改申请 / 问题清单同级
+      key: 'table-graph',
+      label: (
+        <span>
+          <ApartmentOutlined /> 关联图
+        </span>
+      ),
+    }, {
       key: 'change-requests',
       label: (
         <span>

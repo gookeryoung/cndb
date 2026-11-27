@@ -269,10 +269,13 @@ TABLE_LIST_TTL_SECONDS = 5.0
 def _invalidate_table_list_cache(workspace_id: int) -> int:
     """失效某工作区的数据表列表缓存（建表/改名/删除/回收站变更后调用）."""
     from cndb.core.cache import cache_key, list_cache
+    from cndb.plugins.tables.services.core.link_graph import invalidate_link_graph_cache
 
     cleared = list_cache.clear(cache_key("tables", workspace_id))
     # 建表 / 删表改变工作区统计（ADR 0046 D5）
     cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
+    # 表增删改 / 移动 / 分组变更都会改关联图的节点集合（需求 0187 C6）
+    invalidate_link_graph_cache(workspace_id)
     return cleared
 
 
@@ -428,6 +431,30 @@ def reorder_tables(
     return (
         db.query(DataTable).filter(DataTable.workspace_id == workspace_id).order_by(DataTable.order, DataTable.id).all()
     )
+
+
+# ── 表关系图（需求 0187 P0） ──────────────────────────
+
+
+@router.get("/link-graph")
+def get_link_graph(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    max_nodes: int = 500,
+) -> dict[str, object]:
+    """工作区数据表关联图：可读表为节点、``link`` 字段为边（只读，需求 0187 C1）.‌
+
+    静态段 ``/link-graph`` 必须先于 ``/{table_id}`` 注册，否则会被当成 table_id 解析成 422。
+    """
+    from cndb.plugins.tables.services.core.link_graph import (
+        LINK_GRAPH_MAX_NODES,
+        build_link_graph,
+    )
+
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    limit = max(1, min(int(max_nodes), LINK_GRAPH_MAX_NODES))
+    return build_link_graph(db, workspace_id, current_user, max_nodes=limit)
 
 
 @router.get("/{table_id}", response_model=TableDetailResponse)
@@ -734,9 +761,6 @@ def move_table(
 
 
 # ── 表排序 ─────────────────────────────────────────────
-
-
-# ── 表关系图 ────────────────────────────────────────────
 
 
 # ── 行引用（反向 link 查询） ─────────────────────────────

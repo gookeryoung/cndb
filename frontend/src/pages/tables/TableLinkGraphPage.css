@@ -1,0 +1,164 @@
+/* 数据表关联图页（需求 0187 P0）——本页由 App.tsx 动态 import（H31），
+ * 这里的样式随页面 chunk 一起加载，不进主入口 CSS，避免首屏为「点了才出现」的
+ * 图谱屏白付体积（docs/BUNDLE_BUDGET.md 第 ① 类处置）。
+ * 只用 --cn-* token，断点同全局口径（767.98 / 575.98）。 */
+
+/* 布局：筛选栏 → 画布 + 右侧 Inspector 两栏；窄屏（<768px）改为上下堆叠，
+ * Inspector 退到画布下方，避免 390px 屏上画布被挤到只剩 100px。 */
+.cn-tgraph-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-md);
+  margin-bottom: var(--cn-space-md);
+}
+
+.cn-tgraph-body {
+  display: flex;
+  gap: var(--cn-space-lg);
+  align-items: flex-start;
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-tgraph-canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 画布底：底色 + 16px 极淡点阵（与文档图谱同款纹理，颜色走 themeMix 注册项） */
+.cn-tgraph-canvas {
+  background-color: var(--cn-bg-canvas);
+  background-image: radial-gradient(var(--cn-mix-border-soft-40-transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+}
+
+.cn-tgraph-inspector {
+  flex: none;
+  width: 260px;
+  max-height: min(72vh, 720px);
+  overflow: auto;
+  padding: var(--cn-space-lg);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+}
+
+.cn-tgraph-inspector-detail,
+.cn-tgraph-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+}
+
+.cn-tgraph-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  flex-wrap: wrap;
+  word-break: break-word;
+}
+
+.cn-tgraph-inspector-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  flex-wrap: wrap;
+}
+
+.cn-tgraph-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+}
+
+.cn-tgraph-inspector-list {
+  margin: 0;
+  padding-left: var(--cn-space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  max-height: 180px;
+  overflow: auto;
+}
+
+.cn-tgraph-inspector-list a {
+  cursor: pointer;
+  word-break: break-word;
+}
+
+/* 图例浮在画布左上角：横向 chip 行，避开节点云最密的中心区 */
+.cn-tgraph-legend {
+  position: absolute;
+  left: var(--cn-space-md);
+  top: var(--cn-space-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs);
+  max-width: calc(100% - var(--cn-space-2xl));
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  opacity: 0.94;
+}
+
+.cn-tgraph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  padding: 0 var(--cn-space-xs);
+  border: none;
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  cursor: pointer;
+}
+
+.cn-tgraph-legend-item-off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+/* 方向说明项：只作图例，不参与分组显隐 */
+.cn-tgraph-legend-note {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--cn-space-xs);
+  color: var(--cn-text-tertiary);
+  font-size: var(--cn-text-xs);
+  cursor: default;
+  user-select: none;
+}
+
+.cn-tgraph-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+@media (max-width: 767.98px) {
+  .cn-tgraph-body {
+    flex-direction: column;
+  }
+
+  .cn-tgraph-inspector {
+    width: 100%;
+    max-height: 320px;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .cn-tgraph-toolbar {
+    gap: var(--cn-space-sm);
+  }
+
+  .cn-tgraph-legend {
+    left: var(--cn-space-xs);
+    top: var(--cn-space-xs);
+    max-width: calc(100% - var(--cn-space-lg));
+  }
+}

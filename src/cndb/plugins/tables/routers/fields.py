@@ -19,7 +19,7 @@ from cndb.plugins.tables.field_types import (
     default_registry,
     normalize_field_type,
 )
-from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.models import DataField, DataTable, FieldSensitivity
 from cndb.plugins.tables.schemas import (
     FieldCreate,
     FieldDetectOptionsRequest,
@@ -61,6 +61,22 @@ from cndb.plugins.tables.services.fields.field_ops import (
 from cndb.plugins.workspaces.models import Workspace
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
+
+#: 业务元数据中「纯文本」的键（ADR 0188）：去空白、空串归一为 None
+_BUSINESS_TEXT_KEYS: tuple[str, ...] = ("business_meaning", "unit", "standard_ref", "example_value")
+
+
+def _invalidate_link_graph(workspace_id: int) -> None:
+    """关联图缓存失效（需求 0187 C6）：字段增删改会改变图中的节点徽标与边.
+
+    关联字段的增删改直接改变边集合；普通字段改名 / 删除会影响边的展示名与
+    引用字段计数，所以统一失效，不逐细判定。
+    """
+    from cndb.plugins.tables.services.core.link_graph import invalidate_link_graph_cache
+
+    invalidate_link_graph_cache(workspace_id)
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,6 +156,55 @@ def _validate_link_business_key(cfg: LinkFieldConfig, target: DataTable) -> None
             raise HTTPException(
                 status_code=400, detail=f"link 字段配置的引用字段「{ref_field.name}」无物理列，不能作为引用字段"
             )
+
+
+def _validate_business_metadata(
+    db: Session,
+    payload: Any,
+    *,
+    partial: bool,
+) -> dict[str, Any]:
+    """校验并归一化字段的业务元数据（ADR 0188 C3）.
+
+    - ``sensitivity`` 只接受 ``public`` / ``internal`` / ``confidential``，空串归一为 ``None``；
+    - ``owner_id`` 必须是存在的用户（否则 400），``None`` 表示不指派；
+    - 文本字段去首尾空白，空串归一为 ``None``（与「未填写」同一语义，不存空串噪声）；
+    - ``partial=True``（PATCH）时只处理请求里显式出现的键，未出现的键不返回。
+    """
+    raw = payload.model_dump(exclude_unset=partial)
+    result: dict[str, Any] = {}
+    for key in _BUSINESS_TEXT_KEYS:
+        if key not in raw:
+            continue
+        value = raw[key]
+        if isinstance(value, str):
+            value = value.strip() or None
+        result[key] = value
+
+    if "sensitivity" in raw:
+        value = raw["sensitivity"]
+        if isinstance(value, str) and value.strip():
+            try:
+                result["sensitivity"] = FieldSensitivity(value.strip()).value
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"字段敏感级只能是 {'/'.join(s.value for s in FieldSensitivity)}",
+                ) from exc
+        else:
+            result["sensitivity"] = None
+
+    if "owner_id" in raw:
+        owner_id = raw["owner_id"]
+        if owner_id in (None, ""):
+            result["owner_id"] = None
+        elif not isinstance(owner_id, int):
+            raise HTTPException(status_code=400, detail="字段责任人 id 必须是整数")
+        elif db.get(User, owner_id) is None:
+            raise HTTPException(status_code=400, detail=f"字段责任人不存在: {owner_id}")
+        else:
+            result["owner_id"] = owner_id
+    return result
 
 
 def _validate_field_config(
@@ -285,6 +350,7 @@ def create_field(
 
     # 用字段类型专属 schema 校验并归一化 config
     config = _validate_field_config(payload.field_type, payload.config or {}, db, table_id=table_id)
+    business = _validate_business_metadata(db, payload, partial=False)
 
     engine = db.get_bind()
 
@@ -306,6 +372,7 @@ def create_field(
         default_value=payload.default_value,
         order=payload.order,
         hidden=payload.hidden,
+        **business,
     )
     df.ensure_db_name()
 
@@ -354,6 +421,9 @@ def create_field(
 
         with contextlib.suppress(Exception):
             backfill_lookup_columns(engine.engine, dt, db=db, fields=[df])
+
+    # 需求 0187 C6：字段增删改改变关联图的边与节点徽标，立即可见而非等 30s TTL
+    _invalidate_link_graph(workspace_id)
 
     return df
 
@@ -430,6 +500,8 @@ def update_field(
 
     # 归一化传入的 field_type（兼容历史别名）
     update_data = payload.model_dump(exclude_unset=True)
+    # 业务元数据（ADR 0188）单独校验后合回 update_data，避免夹带未校验的脏值
+    update_data.update(_validate_business_metadata(db, payload, partial=True))
     if "field_type" in update_data and update_data["field_type"] is not None:
         update_data["field_type"] = normalize_field_type(update_data["field_type"])
 
@@ -624,6 +696,9 @@ def update_field(
         if target is not None:
             sync_link_reference_fields(db, df, target)
 
+    # 需求 0187 C6：同上，字段配置变更后关联图立即刷新
+    _invalidate_link_graph(workspace_id)
+
     return df
 
 
@@ -653,6 +728,8 @@ def reorder_fields(
             field_map[fid].order = idx
 
     db.commit()
+    # 需求 0187 C6：排序影响图的节点顺序
+    _invalidate_link_graph(workspace_id)
     return db.query(DataField).filter(DataField.table_id == table_id).order_by(DataField.order, DataField.id).all()
 
 
@@ -725,6 +802,8 @@ def delete_field(
     from cndb.plugins.tables.services.core.lookups import mark_dependent_lookups_broken
 
     mark_dependent_lookups_broken(db, df.id)
+    # 需求 0187 C6：删关联字段就是删边，必须立即从图里消失
+    _invalidate_link_graph(workspace_id)
 
 
 @router.post("/import", response_model=FieldImportResponse, status_code=status.HTTP_201_CREATED)
@@ -857,6 +936,9 @@ def import_fields(
         except Exception as exc:
             logger.exception("[fields.import] 字段导入失败 table_id=%s source_table_id=%s", table_id, src.id)
             raise HTTPException(status_code=500, detail=_import_error_detail("字段导入失败", exc)) from exc
+
+    # 需求 0187 C6：link 模式会新建关联字段（新增边），copy 模式也可能复制关联字段
+    _invalidate_link_graph(workspace_id)
 
     return FieldImportResponse(
         created=[FieldResponse.model_validate(f, from_attributes=True) for f in created],

@@ -267,6 +267,16 @@ def import_backup_into_workspace(
                     default_value=fd.get("default_value"),
                     hidden=fd.get("hidden", False),
                     order=fd.get("order", 0),
+                    # 业务元数据（ADR 0188 C10）：旧包无这些键时全部为 None（「未填写」）。
+                    # owner_id **不随备份迁移**：用户 id 是实例本地值，跨实例还原后会指向
+                    # 不相干的账号（或外键悬空）——责任人是「这个工作区这个字段」的归属，
+                    # 由导入方重新指派；文本类元数据（口径 / 单位 / 敏感级 / 标准来源 / 示例）
+                    # 与实例无关，原样往返。
+                    business_meaning=fd.get("business_meaning"),
+                    unit=fd.get("unit"),
+                    sensitivity=fd.get("sensitivity"),
+                    standard_ref=fd.get("standard_ref"),
+                    example_value=fd.get("example_value"),
                 )
                 field.ensure_db_name()
                 db.add(field)

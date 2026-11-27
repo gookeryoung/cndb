@@ -9,13 +9,13 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip, Select,
+  Modal, Tabs, Form, Input, Button, Tag, Popconfirm, App as AntApp, Space, Empty, Tooltip, Select, Segmented,
 } from 'antd'
 import {
   InfoCircleOutlined, UnorderedListOutlined, AppstoreOutlined, SafetyOutlined,
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
   ColumnHeightOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  ApartmentOutlined,
+  ApartmentOutlined, DownloadOutlined, CheckCircleOutlined,
   HolderOutlined, TableOutlined, BarChartOutlined, NodeIndexOutlined, PictureOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -26,13 +26,18 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { tableApi, permissionApi, viewApi } from '@/api'
+import { tableApi, permissionApi, viewApi, dictionaryApi } from '@/api'
+import DictionaryExportDialog from './DictionaryExportDialog'
+import StandardScorePanel from './StandardScorePanel'
 import type { TableDetail, TableUpdate, ViewCreate, View } from '@/api'
 import PermissionEditor, { buildHiddenSet } from '@/pages/grid/permissions/PermissionEditor'
 // 静态引入：gridViewModals 同为静态引入，混用 lazy 会让动态分包失效并产生构建告警
 import CreateEditViewForm from '@/pages/grid/view-config/CreateEditViewForm'
 
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
+
+/** 上次导出的结构指纹存储键（ADR 0188 C7：用于提示「结构已变更」） */
+const SCHEMA_HASH_KEY = (wid: string, tid: string) => `cndb_dict_schema_${wid}_${tid}`
 
 /** 视图类型 → 中文标签 + 图标（与 GridPage MODE_BUTTONS 保持一致） */
 const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
@@ -157,6 +162,10 @@ export default function TableSettingsPage() {
   const [hiddenNames, setHiddenNames] = useState<string[]>([])
   /** 数据治理（MANAGE_DATA）最低角色阈值；空串 = 使用默认 ADMIN */
   const [manageDataRole, setManageDataRole] = useState<string>('')
+  /** 导出字段文档对话框（ADR 0188） */
+  const [dictDialogOpen, setDictDialogOpen] = useState(false)
+  /** 字段 Tab 内视图切换：字段列表 / 数据标准符合度 */
+  const [fieldsPane, setFieldsPane] = useState<'list' | 'standard'>('list')
 
   // 基本信息表单值监听（脏检查用）
   const nameValue = Form.useWatch('name', form)
@@ -166,6 +175,35 @@ export default function TableSettingsPage() {
   const { data: table, isLoading } = useQuery<TableDetail>({
     queryKey: ['table-settings', wid, tid],
     queryFn: () => tableApi.get(wid, tid),
+  })
+
+  // 结构指纹（ADR 0188 C7）：与上次导出的指纹比对，判断是否需要提示重新导出。
+  // 同一个 queryKey 与 StandardScorePanel 共享缓存，不产生额外请求。
+  const { data: dictScore } = useQuery({
+    queryKey: ['table-dictionary-score', wid, tid],
+    queryFn: () => dictionaryApi.score(wid, tid),
+    enabled: !!wid && !!tid && activeTab === 'fields',
+  })
+  /** 上次导出的结构指纹（localStorage，按 wid/tid 隔离） */
+  const [lastExportedHash, setLastExportedHash] = useState<string | null>(null)
+  useEffect(() => {
+    if (!wid || !tid) return
+    try { setLastExportedHash(localStorage.getItem(SCHEMA_HASH_KEY(wid, tid))) } catch { setLastExportedHash(null) }
+  }, [wid, tid, dictDialogOpen])
+  /** 结构是否已变更：有历史导出记录且与当前指纹不同 */
+  const dictionaryStale = !!dictScore?.schema_hash && !!lastExportedHash && lastExportedHash !== dictScore.schema_hash
+  /** 记录本次导出的指纹（导出成功后写入，供下次比对） */
+  const rememberExportedHash = () => {
+    if (!dictScore?.schema_hash) return
+    try { localStorage.setItem(SCHEMA_HASH_KEY(wid, tid), dictScore.schema_hash) } catch { /* 忽略配额 */ }
+    setLastExportedHash(dictScore.schema_hash)
+  }
+
+  // 工作区表清单（合订导出用；失败时降级为「只允许单表」）
+  const { data: workspaceTables = [] } = useQuery({
+    queryKey: ['workspace-tables-for-dictionary', wid],
+    queryFn: () => tableApi.list(wid),
+    enabled: !!wid && dictDialogOpen,
   })
 
   // 视图列表（完整列表用于 Tab3 内联展示/编辑）
@@ -408,21 +446,57 @@ export default function TableSettingsPage() {
           key: 'fields',
           label: <span><UnorderedListOutlined /> 字段</span>,
           children: (
-            <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>加载字段管理器...</div>}>
-              <FieldManager
-                embedded
-                open={true}
-                wid={wid}
-                tid={tid}
-                fields={table?.fields ?? []}
-                onClose={() => { }}
-                onChanged={() => {
-                  queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
-                  queryClient.invalidateQueries({ queryKey: ['table', `${wid}/${tid}`] })
-                  queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
+            <div style={{ paddingTop: 4 }}>
+              {/* 工具条：字段列表 / 数据标准符合度切换 + 导出字段文档（ADR 0188 C11） */}
+              <div
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  gap: 8, flexWrap: 'wrap', marginBottom: 10,
                 }}
-              />
-            </Suspense>
+              >
+                <Segmented
+                  size="small"
+                  value={fieldsPane}
+                  onChange={(v) => setFieldsPane(v as 'list' | 'standard')}
+                  options={[
+                    { value: 'list', label: '字段列表' },
+                    { value: 'standard', label: <span><CheckCircleOutlined /> 数据标准</span> },
+                  ]}
+                  data-testid="fields-pane-switch"
+                />
+                <Button
+                  icon={<DownloadOutlined />}
+                  onClick={() => setDictDialogOpen(true)}
+                  data-testid="open-dictionary-export"
+                >
+                  导出字段文档
+                </Button>
+              </div>
+              {fieldsPane === 'list' ? (
+                <Suspense fallback={<div style={{ padding: 48, textAlign: 'center' }}>加载字段管理器...</div>}>
+                  <FieldManager
+                    embedded
+                    open={true}
+                    wid={wid}
+                    tid={tid}
+                    fields={table?.fields ?? []}
+                    onClose={() => { }}
+                    onChanged={() => {
+                      queryClient.invalidateQueries({ queryKey: ['table-settings', wid, tid] })
+                      queryClient.invalidateQueries({ queryKey: ['table', `${wid}/${tid}`] })
+                      queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
+                      queryClient.invalidateQueries({ queryKey: ['table-dictionary-score', wid, tid] })
+                    }}
+                  />
+                </Suspense>
+              ) : (
+                <StandardScorePanel
+                  wid={wid}
+                  tid={tid}
+                  onJumpToField={() => setFieldsPane('list')}
+                />
+              )}
+            </div>
           ),
         },
 
@@ -591,10 +665,26 @@ export default function TableSettingsPage() {
     </Modal>
   )
 
+  // 导出字段文档弹层（ADR 0188）：单表 / 工作区合订共用
+  const dictionaryDialog = (
+    <DictionaryExportDialog
+      open={dictDialogOpen}
+      onClose={() => setDictDialogOpen(false)}
+      onExported={rememberExportedHash}
+      wid={wid}
+      tid={tid}
+      tableName={table?.name}
+      tables={workspaceTables}
+      defaultScope="table"
+      stale={dictionaryStale}
+    />
+  )
+
   return (
     <div style={{ padding: '16px 24px', height: '100%', overflow: 'auto' }}>
       {tabs}
       {viewEditor}
+      {dictionaryDialog}
     </div>
   )
 }

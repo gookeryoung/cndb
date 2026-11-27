@@ -206,6 +206,13 @@ def plan_field_import(
                 default_value=src.default_value,
                 hidden=src.hidden,
                 order=start_order + idx,
+                # 业务元数据随字段定义一起引入（ADR 0188）：标准字段复用时口径不丢；
+                # owner_id 不复制 —— 责任人是「这张表这个字段」的归属，随新表重新指派。
+                business_meaning=src.business_meaning,
+                unit=src.unit,
+                sensitivity=src.sensitivity,
+                standard_ref=src.standard_ref,
+                example_value=src.example_value,
             )
         )
     return plan, skipped

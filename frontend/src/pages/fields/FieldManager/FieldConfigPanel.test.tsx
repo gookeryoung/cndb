@@ -197,3 +197,48 @@ describe('FieldConfigPanel 关联字段业务键', () => {
         spy.mockRestore()
     })
 })
+
+describe('FieldConfigPanel 业务属性分区（ADR 0188）', () => {
+    it('渲染业务口径 / 单位 / 敏感级 / 责任人 / 示例值 / 标准来源', () => {
+        renderProviders(<Host fieldType="text" />)
+        expect(screen.getByText(/业务属性/)).toBeInTheDocument()
+        expect(screen.getByTestId('field-business-meaning')).toBeInTheDocument()
+        expect(screen.getByTestId('field-unit')).toBeInTheDocument()
+        expect(screen.getByTestId('field-sensitivity')).toBeInTheDocument()
+        expect(screen.getByTestId('field-owner')).toBeInTheDocument()
+        expect(screen.getByTestId('field-example-value')).toBeInTheDocument()
+        expect(screen.getByTestId('field-standard-ref')).toBeInTheDocument()
+    })
+
+    it('输入业务口径写回 form.business_meaning', async () => {
+        renderProviders(<Host fieldType="text" />)
+        const textarea = screen.getByTestId('field-business-meaning')
+        await act(async () => {
+            fireEvent.change(textarea, { target: { value: '含税金额（人民币）' } })
+        })
+        await waitFor(() => {
+            expect(formValues().business_meaning).toBe('含税金额（人民币）')
+        })
+    })
+
+    it('初始值回填到业务属性控件', async () => {
+        renderProviders(
+            <Host
+                fieldType="text"
+                initialValues={{
+                    business_meaning: '客户唯一编号',
+                    unit: '元',
+                    sensitivity: 'confidential',
+                    standard_ref: 'CRM-001',
+                    example_value: 'C0001',
+                }}
+            />,
+        )
+        await waitFor(() => {
+            expect(screen.getByTestId('field-business-meaning')).toHaveValue('客户唯一编号')
+            expect(screen.getByTestId('field-unit')).toHaveValue('元')
+            expect(screen.getByTestId('field-example-value')).toHaveValue('C0001')
+            expect(screen.getByTestId('field-standard-ref')).toHaveValue('CRM-001')
+        })
+    })
+})
