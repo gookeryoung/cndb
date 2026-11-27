@@ -158,7 +158,7 @@ Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/018
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/documents/services/content/` | `tests/test_documents_content_split.py` | ``5840ca05`` |
 | P1 | 已落地 | `src/cndb/plugins/documents/services/content/write.py`、`src/cndb/plugins/documents/services/content/trash.py` | `tests/test_documents_content_split.py` | ``f0896e44`` |
-| P2 | 已落地 | `src/cndb/plugins/documents/services/content/links.py`、`src/cndb/plugins/documents/services/content/tags.py`、`src/cndb/plugins/documents/services/content/fts.py`、`src/cndb/plugins/documents/services/content/serialize.py` | `tests/test_documents_content_split.py` | ``P2_SHA`` |
+| P2 | 已落地 | `src/cndb/plugins/documents/services/content/links.py`、`src/cndb/plugins/documents/services/content/tags.py`、`src/cndb/plugins/documents/services/content/fts.py`、`src/cndb/plugins/documents/services/content/serialize.py` | `tests/test_documents_content_split.py` | ``52f5cb9c`` |
 | P3 | 未开始 | — | — | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
