@@ -152,9 +152,9 @@ Related: ADR 0153（团队层）、ADR 0154（工作区链接与团队数据授�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/team_access.py` | `tests/test_team_access_editor.py`、`tests/test_workspace_team_access.py` | 待提交 |
-| P1 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`frontend/src/api/types/links.ts`、`frontend/src/pages/settings/TeamAccessCard.tsx` | `tests/test_team_access_editor.py`、`frontend/src/pages/settings/TeamAccessCard.test.tsx` | 待提交 |
-| P2 | 已落地 | `frontend/tests/e2e/critical/workspace-team-access-editor.spec.ts`、`CHANGELOG.md`、`docs/adr/README.md`、`docs/adr/0154-workspace-link.md` | `frontend/tests/e2e/critical/workspace-team-access-editor.spec.ts` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/team_access.py` | `tests/test_team_access_editor.py`、`tests/test_workspace_team_access.py` | `bc505abb` |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`frontend/src/api/types/links.ts`、`frontend/src/pages/settings/TeamAccessCard.tsx` | `tests/test_team_access_editor.py`、`frontend/src/pages/settings/TeamAccessCard.test.tsx` | `bc505abb` |
+| P2 | 已落地 | `frontend/tests/e2e/critical/workspace-team-access-editor.spec.ts`、`CHANGELOG.md`、`docs/adr/README.md`、`docs/adr/0154-workspace-link.md` | `frontend/tests/e2e/critical/workspace-team-access-editor.spec.ts` | `bc505abb` |
 
 ## 交接（会话结束更新）
 

@@ -222,9 +222,9 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/routers/records.py`、`frontend/src/pages/grid/views/MatrixView.tsx`、`frontend/src/pages/grid/views/matrixBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts` | `tests/test_matrix_score_entry.py`、`frontend/src/pages/grid/views/MatrixView.score.test.tsx`、`frontend/src/pages/grid/views/matrixBoard.test.ts` | 未发布 |
-| P1 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/row_access.py`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/plugins/tables/routers/tables.py` | `tests/test_matrix_score_entry.py`、`tests/test_views_api.py`、`tests/test_tables_integration.py` | 未发布 |
-| P2 | 已落地 | `frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/matrix-score-entry.spec.ts`、`frontend/src/pages/grid/views/MatrixView.score.test.tsx` | 未发布 |
+| P0 | 已落地 | `src/cndb/plugins/tables/routers/records.py`、`frontend/src/pages/grid/views/MatrixView.tsx`、`frontend/src/pages/grid/views/matrixBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts` | `tests/test_matrix_score_entry.py`、`frontend/src/pages/grid/views/MatrixView.score.test.tsx`、`frontend/src/pages/grid/views/matrixBoard.test.ts` | `46f1c07a` |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/row_access.py`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/plugins/tables/routers/tables.py` | `tests/test_matrix_score_entry.py`、`tests/test_views_api.py`、`tests/test_tables_integration.py` | `46f1c07a` |
+| P2 | 已落地 | `frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/matrix-score-entry.spec.ts`、`frontend/src/pages/grid/views/MatrixView.score.test.tsx` | `46f1c07a` |
 
 ## 交接（会话结束更新）
 

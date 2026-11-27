@@ -65,9 +65,9 @@ Related: `src/cndb/plugins/tables/models.py`、`src/cndb/plugins/tables/schemas/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/c9d0e1f2a3b4_add_table_groups.py`、`src/cndb/alembic/versions/d1e2f3a4b5c6_add_ungrouped_group_marker.py`、`src/cndb/plugins/tables/routers/groups.py`、`src/cndb/plugins/tables/routers/tables.py` | `tests/test_table_groups.py` | 未发布 |
-| P1 | 已落地 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/TablesList.tsx`、`frontend/src/api/tables.ts` | `frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/pages/workspace/TablesList.test.tsx` | 未发布 |
-| P2 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/workspace/TablesList.tsx` | `tests/test_table_groups_backup.py`、`frontend/src/pages/workspace/TablesList.test.tsx` | 未发布 |
+| P0 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/c9d0e1f2a3b4_add_table_groups.py`、`src/cndb/alembic/versions/d1e2f3a4b5c6_add_ungrouped_group_marker.py`、`src/cndb/plugins/tables/routers/groups.py`、`src/cndb/plugins/tables/routers/tables.py` | `tests/test_table_groups.py` | `dc75163d` |
+| P1 | 已落地 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/TablesList.tsx`、`frontend/src/api/tables.ts` | `frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/pages/workspace/TablesList.test.tsx` | `dc75163d` |
+| P2 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/workspace/TablesList.tsx` | `tests/test_table_groups_backup.py`、`frontend/src/pages/workspace/TablesList.test.tsx` | `dc75163d` |
 
 ## 交接
 

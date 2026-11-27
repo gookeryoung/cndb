@@ -1316,3 +1316,123 @@ describe('FieldManager 派生字段（formula）', () => {
         expect(config.decimals).toBe(2)
     })
 })
+
+describe('FieldManager 改类型前的 DDL 影响预估（需求 0150 / ADR 0150 P2）', () => {
+    /** 打开某字段的编辑对话框并把类型切换到目标中文类型（复用上方 switchTypeInDialog 逻辑） */
+    async function editFieldAndSwitchType(fieldName: string, typeLabelZh: string) {
+        clickEditRow(fieldName)
+        await waitFor(() => {
+            expect((screen.getByPlaceholderText('例如：姓名') as HTMLInputElement).value).toBe(fieldName)
+        })
+        const item = Array.from(document.querySelectorAll('.ant-modal-body .ant-form-item')).find(el =>
+            el.querySelector('.ant-form-item-label')?.textContent?.includes('类型'))
+        expect(item).toBeDefined()
+        const sel = item!.querySelector('.ant-select') as HTMLElement
+        fireEvent.mouseDown(sel)
+        await waitFor(() => {
+            expect(document.querySelector('.ant-select-dropdown')).not.toBeNull()
+        })
+        const searchInput = sel.querySelector('input.ant-select-input') as HTMLInputElement
+        fireEvent.change(searchInput, { target: { value: typeLabelZh } })
+        const opt = await waitFor(() => {
+            const opts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
+                .filter(el => (el.textContent ?? '').includes(typeLabelZh))
+            expect(opts.length).toBeGreaterThanOrEqual(1)
+            return opts[0]!
+        })
+        fireEvent.click(opt)
+    }
+
+    function clickDialogSubmit() {
+        fireEvent.click(document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement)
+    }
+
+    const IMPACT = {
+        action: 'change_type', table_id: 20, table_name: '员工表', field: '状态', target_type: 'longtext',
+        row_count: 12000, field_null_count: 3, sampled_rows: 200, sample_size: 200,
+        sample_ms: 42, factor: 3, estimated_ms: 1520, threshold_rows: 10000, force_required: true,
+    } as any
+
+    it('改类型先取预估，确认弹窗展示影响行数 / 空值行数 / 预计耗时与抽样标注', async () => {
+        renderFieldManager()
+        const impactSpy = vi.spyOn(fieldApi, 'ddlImpact').mockResolvedValue(IMPACT)
+        vi.spyOn(fieldApi, 'update').mockResolvedValue({} as any)
+
+        await editFieldAndSwitchType('状态', '多行')
+        clickDialogSubmit()
+
+        // 预估端点带 action=change_type + 字段 id + 目标类型
+        await waitFor(() => expect(impactSpy).toHaveBeenCalled())
+        expect(impactSpy.mock.calls[0]![2]).toEqual({
+            action: 'change_type', fieldId: 1, fieldType: 'longtext',
+        })
+
+        // 确认弹窗（antd modal.confirm）展示三项读数 + 抽样口径标注
+        await waitFor(() => {
+            expect(screen.getByText(/影响行数：12000 行（其中空值 3 行）/)).toBeInTheDocument()
+        })
+        expect(screen.getByText(/预计耗时：约 1\.5 秒/)).toBeInTheDocument()
+        expect(screen.getByText(/抽样 200 行测算，仅供估算/)).toBeInTheDocument()
+        // 超过强制确认阈值时给显式提示
+        expect(screen.getByText(/该表超过强制确认阈值（10000 行）/)).toBeInTheDocument()
+    })
+
+    it('force_required 为真时确认后带 force=true 提交', async () => {
+        renderFieldManager()
+        vi.spyOn(fieldApi, 'ddlImpact').mockResolvedValue(IMPACT)
+        const updateSpy = vi.spyOn(fieldApi, 'update').mockResolvedValue({} as any)
+
+        await editFieldAndSwitchType('状态', '多行')
+        clickDialogSubmit()
+        const okBtn = await screen.findByRole('button', { name: /确\s*认\s*修\s*改/ })
+        fireEvent.click(okBtn)
+
+        await waitFor(() => expect(updateSpy).toHaveBeenCalled())
+        // update(wid, tid, fid, data, force)
+        expect(updateSpy.mock.calls[0]![4]).toBe(true)
+    })
+
+    it('未超阈值时 force_required 为假，确认后不带 force', async () => {
+        renderFieldManager()
+        vi.spyOn(fieldApi, 'ddlImpact').mockResolvedValue({ ...IMPACT, force_required: false } as any)
+        const updateSpy = vi.spyOn(fieldApi, 'update').mockResolvedValue({} as any)
+
+        await editFieldAndSwitchType('状态', '多行')
+        clickDialogSubmit()
+        fireEvent.click(await screen.findByRole('button', { name: /确\s*认\s*修\s*改/ }))
+
+        await waitFor(() => expect(updateSpy).toHaveBeenCalled())
+        expect(updateSpy.mock.calls[0]![4]).toBe(false)
+        // 未超阈值不渲染强制确认提示
+        expect(screen.queryByText(/超过强制确认阈值/)).toBeNull()
+    })
+
+    it('预估接口失败不阻断：跳过确认直接按原路径提交（不带 force）', async () => {
+        renderFieldManager()
+        vi.spyOn(fieldApi, 'ddlImpact').mockRejectedValue(new Error('estimate down'))
+        const updateSpy = vi.spyOn(fieldApi, 'update').mockResolvedValue({} as any)
+
+        await editFieldAndSwitchType('状态', '多行')
+        clickDialogSubmit()
+
+        // 没有确认弹窗，直接提交；force 不传（undefined），后端仍有预检与原子回退
+        await waitFor(() => expect(updateSpy).toHaveBeenCalled())
+        expect(updateSpy.mock.calls[0]![4]).toBeUndefined()
+        expect(screen.queryByText(/影响行数/)).toBeNull()
+    })
+
+    it('类型未变时不取预估、直接提交', async () => {
+        renderFieldManager()
+        const impactSpy = vi.spyOn(fieldApi, 'ddlImpact').mockResolvedValue(IMPACT)
+        const updateSpy = vi.spyOn(fieldApi, 'update').mockResolvedValue({} as any)
+
+        clickEditRow('状态')
+        await waitFor(() => {
+            expect((screen.getByPlaceholderText('例如：姓名') as HTMLInputElement).value).toBe('状态')
+        })
+        clickDialogSubmit()
+
+        await waitFor(() => expect(updateSpy).toHaveBeenCalled())
+        expect(impactSpy).not.toHaveBeenCalled()
+    })
+})

@@ -119,16 +119,16 @@ Related: `src/cndb/plugins/tables/services/core/ddl_impact.py`、`src/cndb/plugi
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/services/core/ddl_impact.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_ddl_impact.py` | 待回填 |
-| P1 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/core/config.py` | `tests/test_ddl_impact.py` | 待回填 |
-| P2 | 未开始 | `frontend/src/pages/fields/` | `frontend/src/pages/fields/*.test.tsx` | 待实现 |
+| P0 | 已落地 | `src/cndb/plugins/tables/services/core/ddl_impact.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_ddl_impact.py` | `8b28a317` |
+| P1 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/core/config.py` | `tests/test_ddl_impact.py` | `8b28a317` |
+| P2 | 已落地 | `frontend/src/pages/fields/FieldManager/index.tsx`（改类型前调 ddl-impact 弹确认，force_required 时带 force 提交，预估失败不阻断）、`frontend/src/api/tables.ts`（fieldApi.ddlImpact） | `frontend/src/pages/fields/FieldManager/FieldManager.test.tsx`（预估请求参数 / 确认弹窗读数与抽样标注 / force 透传与不透传 / 预估失败回退提交 / 类型未变不取预估） | `9a287b7a` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已落地；P2（前端预估值展示）未开始。
-- 已完成：抽样估算服务、只读端点、阈值配置与 `force` 拦截。
-- 下一步：字段管理「切换类型」弹窗展示 `ddl-impact` 结果并在超阈值时要求勾选确认；大表 DDL 走后台任务（当前仍是同步请求）。
+- 当前阶段：P0 / P1 / P2 全部已落地。
+- 已完成：抽样估算服务、只读端点、阈值配置与 `force` 拦截；前端改类型前预估确认（影响行数 / 空值行数 / 预计耗时 + 抽样标注，`force_required` 时提示并带 `force` 提交，预估失败回退原路径）。
+- 下一步：大表 DDL 走后台任务（当前仍是同步请求）——属独立事项，不在本 ADR 分期内；`DDL_IMPACT_FORCE_THRESHOLD_ROWS` 默认 0（关闭），要启用强制确认需在部署配置里显式打开（已知坑 ②）。
 - 已知坑：
   - 动作系数是经验值，跨机器偏差明显；判断阈值应看行数（D3）。
-  - 阈值默认 0：要让前端真正用起来，需先加 UI 再打开配置。
-- 最近一次全绿：`make flow` @ 本次提交（2026-11-24）
+  - 阈值默认 0：要让前端真正用起来，需在部署配置里打开 `DDL_IMPACT_FORCE_THRESHOLD_ROWS`；前端已按 `force_required` 分支实现，阈值关闭时永远不会走到强制确认分支（不报错，只少了那个卡点）。
+- 最近一次全绿：`make flow` @ `8b28a317`（2026-11-24，P0-P1）；P2 前端用例 5 例 @ 2026-11-27（`FieldManager.test.tsx` 65 例全绿，含反向验证：去掉 `force` 透传 / 去掉预估失败回退分支均会被抓到）。

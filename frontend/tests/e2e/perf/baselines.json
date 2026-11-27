@@ -1,5 +1,57 @@
 {
   "$comment": "性能旅程基线（ADR 0116 C1）。按环境分 local / ci，键为旅程名，值为各指标基线；缺失的旅程或指标只记录不判 FAIL。回填方式：连续 3 次同环境读数取中位数后写入。",
-  "local": {},
-  "ci": {}
+  "local": {
+    "coldGrid": {
+      "lcp": 828,
+      "fcp": 432,
+      "ttfb": 5,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1316072
+    },
+    "documentView": {
+      "lcp": 604,
+      "fcp": 604,
+      "ttfb": 3,
+      "jsBytes": 824703,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 994577
+    },
+    "gridInteraction": {
+      "lcp": 812,
+      "fcp": 416,
+      "ttfb": 4,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1317214
+    },
+    "gridPaging": {
+      "lcp": 820,
+      "fcp": 420,
+      "ttfb": 4,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1316072
+    },
+    "gridInlineEdit": {
+      "lcp": 824,
+      "fcp": 424,
+      "ttfb": 4,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1317968
+    }
+  },
+  "ci": {},
+  "_meta": {
+    "environment": "local",
+    "runs": 3,
+    "reason": "本地三轮中位数（ADR 0116 P3）",
+    "updatedAt": "2026-11-27T06:25:54.881Z"
+  }
 }

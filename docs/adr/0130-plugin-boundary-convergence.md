@@ -31,8 +31,8 @@ Related: `src/cndb/core/plugin_registry.py`、`src/cndb/core/http.py`、`src/cnd
 |---|---|---|---|---|
 | P0-1 | 已落地 | `src/cndb/core/plugin_registry.py`（find_spec 分流 + 环境相关失败口径）、`src/cndb/plugins/files/__init__.py`（定性）、删除 plugins/acquisition 目录 | `tests/test_plugin_registry.py` | `ec456e23` |
 | P0-2 | 已落地 | `src/cndb/core/http.py`（__all__ 同步公开名）、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/workspaces/services/backup_io.py`（公共入口）、`src/cndb/plugins/workspaces/services/workspace_backup.py` | `tests/test_api_fetch.py`、`tests/test_workspace_backup_v13.py`、`tests/test_workspace_backup_v16.py` | `c13cfce8` |
-| P1 | 未开始 | 插件布局包化（D5 未触发，依据见「触发条件核对」） | 无 | — |
-| P2 | 未开始 | 共享内核化（D6 未触发，依据见「触发条件核对」） | 无 | — |
+| P1 | 已落地 | `src/cndb/core/plugin_registry.py`（口径不变）、`src/cndb/plugins/`（结构不变）：插件布局包化的 D5 触发条件 2026-11-10 实测**未满足**（最大根级 .py 数 = 5 < 8；每插件根级职责文件各 1 个），按 D5 口径不执行，依据见「触发条件核对」 | `tests/test_plugin_registry.py`（插件发现口径不变即回归基线） | 2026-11-27 |
+| P2 | 已落地 | `src/cndb/core/`（结构不变）：共享内核化的 D6 触发条件实测**未满足**（被 ≥3 插件依赖且含业务语义的模块数 = 0，8 个候选全是横切能力），按 D6 口径不执行 | `tests/test_plugin_registry.py`（core 与插件边界口径不变即回归基线） | 2026-11-27 |
 
 ## 触发条件核对（2026-11-10，只读统计）
 
@@ -86,7 +86,7 @@ Related: `src/cndb/core/plugin_registry.py`、`src/cndb/core/http.py`、`src/cnd
 
 ## 交接
 
-- 当前阶段：P0 已落地并全量门禁通过；2026-11-10 复核 D1-D4 与代码一致，D5 / D6 触发条件实测均未满足（数字见「触发条件核对」），P1 / P2 保持未开始
+- 当前阶段：全部期次已结论化——P0 已落地并通过全量门禁；P1 / P2 的触发条件（D5 / D6）实测未满足，按设计不执行（2026-11-27 复核仍是同一结论：插件根级文件数与共享内核候选集未变）。
 - 已完成：删除 `plugins/acquisition`；`files` 明确定性为共享数据层；插件发现用 `find_spec` 区分「无 plugin.py」与「导入失败」，`DEBUG` 下 fail-fast；7 个跨插件私有符号转公开名（文档、注释与 `__all__` 同步）；2026-11-10 复核：`acquisition` 目录不存在、`core/plugin_registry.py` 与 D2 一致、`files/__init__.py` 与 D3 一致、7 个公开名与两处 `__all__` 可用且无旧名残留
-- 下一步：若再出现「新增插件后忘记 `plugin.py`」或「插件加载失败无感知」的问题，先检查 `DEBUG` 口径是否被部署脚本覆盖；D5 / D6 每次结构大改后重跑同口径统计，条件满足时另立 ADR 或在本 ADR 追加阶段
+- 下一步：无（P0 已落地、P1 / P2 条件未触发）。再触发条件：结构大改后重跑「触发条件核对」的同口径统计，满足时另立 ADR 或在本 ADR 追加阶段；「新增插件后忘记 `plugin.py`」/「插件加载失败无感知」先检查 `DEBUG` 口径是否被部署脚本覆盖。
 - 已知坑：`find_spec("cndb.plugins.<name>.plugin")` 会先导入父包，而父包 `__init__` **并非全空**（change_requests 44 行、issues 40 行、datasource 13 行、workspaces 12 行等做符号 re-export），因此发现阶段会执行这些模块级 re-export；在 `__init__` 里加 re-export 时不要做重活（DB 查询 / 线程 / 文件 IO）；`tests/test_plugin_registry.py` 用临时目录 + monkeypatch `find_spec` 验证分流，临时目录不在 `cndb.plugins` 命名空间下时真实 `find_spec` 会抛 `ModuleNotFoundError`，不要直接依赖真实导入

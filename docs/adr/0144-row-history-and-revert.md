@@ -136,15 +136,15 @@ Related: `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/ea1b2c
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/ea1b2c3d4e5f_add_row_revision_and_idempotency.py`、`src/cndb/plugins/tables/services/core/row_history.py`、`src/cndb/plugins/tables/services/core/records.py` | `tests/test_row_history_idempotency.py` | `58a363f8` |
 | P1 | 已落地 | `src/cndb/plugins/tables/routers/records.py` | `tests/test_row_history_idempotency.py` | `58a363f8` |
-| P2 | 未开始 | `frontend/src/pages/grid/` | `frontend/src/pages/grid/*.test.tsx` | 待实现 |
+| P2 | 已落地 | `frontend/src/pages/grid/layout/RowDetailDrawer.tsx`（时间线 + 逐版本「恢复到此版本前」）、`frontend/src/api/records.ts`（history / revert 两个 API） | `frontend/src/pages/grid/gridPolish.test.tsx`（op 文案映射与 diff 摘要两个纯函数 + 抽屉渲染历史、仅非首版提供撤销入口） | `9a287b7a` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已落地；P2（前端时间线 UI）未开始。
-- 已完成：模型 + 迁移 + diff 最小化 + 四处写入口 + 历史/撤销接口 + 权限与双轨分派。
-- 下一步：前端行详情「历史」时间线 + 撤销按钮；历史表保留期清理（可复用 `purge-audit` 范式）。
+- 当前阶段：P0 / P1 / P2 全部已落地。
+- 已完成：模型 + 迁移 + diff 最小化 + 四处写入口 + 历史/撤销接口 + 权限与双轨分派；前端行详情「字段变更历史」时间线（版本 / 操作人 / 时间 + 「字段：旧 → 新」摘要，>5 折叠）与逐版本「恢复到此版本前」（Popconfirm；无直编权限走修改申请轨道）。
+- 下一步：历史表保留期清理（可复用 `purge-audit` 范式）——属独立事项，不在本 ADR 分期内。
 - 已知坑：
   - `record_revision` 独立 `commit`，因此它出现在主写事务之后；主写回滚时不会留下历史（顺序保证）。
   - diff 只回写出现过的字段：撤销不会覆盖期间别人改的其他字段（这是有意的）。
   - 历史表无保留期，长期运行需清理（未做，记在 Consequences）。
-- 最近一次全绿：`make flow` @ 本次提交（2026-11-24）
+- 最近一次全绿：`make flow` @ `58a363f8`（2026-11-24，P0-P1）；P2 @ `9a287b7a`（2026-11-25）；2026-11-27 复核 `gridPolish.test.tsx` 9 例全绿。

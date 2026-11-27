@@ -719,6 +719,18 @@ export default function DesignEditorPage() {
         </Space>
       </div>
 
+      {/* 移动端只读兜底（ADR 0123 D4 / C8）：three.js + Worker CSG 在手机上不可用，
+          不承诺移动编辑 —— 明确提示并引导到桌面，而不是让用户在卡顿的画布上猜。 */}
+      {narrow && (
+        <Alert
+          type="info"
+          showIcon
+          data-testid="design-mobile-readonly-hint"
+          message="手机上仅支持查看设计，编辑请在桌面端进行"
+          description="3D 预览与参数编辑在移动端不可靠，需要改动源码 / 参数时请在桌面浏览器打开本页。"
+        />
+      )}
+
       {draftPrompt && (
         <Alert
           type="info"
@@ -811,7 +823,7 @@ export default function DesignEditorPage() {
                 onChange={(next) => { setContent(next); setSaveError(''); setAutoSaveState('idle') }}
                 diagnostics={diagnostics}
                 placeholder="param width = 80&#10;box(size = [width, 40, 12])"
-                readOnly={isViewer}
+                readOnly={isViewer || narrow}
                 fetchParts={fetchParts}
                 fetchLibrary={fetchLibrary}
                 // 原文回填完成后才定位，避免首帧空文档把行号钳到第 1 行

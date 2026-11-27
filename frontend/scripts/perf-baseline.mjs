@@ -14,6 +14,7 @@
  * 约定：
  *  1. 三份读数必须来自同一环境（`environment` 字段一致），否则拒绝写入；
  *  2. 只写数值型且 > 0 的指标（0 在断言里表示「本环境无该指标，跳过」）；
+ *     指标白名单见 GATED_METRICS：计数类 / 单次极值不进基线（轮次间抖动大于容差）；
  *  3. 基线是「超基线 +15% 即 FAIL」的参照，只允许由本脚本改写，避免手改数字；
  *  4. 不改动其它环境已有基线；`$comment` 原样保留。
  */
@@ -75,11 +76,24 @@ if (environments.size !== 1) {
 }
 const environment = [...environments][0]
 
-/** 逐指标取中位数；非数值 / 0 值跳过（0 表示该环境无此指标） */
+/**
+ * 只有这些指标进基线门禁（ADR 0116 C10）。
+ *
+ * 判据：指标必须**可由代码改动单向推动**且轮次间稳定。
+ *  - 进基线：加载时序（lcp / fcp / ttfb）与体量（js / css / font / total bytes）——
+ *    加了个重依赖或删了 lazy 就必然变差，且同环境重复测差异在容差内。
+ *  - 不进基线：计数类（longTaskCount / eventCount）与单次极值（longTaskMax / eventMax）——
+ *    实测 3 轮样本里 eventCount 在 99~115 之间跳动（同一份代码），
+ *    写进 ±15% 门禁会把调度抖动判成回归。它们仍写进 journeys.json 供人工观察。
+ */
+const GATED_METRICS = new Set(['lcp', 'fcp', 'ttfb', 'jsBytes', 'cssBytes', 'fontBytes', 'totalBytes'])
+
+/** 逐指标取中位数；非数值 / 0 值跳过（0 表示该环境无此指标），非门禁指标不写入 */
 function medianMetrics(values) {
   const result = {}
   const metricKeys = new Set(values.flatMap((metrics) => Object.keys(metrics)))
   for (const key of metricKeys) {
+    if (!GATED_METRICS.has(key)) continue
     const numbers = values
       .map((metrics) => metrics[key])
       .filter((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)

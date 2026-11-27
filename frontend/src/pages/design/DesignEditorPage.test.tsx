@@ -439,6 +439,46 @@ describe('DesignEditorPage 编辑器主流程', () => {
     await waitFor(() => expect(workbench.getAttribute('style')).toContain('70fr'))
   })
 
+  it('窄屏只读兜底：给出「引导桌面」提示且编辑器不可编辑（D4 / C8）', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('1023.98px'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia
+    try {
+      useDefaultHandlers()
+      const { container } = renderPage()
+      await waitForEditorReady(container)
+
+      // 提示条到场（不承诺移动编辑，引导桌面）
+      expect(screen.getByTestId('design-mobile-readonly-hint')).toHaveTextContent('编辑请在桌面端进行')
+      // CodeMirror 处于只读态：EditorView.editable 为 false，用户无法输入
+      // （programmatic dispatch 仍可改 doc，故断言可编辑 facet 而非 doc 不变）
+      const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)!
+      expect(view.state.facet(EditorView.editable)).toBe(false)
+      expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false')
+    } finally {
+      window.matchMedia = original
+    }
+  })
+
+  it('桌面端不渲染移动只读提示，编辑器可编辑', async () => {
+    useDefaultHandlers()
+    const { container } = renderPage()
+    await waitForEditorReady(container)
+
+    expect(screen.queryByTestId('design-mobile-readonly-hint')).toBeNull()
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)!
+    expect(view.state.facet(EditorView.editable)).toBe(true)
+    expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('true')
+  })
+
   it('窄屏（<1024px）不渲染 splitter、不套用比例（C2 降级路径）', async () => {
     const original = window.matchMedia
     window.matchMedia = ((query: string) => ({

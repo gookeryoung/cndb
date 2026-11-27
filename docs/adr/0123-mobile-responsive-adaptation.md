@@ -158,15 +158,16 @@ Related: `frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`、`fro
 |---|---|---|---|---|
 | P0 首屏痛点 | 已落地 | `frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/index.css`（工作区列表行内名称修复，S0 热修复先行；同类扫描结论见 P1） | `frontend/src/pages/workspace/WorkspaceList.test.tsx` | 876820d2 |
 | P1 适配底座 | 已落地 | `frontend/src/index.css`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/layouts/MainLayout.tsx`（明细见「交接」） | `frontend/src/mobileCaliber.test.ts`、`frontend/src/pages/workspace/WorkspaceList.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx` | 876820d2 |
-| P2 高频页走查 | 未开始 | — | — | — |
-| P3 低频页与门禁 | 未开始 | — | — | — |
+| P2 高频页走查 | 已落地 | `frontend/src/pages/grid/gridToolbar.tsx`、`frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`（Drawer 内联宽度由 index.css 的 D7 全局上限收敛）、`frontend/src/pages/documents/DocumentEditorPage.tsx`（窄屏工具栏分支） | `frontend/src/pages/grid/gridToolbar.test.tsx`（移动端隐藏徽标 / 常显按钮收进「更多」）、`frontend/src/pages/grid/gridViewBar.test.tsx`（移动端视图页签 + 模式收下拉 + 更多菜单）、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`（窄屏工具栏）、`frontend/src/pages/grid/cells/buildColumns.test.tsx`（pinFirstColumn 首列冻结回归） | 2026-11-27（既有实现随本轮核查回填；用例此前已存在） |
+| P3 低频页与门禁 | 已落地 | `frontend/src/pages/admin/AdminPanel.tsx`（窄屏单列 / 纵向 Descriptions）、`frontend/src/pages/design/DesignEditorPage.tsx`（窄屏只读兜底提示 + 窄屏时编辑器只读）、`frontend/tests/e2e/critical/mobile-viewport.spec.ts`（新增，375px 冒烟） | `frontend/src/pages/admin/AdminPanel.test.tsx`（窄屏单列 / 桌面两列）、`frontend/src/pages/design/DesignEditorPage.test.tsx`（窄屏只读提示 + EditorView.editable=false；桌面可编辑）、`frontend/tests/e2e/critical/mobile-viewport.spec.ts`（列表名称可读宽度 + 无横向溢出 + 落地页可达） | 2026-11-27 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P1 已落地并提交（876820d2，2026-11-08），待进入 P2（高频页走查）
+- 当前阶段：P0-P3 全部已落地（P0-P1 @ `876820d2`，2026-11-08；P2/P3 @ 2026-11-27 核查回填，其中 P3 新增移动视口冒烟与设计页只读兜底）
 - 已完成：S0 热修复（P0）与 P1 全部四项——①「移动端全局适配」分节统一 D7 口径（Modal / 左右抽屉 `calc(100vw - 32px)` 上限，顶部抽屉豁免，修正原 `92vw` 全局上限误伤顶部抽屉）；② `WorkspaceList` 两处 Modal + `ChartDesignerModal` 内联宽度迁入统一口径；③ MainLayout 顶栏 `padding`/`gap` 内联 `isMobile` 分叉迁入 CSS（C7），壳层走查无功能缺口（汉堡抽屉 / 移动搜索 / 页签简化 / 菜单收纳均完备）；④ 同类「徽标挤占名称」扫描：MyViewsPanel / TablesList 窄屏卡片 / 全局搜索项 / 用户卡片均合规，唯一缺口 `.cn-ws-detail-table-name` 已补 `min-width: 0`
-- 下一步：P2 高频页走查（网格页视图栏 / 工具栏 / RowDetailDrawer + 文档编辑页编辑态），复用 `mobileCaliber.test.ts` 口径契约范式补页面级 375px 用例
-- 已知坑：jsdom 不加载样式表，弹窗移动宽度无法在组件测试里断言计算样式，靠 `mobileCaliber.test.ts` 直读 index.css 文本守卫（同 `headerBorders.test.ts` 范式）；P0+P1 已提交（876820d2）
-- 最近一次全绿：`make check-fast` + 前端全量 vitest（264 文件 / 3202 例）@ 876820d2（2026-11-08）
+- 已完成 P3：移动视口冒烟（`critical/mobile-viewport.spec.ts`，`test.use` 覆盖 375×812，不新增 playwright project——D5 明确否决「critical 全量跑两遍」）；设计页移动端只读兜底（提示条 + `readOnly={isViewer || narrow}`）；admin 页窄屏单列（既有实现，补用例）。
+- 下一步：无（P0-P3 全部落地）。延伸项按需另立：平板 768-1024px 专属形态（§4#3 明确沿用桌面分支）、超窄屏 <360px（§4#4 明确不适配）。
+- 已知坑：jsdom 不加载样式表，弹窗移动宽度无法在组件测试里断言计算样式，靠 `mobileCaliber.test.ts` 直读 index.css 文本守卫（同 `headerBorders.test.ts` 范式）；**e2e 的视口断言要钉「可读下限」而不是「> 0」**——实测把 `.cn-ws-row-name` 压到 8px 宽时 `width > 0` 仍然通过，已改为 `> 60`（375px 下实测 98px）并反向验证能抓到；e2e 走 `src/cndb/static` 静态产物，改 CSS 后必须先 `pnpm build` 才能观察到效果（否则读到旧样式，反向验证会假绿）；窄视口下 `ws-nav-*` 不渲染（一级导航收进 `mobile-nav-btn` 抽屉），落地页可达性断言要用汉堡按钮
+- 最近一次全绿：`make check-fast` + 前端全量 vitest（264 文件 / 3202 例）@ `876820d2`（2026-11-08）；P3 新增用例 @ 2026-11-27（`DesignEditorPage.test.tsx` 32 例、`mobile-viewport.spec.ts` 2 例实跑通过，反向验证：去掉 `narrow` 只读 / 把名称压到 8px 均会被抓到）
