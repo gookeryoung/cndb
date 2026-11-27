@@ -67,7 +67,7 @@ function docxDocumentXml(bytes: Buffer): string {
     // local file header 签名 PK\x03\x04
     if (bytes.readUInt32LE(offset) !== 0x04034b50) break;
     const method = bytes.readUInt16LE(offset + 8);
-    let compressedSize = bytes.readUInt32LE(offset + 18);
+    const compressedSize = bytes.readUInt32LE(offset + 18);
     const nameLen = bytes.readUInt16LE(offset + 26);
     const extraLen = bytes.readUInt16LE(offset + 28);
     const nameStart = offset + 30;
