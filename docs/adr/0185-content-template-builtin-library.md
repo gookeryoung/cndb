@@ -190,16 +190,16 @@ def builtin_content_template(key: str) -> BuiltinContentTemplate | None:
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/content_builtins.py`、`src/cndb/plugins/documents/services/content_templates.py`、`src/cndb/plugins/documents/routers/content_templates.py` | `tests/test_documents_content_templates.py` | 待提交 |
-| P1 | 已落地 | `frontend/src/pages/documents/ContentTemplatePanel.tsx`、`frontend/src/api/contentTemplates.ts` | `frontend/src/pages/documents/ContentTemplatePanel.test.tsx` | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/src/pages/documents/DocumentsPageContentTemplate.test.tsx`、`frontend/tests/e2e/critical/document-template-integration.spec.ts` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/content_builtins.py`、`src/cndb/plugins/documents/services/content_templates.py`、`src/cndb/plugins/documents/routers/content_templates.py` | `tests/test_documents_content_templates.py` | `0ae4205e` |
+| P1 | 已落地 | `frontend/src/pages/documents/ContentTemplatePanel.tsx`、`frontend/src/api/contentTemplates.ts` | `frontend/src/pages/documents/ContentTemplatePanel.test.tsx` | `0ae4205e` |
+| P2 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/src/pages/documents/DocumentsPageContentTemplate.test.tsx`、`frontend/tests/e2e/critical/document-template-integration.spec.ts` | `0ae4205e` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：实现完成（P0–P2 已落地），待人工确认 `Status` 是否改 `Accepted` / `Implemented`；未提交（工作区同时存在需求 0184 的未提交改动，需人工决定提交拆分）
+- 当前阶段：实现完成并已提交（`0ae4205e`），待人工确认 `Status` 是否改 `Accepted` / `Implemented`（H5 的人工卡点，LLM 不改 Status 语义）
 - 已完成：P0 后端常量 `services/content_builtins.py`（分类 `research-pm` + 6 套正文）+ 只读入口 `list_builtin_content_templates` + `GET .../document-content-templates/builtin`（声明在 `/{template_id}` 之前）+ 常量 / 接口 / 备份回归测试；P1 前端 API 类型与 `contentTemplateApi.listBuiltin`、面板两组清单（内置按分类折叠 / 自定义平铺）、`selectedRef` 选中态、只读详情（另存为 / 导出 / 预览）与另存为名称递增；P2 选择器两级分组 + 搜索过滤两组 + 空态口径改「内置 + 自定义都为 0」、e2e 用例、`CONTEXT.md` / `docs/USER_DOC_MAP.md` / 帮助教程 / ADR 0177 I1 表述 / `CHANGELOG.md`
-- 下一步：人工确认 `Status` → 提交（conventional commits，`feat(documents): …`）；如需把内置库扩展到第二个领域，只追加常量与正文，接口与前端无需改动
+- 下一步：人工确认 `Status` → 推送（`make push`，H4）；如需把内置库扩展到第二个领域，只追加常量与正文，接口与前端无需改动；I4 是否登记进 `CONSTRAINTS.md` 待人工拍板
 - 已知坑：`GET .../builtin` 必须声明在 `/{template_id}` 之前（否则 `builtin` 被当 int 解析 422，回归用例已覆盖）；面板选中态是 `builtin:<key>` / `custom:<id>` 两套 ref，别再退回数字 id；内置正文禁动态引用（I4，测试 `test_content_is_portable` 断言）；面板默认选中要求「两个查询都成功」后才决策，否则选中态会随返回顺序抖动
-- 最近一次全绿：`make check-fast` + 后端相关 4 个测试文件 136 passed（2026-11-27）
+- 最近一次全绿：`make check-fast` / `make flow`（7852 passed / 17 skipped）/ `make check-frontend`（核心集合 lines 97.66% / branches 100%，全局 84.02%）/ `pnpm test`（293 文件 / 3651 passed）/ e2e `document-template-integration.spec.ts` 3 passed / `make frontend-build`（预算内）@ 2026-11-27
