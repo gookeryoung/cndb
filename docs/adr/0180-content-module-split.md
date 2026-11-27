@@ -159,18 +159,18 @@ Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/018
 | P0 | 已落地 | `src/cndb/plugins/documents/services/content/` | `tests/test_documents_content_split.py` | ``5840ca05`` |
 | P1 | 已落地 | `src/cndb/plugins/documents/services/content/write.py`、`src/cndb/plugins/documents/services/content/trash.py` | `tests/test_documents_content_split.py` | ``f0896e44`` |
 | P2 | 已落地 | `src/cndb/plugins/documents/services/content/links.py`、`src/cndb/plugins/documents/services/content/tags.py`、`src/cndb/plugins/documents/services/content/fts.py`、`src/cndb/plugins/documents/services/content/serialize.py` | `tests/test_documents_content_split.py` | ``52f5cb9c`` |
-| P3 | 未开始 | — | — | — |
+| P3 | 已落地 | `src/cndb/plugins/documents/services/content/graph.py`、`src/cndb/plugins/documents/services/content/duplicate.py` | `tests/test_documents_content_split.py` | ``P3_SHA`` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 已落地（包结构 + `storage` / `access` / `write` / `trash` / `links` / `tags` / `fts` / `serialize`；`_legacy.py` 从 769 行降到 376 行，只剩 graph 与 duplicate 两组），P3 未开始。
-- 下一步：P3 搬 `graph.py`（`GRAPH_MAX_NODES` / 两个 TTL 常量 / `_graph_cache` / `reset_link_graph_cache` / `invalidate_link_graph_cache` / `_prune_graph_cache` / `_broken_node_id` / `build_link_graph`）与 `duplicate.py`（`DUPLICATE_SUFFIX` / `_document_tag_ids` / `_unique_duplicate_title` / `_copy_asset_file` / `duplicate_document` / `_duplicate_node`），随后删除 `_legacy.py` 并去掉结构测试里 1400 行的放宽；`build_link_graph` 内的 `_pkg.load_content(...)` 与 `duplicate` 内的 `_pkg.create_document(...)` 必须继续经包属性解析（D3）。
+- 当前阶段：P0 / P1 / P2 / P3 全部落地——`content/` 包十个模块（`storage` / `access` / `write` / `trash` / `links` / `tags` / `fts` / `serialize` / `graph` / `duplicate`）加 `__init__.py`，过渡文件 `_legacy.py` 已删除，最大模块 315 行，`__all__` 66 项与拆分前逐项一致。
+- 下一步：无。拆分已完成（P0-P3）；后续如需把私有符号转公开（见「不做的事」表），另开 ADR 并复用「转公开 + `__all__` 同步 + mock 目标改 canonical」的范式。
 - 已知坑：
   - `EXTERNAL_MIN_SIZE` 原先是从 `cndb.plugins.documents.models` 导入到 `content` 模块命名空间的**隐式转发**，拆包后三个测试（`test_documents_robustness.py:29`、`test_documents_storage_gc.py:17`、`test_workspace_storage_usage.py:157`）通过 `content_service.EXTERNAL_MIN_SIZE` 取它——P0 已在 `__init__.py` 显式再导出，否则收集期直接 `AttributeError`。
   - 包顶层 `_DOCS_DIR` 的赋值块必须放在 import 之后（放到前面会触发 ruff `E402`）。
   - 删掉 `content.py` 会让 `make adr-check` 报一批 `Related 路径不存在`（历史 ADR 里 `services/content.py` 与带行号的 `content.py:87-96` 全部失效），已统一改成 `services/content/` 目录；改的是「当时的证据路径」，行号一并失效属预期。
-  - `_legacy.py` 是过渡文件（1332 行），结构测试对它放宽到 1400 行上限；P3 删除后该放宽项要一起去掉。
+  - `_legacy.py` 是 P0-P2 期间的过渡文件，结构测试曾对它放宽到 1400 行；P3 删除后该放宽项已去掉，现对所有模块统一按 400 行断言（`test_package_has_no_oversized_module`），并新增 `test_legacy_transition_module_is_gone` 钉住「过渡文件不得复活」。
   - P1 起 `write.py` / `trash.py` 对同包的 import 只允许 `access` / `storage`（结构测试白名单校验）——写路径需要 `_apply_tags` / `sync_fts` 时**不能** `from .tags import ...`（tags / fts 在 P2 才拆且属上层），一律 `_pkg.<name>(...)` 延迟解析，包内依赖图才保持无环。
   - P2 起 `links.py` / `tags.py` / `fts.py` / `serialize.py` 的依赖白名单分别收紧为 `{access}` / `{}` / `{}` / `{storage}`（结构测试逐文件校验）；`links.py` 的 `repair_wikilinks` 要调 `update_content`（write）与 `serialize_document`（serialize）——两者与 `links` 不同层，一律 `_pkg.<name>(...)`，写 `from .serialize import serialize_document` 会让依赖图出现环并让 monkeypatch 失效。

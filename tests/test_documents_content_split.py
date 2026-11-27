@@ -247,7 +247,7 @@ def test_write_and_trash_depend_only_downward() -> None:
 
 
 def test_moved_symbols_live_in_their_module() -> None:
-    """P1：write / trash 的符号已搬离 _legacy，且包顶层仍指向同一对象."""
+    """P1：write / trash 的符号落在各自模块，包顶层指向同一对象."""
     from cndb.plugins.documents.services.content import trash as trash_mod
     from cndb.plugins.documents.services.content import write as write_mod
 
@@ -256,9 +256,6 @@ def test_moved_symbols_live_in_their_module() -> None:
     assert write_mod.rollback_version is content_pkg.rollback_version
     assert trash_mod.purge_document is content_pkg.purge_document
     assert trash_mod.restore_document is content_pkg.restore_document
-    legacy = importlib.import_module(f"{PKG_PREFIX}._legacy")
-    assert not hasattr(legacy, "create_document")
-    assert not hasattr(legacy, "purge_document")
 
 
 def test_links_tags_fts_serialize_depend_only_downward() -> None:
@@ -278,7 +275,7 @@ def test_links_tags_fts_serialize_depend_only_downward() -> None:
 
 
 def test_p2_symbols_live_in_their_module() -> None:
-    """P2：四个模块的符号已搬离 _legacy，包顶层仍指向同一对象."""
+    """P2：四个模块的符号落在各自模块，包顶层仍指向同一对象."""
     from cndb.plugins.documents.services.content import fts as fts_mod
     from cndb.plugins.documents.services.content import links as links_mod
     from cndb.plugins.documents.services.content import serialize as serialize_mod
@@ -291,25 +288,63 @@ def test_p2_symbols_live_in_their_module() -> None:
     assert serialize_mod.serialize_document is content_pkg.serialize_document
     assert serialize_mod.serialize_documents is content_pkg.serialize_documents
 
-    legacy = importlib.import_module(f"{PKG_PREFIX}._legacy")
-    for name in ("find_backlinks", "sync_fts", "serialize_document", "_apply_tags"):
-        assert not hasattr(legacy, name), f"_legacy 仍持有 {name}"
+
+def test_graph_and_duplicate_depend_only_downward() -> None:
+    """I2：P3 拆出的 graph / duplicate 只依赖 access 与包自身（P3）."""
+    for name in ("graph.py", "duplicate.py"):
+        deps = _module_imports(PKG_DIR / name)
+        assert deps <= {"access"}, f"{name} 依赖越界：{sorted(deps - {'access'})}"
+        source = (PKG_DIR / name).read_text(encoding="utf-8")
+        assert "_pkg." in source, f"{name} 跨模块调用未经包属性解析"
+
+
+def test_p3_symbols_live_in_their_module() -> None:
+    """P3：graph / duplicate 的符号落在各自模块，包顶层仍指向同一对象."""
+    from cndb.plugins.documents.services.content import duplicate as duplicate_mod
+    from cndb.plugins.documents.services.content import graph as graph_mod
+
+    assert graph_mod.build_link_graph is content_pkg.build_link_graph
+    assert graph_mod.reset_link_graph_cache is content_pkg.reset_link_graph_cache
+    assert graph_mod.invalidate_link_graph_cache is content_pkg.invalidate_link_graph_cache
+    assert duplicate_mod.duplicate_document is content_pkg.duplicate_document
+    # 缓存是同一对象，清空缓存的测试函数才能影响到包顶层读到的实例
+    assert graph_mod._graph_cache is content_pkg._graph_cache
+
+
+def test_legacy_transition_module_is_gone() -> None:
+    """P3：过渡文件删除，包内只剩按职责划分的十个模块."""
+    assert not (PKG_DIR / "_legacy.py").exists()
+    stems = {path.stem for path in PKG_DIR.glob("*.py")}
+    assert stems == {
+        "__init__",
+        "access",
+        "duplicate",
+        "fts",
+        "graph",
+        "links",
+        "serialize",
+        "storage",
+        "tags",
+        "trash",
+        "write",
+    }
 
 
 def test_reexported_mutable_state_reads_through_package() -> None:
     """D3：包顶层 patch 的函数/常量，包内调用点必须经包属性解析才能生效."""
-    source = (PKG_DIR / "_legacy.py").read_text(encoding="utf-8")
-    for name in ("create_document", "latest_version", "load_content"):
-        assert f"_pkg.{name}(" in source, f"_legacy 未经包属性调用 {name}"
+    sources = {
+        path.name: path.read_text(encoding="utf-8") for path in PKG_DIR.glob("*.py") if path.name != "__init__.py"
+    }
+    joined = "\n".join(sources.values())
+    for name in ("create_document", "latest_version", "load_content", "invalidate_link_graph_cache"):
+        assert f"_pkg.{name}(" in joined, f"包内未经包属性调用 {name}"
 
 
 def test_package_has_no_oversized_module() -> None:
-    """I5 的补充：已拆出模块都明显小于原单文件，避免名义拆分.
+    """I5 的补充：所有模块都明显小于原单文件，避免名义拆分.
 
-    过渡期 ``_legacy.py`` 暂存尚未搬迁的符号，允许超限；P3 删掉它之后
-    本断言会连它一起约束，确保拆完不再有大文件。
+    P3 删掉过渡文件后不再有豁免——任何模块超 400 行都算拆分失败。
     """
     for path in PKG_DIR.glob("*.py"):
         line_count = len(path.read_text(encoding="utf-8").splitlines())
-        limit = 1400 if path.name == "_legacy.py" else 400
-        assert line_count < limit, f"{path.name} 仍有 {line_count} 行"
+        assert line_count < 400, f"{path.name} 仍有 {line_count} 行"

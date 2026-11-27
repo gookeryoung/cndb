@@ -20,8 +20,8 @@
 | 0174 | 附件管理面板（工作区附件列表、引用计数、孤儿体检与回收） | S1 | M | `FileOwner` | 否 | 1（已完成） |
 | 0177 | 文档模板整合（导出模板 / 内容模板契约与入口收敛 + 文档级排版模板绑定） | S2 | L | ADR 0152 / 0169 | **是** | 2（P0-P3 已落地，`9a89f6c9` / `165402df`） |
 | 0181 | 验证回路提速（四级验证漏斗、定向测试选择、并发度自适应、vitest 环境分片、e2e 复用与筛选修复） | S1 | M | — | 否 | 3（已完成） |
-| 0180 | content 模块拆分（单文件 1493 行 → 10 个内聚模块，公开面零变更） | S2 | M | — | **是** | 3（ADR Proposed 待评审） |
-| 技术债 | 版本存储（4KB 起压缩已做；增量 / 对象存储评估为暂不实施）、`content.py` 拆分 → 0180、帮助教程补齐 | S3 | M-L | — | 视项 | 3（进行中：帮助教程已补齐，0180 待评审） |
+| 0180 | content 模块拆分（单文件 1529 行 → 10 个内聚模块，公开面零变更） | S2 | M | — | **是** | 3（已完成：ADR 0180 P0-P3 已落地） |
+| 技术债 | 版本存储（4KB 起压缩已做；增量 / 对象存储评估为暂不实施）、`content.py` 拆分 → 0180、帮助教程补齐 | S3 | M-L | — | 视项 | 3（已完成：帮助教程与 0180 拆分均已落地） |
 | 0178 | 块级模型（块存储、编辑器、版本 / diff、导入导出全链路） | S2 | XL | — | **是** | 4 |
 | 0179 | 反链索引表（替代全工作区实时扫描） | S2 | M | 0178 | **是** | 4 |
 
@@ -63,10 +63,11 @@
 
 1. **版本存储**：已把内联压缩阈值从 50KB 下调到 4KB（格式不变）。增量 diff / 内容寻址与对象存储
    评估结论为「暂不实施」，触发条件与对比见 `docs/REFACTOR_BACKLOG.md` §六。
-2. **`content.py` 拆分**：已 1493 行 / 62 个顶层符号。方案已出（需求卡片 `docs/requirements/0180-content-module-split.md` + ADR 0180，Proposed），
-   按 AST 实测的内聚调用图拆 `content/{storage,access,write,trash,links,tags,fts,serialize,graph,duplicate}.py` 十个模块 +
-   `__init__.py` 显式 `__all__`，公开面零变更。**按 H5 待人工评审通过后才实现**（原 BACKLOG 的
-   `crud / links / graph / duplicate` 四段口径经评估过粗，`crud` 一段约 700 行，已由 ADR 0180 D1 取代）。
+2. **`content.py` 拆分**：已完成（ADR 0180 P0-P3）。原 1529 行 / 66 个顶层符号拆成
+   `content/{storage,access,write,trash,links,tags,fts,serialize,graph,duplicate}.py` 十个模块 +
+   `__init__.py` 显式 `__all__`，公开面零变更（`__all__` 66 项与拆分前逐项一致）；过渡文件 `_legacy.py` 已删除，
+   最大模块 315 行。依赖单向 + 模块级可变状态单点由 H69 / H70 与结构测试 `tests/test_documents_content_split.py` 守住。
+   （原 BACKLOG 的 `crud / links / graph / duplicate` 四段口径经评估过粗，`crud` 一段约 700 行，已由 ADR 0180 D1 取代）。
 3. **帮助教程补齐**：已完成「创建副本」「附件管理」两节与 USER_DOC_MAP 映射；补上 ADR 0177 P3 文档级排版模板绑定
    对应的 L4 条目（`export-view` → `template-bind`）与 USER_DOC_MAP 映射行。
 

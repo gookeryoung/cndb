@@ -12,23 +12,6 @@ from cndb.core.config import settings
 from cndb.plugins.documents.models import EXTERNAL_MIN_SIZE  # noqa: F401 兼容拆分前从本模块取该常量的调用
 
 from . import access, storage  # noqa: F401
-from ._legacy import (
-    _GRAPH_CACHE_MAX_ENTRIES,
-    _GRAPH_CACHE_TTL_SECONDS,
-    DUPLICATE_SUFFIX,
-    GRAPH_MAX_NODES,
-    _broken_node_id,
-    _copy_asset_file,
-    _document_tag_ids,
-    _duplicate_node,
-    _graph_cache,
-    _prune_graph_cache,
-    _unique_duplicate_title,
-    build_link_graph,
-    duplicate_document,
-    invalidate_link_graph_cache,
-    reset_link_graph_cache,
-)
 from .access import (
     _get_workspace,
     get_deleted_document_or_404,
@@ -36,10 +19,29 @@ from .access import (
     get_document_or_404,
     require_editor,
 )
+from .duplicate import (
+    DUPLICATE_SUFFIX,
+    _copy_asset_file,
+    _document_tag_ids,
+    _duplicate_node,
+    _unique_duplicate_title,
+    duplicate_document,
+)
 from .fts import (
     _fts_upsert_sql,
     _sync_fts_delete,
     sync_fts,
+)
+from .graph import (
+    _GRAPH_CACHE_MAX_ENTRIES,
+    _GRAPH_CACHE_TTL_SECONDS,
+    GRAPH_MAX_NODES,
+    _broken_node_id,
+    _graph_cache,
+    _prune_graph_cache,
+    build_link_graph,
+    invalidate_link_graph_cache,
+    reset_link_graph_cache,
 )
 from .links import (
     find_backlinks,

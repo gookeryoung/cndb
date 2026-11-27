@@ -47,11 +47,26 @@
 | 9 | 图谱缓存与节点 id | `services/content.py:1184-1341`（`GRAPH_MAX_NODES`、`_graph_cache`、`_broken_node_id`） | 模块级可变缓存，迁模块后必须仍是**唯一实例**（拆成两份缓存会导致路由与检查读到不同图） |
 | 10 | 管道检查读取正文 | `pipeline/services/checks/base.py:27`、`checks/document/links.py:13` | 只读 `latest_version` / `load_content` / `resolve_outgoing_links` |
 
+## 落地结果（2026-11-27）
+
+| # | 约束 | 落点 | 验证 |
+|---|---|---|---|
+| C1 | 单文件 ≤ 400 行 | `content/` 包实测：`__init__.py` 173、`write.py` 315（最大）、`trash.py` 299、`graph.py` 211、`links.py` 200、`duplicate.py` 179、`serialize.py` 161、`storage.py` 136、`access.py` 79、`tags.py` 60、`fts.py` 52 | `tests/test_documents_content_split.py::test_package_has_no_oversized_module`（400 行硬断言，无豁免） |
+| C2 | 十模块分层、依赖单向无环 | 依赖实测：`storage` 无同包 import；`access` 只依赖 `storage`；`tags` / `fts` 不依赖同包；`serialize` 只依赖 `storage`；`links` / `graph` / `duplicate` / `write` / `trash` 只依赖 `access`（+`storage`） | `test_storage_does_not_depend_on_siblings` / `test_access_only_depends_on_storage` / `test_write_and_trash_depend_only_downward` / `test_links_tags_fts_serialize_depend_only_downward` / `test_graph_and_duplicate_depend_only_downward` / `test_package_dependency_graph_is_acyclic` |
+| C3 | 公开面零变更 | `__init__.py` 显式 `__all__` 66 项，与拆分前模块顶层符号集合逐项一致；`services/__init__.py` 与全部调用点零改动 | `test_public_surface_matches_pre_split_module` / `test_public_surface_is_sorted` |
+| C4 | H28 monkeypatch 兼容 | `_DOCS_DIR` 只在包顶层物理定义，`storage._docs_root()` 函数内延迟读取；被 patch 的函数包内一律 `_pkg.<name>(...)`；`EXTERNAL_MIN_SIZE` 在 `__init__.py` 显式再导出（原为隐式转发） | `test_docs_dir_monkeypatch_takes_effect` / `test_reexported_mutable_state_reads_through_package`；12 个受影响测试文件零改动通过 |
+| C5 | 零行为变更 | 无迁移、无接口签名与响应变化、无前端改动、无存储格式变化（`RAW_INLINE_MAX_SIZE` = 4KB、`gz:` 前缀、外存路径均未动） | `git diff` 无 `migrations/` / `frontend/` / `routers/` 语义改动 |
+| C6 | L2 门禁 | `make check-fast` 全绿；后端全量 **7840 passed / 17 skipped** | `make check-fast` / `make test` |
+| C7 | 口径统一 | `docs/REFACTOR_BACKLOG.md` 该行改为「已落地（P0-P3），最大模块 315 行」；`docs/requirements/BACKLOG.md` 批次概况与批次 3 第 2 项改为已完成 | `make check-docs` |
+| C8 | 分期提交 | `5840ca05`(P0) → `f0896e44`(P1) → `52f5cb9c`(P2) → P3，每期一个 `refactor:` 提交 + 一个 `docs(adr):` sha 回填 | `git log --oneline` |
+
+补充：I2 / I3 已登记为硬约束 **H69**（子包依赖单向无环）与 **H70**（模块级可变状态单点），见 `docs/CONSTRAINTS.md`。
+
 ## 未决问题
 
 - [x] 拆分粒度按 BACKLOG 的 4 段还是 REFACTOR_BACKLOG 的 6 段（2026-11-26 结论）：都不采用。以 AST 实测调用图为据拆成 10 个内聚模块，两处旧措辞按 C7 收敛到 ADR 0180。
 - [x] `_DOCS_DIR` 是否可以迁出 `content.py`（2026-11-26 结论）：不迁出。它是唯一被外部**运行时读取 + 测试写后生效**的模块常量，继续留在 `content` 包顶层；包内 `storage` 用函数内延迟读取，避免 import 期快照。
-- [x] 图谱缓存迁到 `graph.py` 后是否会有多实例（2026-11-26 结论）：不会。`_graph_cache` 只由 `graph.py` 持有，`content` 包顶层只再导出 `reset_link_graph_cache` / `build_link_graph` 两个函数名，不导出缓存对象。
+- [x] 图谱缓存迁到 `graph.py` 后是否会有多实例（2026-11-26 结论）：不会。`_graph_cache` 只有 `graph.py` 一处物理定义，包顶层 `_graph_cache` 只是同一对象的再导出（I1 要求它与拆分前一样可访问，因此仍在 `__all__` 里）；`test_graph_cache_defined_once` 断言 `content_pkg._graph_cache is graph_mod._graph_cache`。
 - [x] 是否顺便拆 `obsidian.py`（1712 行，全仓最大）（2026-11-26 结论）：不拆。本卡只处理批次 3 第 2 项，`obsidian.py` / `records.py` / `main_window.py` 仍在 `REFACTOR_BACKLOG.md` 排队。
 
 ## 卡点
@@ -59,4 +74,4 @@
 - [x] 每条需求句都有 C 编号约束（C1 对应「1400+ 行」，C2 对应「按 … 拆」，C3–C8 为可验收的拆分约束）
 - [x] 未决问题有结论
 
-> S2：等待 ADR 0180 人工评审（H5）。评审通过前不进入实现。
+> S2：ADR 0180 已于 2026-11-27 人工评审通过（H5），P0-P3 全部落地，见「落地结果」。
