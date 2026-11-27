@@ -183,7 +183,7 @@ function AuthenticatedApp() {
             <Route path="issues" element={
               <Suspense fallback={<PageFallback />}><DocumentsIssuesPage /></Suspense>
             } />
-            {/* 导出模板（ADR 0152）：工作区级 Word / PDF 排版模板，入口在文档区「质量检查」右侧 */}
+            {/* 导出模板（ADR 0152）：工作区级 Word / PDF 排版模板，入口在文档区「内容模板」右侧 */}
             <Route path="templates" element={
               <Suspense fallback={<PageFallback />}><DocumentTemplatesPage /></Suspense>
             } />

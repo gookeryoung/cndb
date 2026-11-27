@@ -11,7 +11,7 @@ import { http, HttpResponse } from 'msw'
 import ContentTemplatePanel from './ContentTemplatePanel'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
-import type { ContentTemplateItem } from '@/api'
+import type { BuiltinContentLibrary, ContentTemplateItem } from '@/api'
 
 vi.mock('@/components/Document/MarkdownLiveEditor', () => ({
   default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
@@ -37,6 +37,43 @@ const tpl = (id: number, name: string, body: string): ContentTemplateItem => ({
   updated_at: '2026-01-01T00:00:00Z',
 })
 
+const builtinLibrary: BuiltinContentLibrary = {
+  categories: [
+    {
+      key: 'research-pm',
+      name: '科研项目管理',
+      description: '立项 → 执行 → 结题全过程的文档骨架',
+      sort_order: 10,
+      templates: [
+        {
+          ref: 'builtin:research-pm.weekly-report',
+          key: 'research-pm.weekly-report',
+          name: '项目周报',
+          description: '周度进展同步',
+          icon: '🗓️',
+          sort_order: 40,
+          export_template_ref: null,
+          content_markdown: '## 一、本周进展\n\n（填写）',
+        },
+        {
+          ref: 'builtin:research-pm.project-proposal',
+          key: 'research-pm.project-proposal',
+          name: '项目立项申请书',
+          description: '申报 / 立项评审',
+          icon: '📝',
+          sort_order: 10,
+          export_template_ref: 'builtin:official',
+          content_markdown: '## 一、项目基本信息\n\n（填写）',
+        },
+      ],
+    },
+  ],
+}
+
+const builtinHandler = http.get('/api/v1/workspaces/:wid/document-content-templates/builtin', () =>
+  HttpResponse.json(builtinLibrary),
+)
+
 function renderPage() {
   return renderProviders(
     <Routes>
@@ -56,6 +93,7 @@ describe('文档内容模板页（需求 0169）', () => {
     deletedId = null
     createdNames = []
     server.use(
+      builtinHandler,
       http.get('/api/v1/workspaces/:wid/documents/templates', () =>
         HttpResponse.json({
           items: [
@@ -151,15 +189,18 @@ describe('文档内容模板页（需求 0169）', () => {
     await waitFor(() => expect(createdNames).toEqual(['未命名模板 2']))
   })
 
-  it('空态显示创建首个模板引导', async () => {
+  it('自定义模板为空时显示引导（内置库仍在，空态口径改为自定义组为空）', async () => {
     server.use(
       http.get('/api/v1/workspaces/:wid/document-content-templates', () =>
         HttpResponse.json({ items: [], total: 0 }),
       ),
     )
     renderPage()
-    expect(await screen.findByText('还没有内容模板')).toBeInTheDocument()
-    expect(screen.getByText('创建首个模板')).toBeInTheDocument()
+    expect(
+      await screen.findByText(/还没有自定义模板：选一个内置模板后点「另存为自定义」/),
+    ).toBeInTheDocument()
+    // 内置库仍可用：首个内置条目在自动选中后展示只读详情
+    expect(await screen.findByTestId('content-template-builtin-binding')).toBeInTheDocument()
   })
 
   it('绑定排版模板后保存携带 export_template_ref（ADR 0177 C6）', async () => {
@@ -187,6 +228,7 @@ describe('内容模板能力对齐（ADR 0177 C5）', () => {
     duplicated = []
     items = [tpl(1, '会议纪要', '# 纪要'), tpl(2, '周报', '# 周报')]
     server.use(
+      builtinHandler,
       http.get('/api/v1/workspaces/:wid/document-content-templates', () =>
         HttpResponse.json({ items, total: items.length }),
       ),
@@ -311,6 +353,119 @@ describe('内容模板能力对齐（ADR 0177 C5）', () => {
       { id: 2, body: { sort_order: 0 } },
       { id: 1, body: { sort_order: 10 } },
     ])
+  })
+})
+
+describe('内置内容模板库（ADR 0185）', () => {
+  let createdPayloads: Array<Record<string, unknown>> = []
+
+  beforeEach(() => {
+    createdPayloads = []
+    server.use(
+      builtinHandler,
+      http.get('/api/v1/workspaces/:wid/documents/templates', () =>
+        HttpResponse.json({ items: [], total: 0, default_ref: 'builtin:research' }),
+      ),
+      http.get('/api/v1/workspaces/:wid/document-content-templates', () =>
+        HttpResponse.json({ items: [tpl(1, '项目周报', '## 自定义周报')], total: 1 }),
+      ),
+      http.post('/api/v1/workspaces/:wid/document-content-templates', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        createdPayloads.push(body)
+        return HttpResponse.json(tpl(5, String(body.name), String(body.content_markdown ?? '')), { status: 201 })
+      }),
+    )
+  })
+
+  it('左清单两组：内置按分类分组并带「内置」徽标，自定义平铺', async () => {
+    renderPage()
+    expect(await screen.findByTestId('content-template-group-builtin')).toHaveTextContent('内置模板')
+    expect(screen.getByTestId('content-template-group-custom')).toHaveTextContent('自定义模板')
+    // 分类标题来自接口返回的分类名（前端不硬编码领域）
+    const category = await screen.findByTestId('content-template-category-research-pm')
+    expect(category).toHaveTextContent('科研项目管理')
+    expect(screen.getByTestId('content-template-builtin-research-pm.weekly-report')).toHaveTextContent('内置')
+  })
+
+  it('选中内置条目后只读：无保存 / 删除 / 副本，只有另存为与导出', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByTestId('content-template-builtin-research-pm.weekly-report'))
+
+    expect(await screen.findByTestId('content-template-save-as')).toBeInTheDocument()
+    expect(screen.getByTestId('content-template-export')).toBeInTheDocument()
+    expect(screen.queryByTestId('content-template-save')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('content-template-delete')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('content-template-duplicate')).not.toBeInTheDocument()
+    // 正文以只读预览渲染，来自接口返回
+    expect(screen.getByTestId('content-template-preview')).toHaveTextContent('本周进展')
+    expect(screen.queryByTestId('template-markdown')).not.toBeInTheDocument()
+  })
+
+  it('内置条目展示绑定的排版模板说明', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByTestId('content-template-builtin-research-pm.project-proposal'))
+    await waitFor(() =>
+      expect(screen.getByTestId('content-template-builtin-binding')).toHaveTextContent('builtin:official'),
+    )
+  })
+
+  it('「另存为自定义」以原名（自定义）创建并带上正文与绑定', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByTestId('content-template-builtin-research-pm.project-proposal'))
+    fireEvent.click(screen.getByTestId('content-template-save-as'))
+
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]).toMatchObject({
+      name: '项目立项申请书（自定义）',
+      content_markdown: '## 一、项目基本信息\n\n（填写）',
+      export_template_ref: 'builtin:official',
+    })
+  })
+
+  it('「另存为自定义」名称冲突时递增', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/document-content-templates', () =>
+        HttpResponse.json({ items: [tpl(1, '项目立项申请书（自定义）', 'x')], total: 1 }),
+      ),
+    )
+    renderPage()
+    fireEvent.click(await screen.findByTestId('content-template-builtin-research-pm.project-proposal'))
+    fireEvent.click(screen.getByTestId('content-template-save-as'))
+
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]).toMatchObject({ name: '项目立项申请书（自定义 2）' })
+  })
+
+  it('内置条目可导出为内容模板 JSON 文件', async () => {
+    const captured: Blob[] = []
+    const createSpy = vi.fn((blob: Blob) => {
+      captured.push(blob)
+      return 'blob:builtin'
+    })
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createSpy })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+
+    renderPage()
+    fireEvent.click(await screen.findByTestId('content-template-builtin-research-pm.weekly-report'))
+    fireEvent.click(screen.getByTestId('content-template-export'))
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalled())
+    const parsed = JSON.parse(await captured[0].text()) as {
+      kind: string
+      templates: Array<{ name: string; content_markdown: string }>
+    }
+    expect(parsed.kind).toBe('cndb-content-template')
+    expect(parsed.templates[0]).toMatchObject({
+      name: '项目周报',
+      content_markdown: '## 一、本周进展\n\n（填写）',
+    })
+  })
+
+  it('自定义模板能力回归：内置库存在时仍可保存 / 删除', async () => {
+    renderPage()
+    expect(await screen.findByTestId('content-template-row-1')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('template-markdown'), { target: { value: '## 改' } })
+    await waitFor(() => expect(screen.getByTestId('content-template-save')).toBeEnabled())
   })
 })
 

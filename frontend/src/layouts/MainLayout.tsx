@@ -91,11 +91,12 @@ const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
   { key: 'graph', label: '图谱', icon: <ApartmentOutlined />, to: 'graph' },
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
-  // 导出模板（ADR 0152 / 0177）：工作区级 Word / PDF 排版模板，紧邻「质量检查」右侧
+  // 内容模板（需求 0169 / ADR 0177 C3）：从模板新建文档的正文骨架，与导出模板同一页的不同分区
+  // 顺序：内容模板在导出模板之前（先写什么、再长什么样）
+  { key: 'content-templates', label: '内容模板', icon: <FileTextOutlined />, to: 'templates?kind=content' },
+  // 导出模板（ADR 0152 / 0177）：工作区级 Word / PDF 排版模板
   // 命名取直白一套（ADR 0177 C2 / D3）：「导出模板」/「内容模板」，不再用泛称「模板」
   { key: 'templates', label: '导出模板', icon: <SnippetsOutlined />, to: 'templates' },
-  // 内容模板（需求 0169 / ADR 0177 C3）：从模板新建文档的正文骨架，与导出模板同一页的不同分区
-  { key: 'content-templates', label: '内容模板', icon: <FileTextOutlined />, to: 'templates?kind=content' },
   // 附件（需求 0174）：工作区上传文件与孤儿回收
   { key: 'attachments', label: '附件', icon: <PaperClipOutlined />, to: 'attachments' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },

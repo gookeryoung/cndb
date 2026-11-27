@@ -38,10 +38,39 @@ export interface ContentTemplateCreatePayload {
 
 export type ContentTemplateUpdatePayload = Partial<ContentTemplateCreatePayload>
 
+/** 内置库（ADR 0185 D4）：后端代码常量，只读、不入库、不进备份 */
+export interface BuiltinContentTemplate {
+  /** `builtin:<key>`，与导出模板 ref 同形但 key 集合不重叠（I3） */
+  ref: string
+  key: string
+  name: string
+  description: string
+  icon: string
+  sort_order: number
+  /** 内置模板声明的排版模板绑定（可空 = 跟随工作区默认） */
+  export_template_ref: string | null
+  content_markdown: string
+}
+
+export interface BuiltinContentCategory {
+  key: string
+  name: string
+  description: string
+  sort_order: number
+  templates: BuiltinContentTemplate[]
+}
+
+export interface BuiltinContentLibrary {
+  categories: BuiltinContentCategory[]
+}
+
 const base = (wid: number | string) => `/v1/workspaces/${wid}/document-content-templates`
 
 export const contentTemplateApi = {
   list: (wid: number | string) => api.get<ContentTemplateList>(base(wid)).then(r => r.data),
+  /** 内置库（ADR 0185 D4）：只读、一次返回全部正文，自定义列表端点载荷不变 */
+  listBuiltin: (wid: number | string) =>
+    api.get<BuiltinContentLibrary>(`${base(wid)}/builtin`).then(r => r.data),
   get: (wid: number | string, id: number) =>
     api.get<ContentTemplateItem>(`${base(wid)}/${id}`).then(r => r.data),
   create: (wid: number | string, payload: ContentTemplateCreatePayload) =>

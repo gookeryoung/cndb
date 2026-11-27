@@ -11,6 +11,7 @@ import { http, HttpResponse } from 'msw'
 import DocumentsPage from './DocumentsPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
+import type { BuiltinContentLibrary } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
 const desktop: ResponsiveState = {
@@ -18,6 +19,43 @@ const desktop: ResponsiveState = {
   width: 1280, height: 800,
 }
 vi.mock('@/hooks/useResponsive', () => ({ useResponsive: () => desktop }))
+
+const builtinLibrary: BuiltinContentLibrary = {
+  categories: [
+    {
+      key: 'research-pm',
+      name: '科研项目管理',
+      description: '立项 → 执行 → 结题',
+      sort_order: 10,
+      templates: [
+        {
+          ref: 'builtin:research-pm.weekly-report',
+          key: 'research-pm.weekly-report',
+          name: '项目周报',
+          description: '周度进展同步',
+          icon: '🗓️',
+          sort_order: 40,
+          export_template_ref: null,
+          content_markdown: '## 一、本周进展\n\n（填写）',
+        },
+        {
+          ref: 'builtin:research-pm.final-report',
+          key: 'research-pm.final-report',
+          name: '项目结题验收报告',
+          description: '结题 / 验收材料',
+          icon: '✅',
+          sort_order: 60,
+          export_template_ref: 'builtin:research',
+          content_markdown: '## 一、项目概况\n\n（填写）',
+        },
+      ],
+    },
+  ],
+}
+
+const builtinHandler = http.get('/api/v1/workspaces/:wid/document-content-templates/builtin', () =>
+  HttpResponse.json(builtinLibrary),
+)
 
 function renderPage() {
   return renderProviders(
@@ -35,6 +73,7 @@ describe('从内容模板新建文档（需求 0169 C4）', () => {
   beforeEach(() => {
     createdPayload = null
     server.use(
+      builtinHandler,
       http.get('/api/v1/workspaces/:wid/document-content-templates', () =>
         HttpResponse.json({
           items: [
@@ -82,6 +121,47 @@ describe('从内容模板新建文档（需求 0169 C4）', () => {
     })
   })
 
+  it('选择器按内置分类分组，再列「我的模板」', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('doc-create-menu'))
+    fireEvent.click(await screen.findByText('从模板新建'))
+
+    // 内置分类标题来自接口返回（前端不硬编码领域）
+    expect(await screen.findByTestId('content-template-picker-category-research-pm')).toHaveTextContent('科研项目管理')
+    expect(screen.getByTestId('content-template-picker-custom')).toHaveTextContent('我的模板')
+    expect(screen.getByTestId('content-template-option-research-pm.weekly-report')).toHaveTextContent('内置')
+  })
+
+  it('搜索同时过滤内置与自定义两组', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByTestId('doc-create-menu'))
+    fireEvent.click(await screen.findByText('从模板新建'))
+
+    fireEvent.change(await screen.findByTestId('content-template-search'), { target: { value: '结题' } })
+    expect(await screen.findByTestId('content-template-option-research-pm.final-report')).toBeInTheDocument()
+    expect(screen.queryByTestId('content-template-option-research-pm.weekly-report')).not.toBeInTheDocument()
+    // 自定义组不匹配时整组隐藏
+    expect(screen.queryByTestId('content-template-picker-custom')).not.toBeInTheDocument()
+  })
+
+  it('选内置条目后以接口返回正文 + 绑定调用创建', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByTestId('doc-create-menu'))
+    fireEvent.click(await screen.findByText('从模板新建'))
+
+    fireEvent.click(await screen.findByTestId('content-template-option-research-pm.final-report'))
+
+    await waitFor(() => {
+      expect(createdPayload).toMatchObject({
+        title: '项目结题验收报告',
+        content: '## 一、项目概况\n\n（填写）',
+        export_template_ref: 'builtin:research',
+        is_folder: false,
+      })
+    })
+  })
+
   it('先打开新建文件夹再取消，从模板新建仍建文档（不残留 is_folder）', async () => {
     renderPage()
 
@@ -108,6 +188,9 @@ describe('从内容模板新建文档（需求 0169 C4）', () => {
     server.use(
       http.get('/api/v1/workspaces/:wid/document-content-templates', () =>
         HttpResponse.json({ items: [], total: 0 }),
+      ),
+      http.get('/api/v1/workspaces/:wid/document-content-templates/builtin', () =>
+        HttpResponse.json({ categories: [] }),
       ),
     )
     renderPage()

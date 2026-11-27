@@ -1,15 +1,17 @@
-/** 内容模板面板（需求 0169 / ADR 0177 C3）.
+/** 内容模板面板（需求 0169 / ADR 0177 C3 / ADR 0185）.
  *
  * 内容模板是「从模板新建文档」用的工作区级 Markdown 正文骨架，与导出模板
- * （`ExportTemplatePanel` / ADR 0152）**模型独立**：本面板不参与导出、无内置预设、
- * 无默认锚点，空态引导用户自建首个模板。两个面板由 `DocumentTemplatesPage` 按
- * `?kind=export|content` 切换，入口统一在文档区「导出模板 / 内容模板」页签。
+ * （`ExportTemplatePanel` / ADR 0152）**模型独立**。两个面板由 `DocumentTemplatesPage` 按
+ * `?kind=export|content` 切换，入口统一在文档区「内容模板 / 导出模板」页签（内容模板在前）。
  *
- * 布局沿用文档区双栏原语：左 `SectionBox flush` 清单（选中左边条 + 主题选中底色 + 拖拽排序），
- * 右 `SectionBox` 编辑（元数据 + MarkdownLiveEditor 正文 / 只读预览）。颜色 / 间距全走 --cn-* token。
+ * 左清单两组（ADR 0185 D5 / D6）：
+ * - 「内置模板」按分类折叠分组，只读，带「内置」徽标；动作仅「另存为 / 导出 / 预览」；
+ * - 「自定义模板」既有平铺 + 拖拽排序 + 副本 / 删除 / 保存，能力逐项不变（C6）。
  *
- * 能力对齐（ADR 0177 C5）：与导出模板一致提供 JSON 导入 / 导出、创建副本、Markdown 预览、
- * 拖拽排序；文件格式 `kind=cndb-content-template`，与排版模板文件互不兼容并明确报错。
+ * 选中态用 `selectedRef`（`builtin:<key>` / `custom:<id>`，D6），正文一律来自接口，
+ * 前端不拼装内置正文（正文只维护一份，不进 bundle，H31）。
+ *
+ * 文件格式 `kind=cndb-content-template`，与排版模板文件互不兼容并明确报错。
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -24,6 +26,7 @@ import {
   Segmented,
   Select,
   Space,
+  Tag,
   Tooltip,
   Typography,
   message,
@@ -31,10 +34,12 @@ import {
 import {
   CopyOutlined,
   DeleteOutlined,
+  DownOutlined,
   DownloadOutlined,
   FileTextOutlined,
   HolderOutlined,
   PlusOutlined,
+  RightOutlined,
   SaveOutlined,
   SnippetsOutlined,
   UnorderedListOutlined,
@@ -42,7 +47,7 @@ import {
 } from '@ant-design/icons'
 
 import { contentTemplateApi, exportTemplateApi } from '@/api'
-import type { ContentTemplateItem } from '@/api'
+import type { BuiltinContentTemplate, ContentTemplateItem, ContentTemplateList } from '@/api'
 import CnListMeta from '@/components/CnListMeta'
 import MarkdownLiveEditor, { type MarkdownEditorMode } from '@/components/Document/MarkdownLiveEditor'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
@@ -76,6 +81,11 @@ const EMPTY_DRAFT: Draft = {
   content_markdown: '',
 }
 
+const BUILTIN_PREFIX = 'builtin:'
+const CUSTOM_PREFIX = 'custom:'
+
+const customRef = (id: number) => `${CUSTOM_PREFIX}${id}`
+
 function toDraft(item: ContentTemplateItem): Draft {
   return {
     name: item.name,
@@ -87,18 +97,41 @@ function toDraft(item: ContentTemplateItem): Draft {
   }
 }
 
+function fromBuiltin(item: BuiltinContentTemplate): Draft {
+  return {
+    name: item.name,
+    description: item.description ?? '',
+    icon: item.icon ?? '',
+    sort_order: item.sort_order ?? 0,
+    export_template_ref: item.export_template_ref ?? null,
+    content_markdown: item.content_markdown ?? '',
+  }
+}
+
+/** 另存为的默认名（D5 / D8）：`原名（自定义）`，冲突时递增 */
+function saveAsName(base: string, used: Set<string>): string {
+  const stem = `${base}（自定义）`
+  if (!used.has(stem)) return stem
+  let seq = 2
+  while (used.has(`${base}（自定义 ${seq}）`)) seq += 1
+  return `${base}（自定义 ${seq}）`
+}
+
 export default function ContentTemplatePanel() {
   const { wid } = useParams<{ wid: string }>()
   const workspaceId = wid ?? ''
   const qc = useQueryClient()
 
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  // 选中态（ADR 0185 D6）：`builtin:<key>` / `custom:<id>`
+  const [selectedRef, setSelectedRef] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [editorMode, setEditorMode] = useState<MarkdownEditorMode>('live')
   // 编辑 / 预览（ADR 0177 C5）：预览只读渲染当前草稿正文，便于确认骨架效果
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
   // 切换模板时若有未保存修改，先挂起目标条目并弹确认（受控 Modal，便于测试）
-  const [pendingSwitch, setPendingSwitch] = useState<ContentTemplateItem | null>(null)
+  const [pendingSwitch, setPendingSwitch] = useState<string | null>(null)
+  // 左栏分组折叠：内置分类各自独立 + 自定义一组，默认展开
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   // 导出模板候选（ADR 0177 C6）：内容模板可绑定一份排版模板，
   // 「从模板新建」时写入新文档，可作为文档级默认导出排版
@@ -108,6 +141,11 @@ export default function ContentTemplatePanel() {
     staleTime: 0,
   })
   const exportTemplateOptions = exportTemplatesQuery.data?.items ?? []
+  const exportTemplateLabel = (ref: string | null) => {
+    if (!ref) return '跟随工作区默认'
+    const found = exportTemplateOptions.find(option => option.ref === ref)
+    return found ? `${found.source === 'builtin' ? '内置' : '自定义'} · ${found.name}` : ref
+  }
 
   const templatesQuery = useQuery({
     queryKey: ['content-templates', workspaceId],
@@ -115,46 +153,104 @@ export default function ContentTemplatePanel() {
   })
   const items = useMemo(() => templatesQuery.data?.items ?? [], [templatesQuery.data])
 
+  // 内置库（ADR 0185 D4）：独立只读端点，一次拿到全部分类 + 正文
+  const builtinQuery = useQuery({
+    queryKey: ['content-templates-builtin', workspaceId],
+    queryFn: () => contentTemplateApi.listBuiltin(workspaceId),
+    staleTime: Infinity,
+  })
+  const builtinCategories = useMemo(
+    () => builtinQuery.data?.categories ?? [],
+    [builtinQuery.data],
+  )
+  const builtinTemplates = useMemo(
+    () => builtinCategories.flatMap(category => category.templates),
+    [builtinCategories],
+  )
+
+  const selectedBuiltin = useMemo(
+    () =>
+      selectedRef?.startsWith(BUILTIN_PREFIX)
+        ? builtinTemplates.find(template => template.ref === selectedRef) ?? null
+        : null,
+    [builtinTemplates, selectedRef],
+  )
+  const selectedCustom = useMemo(
+    () =>
+      selectedRef?.startsWith(CUSTOM_PREFIX)
+        ? items.find(item => customRef(item.id) === selectedRef) ?? null
+        : null,
+    [items, selectedRef],
+  )
+  const isBuiltin = selectedBuiltin != null
+
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['content-templates', workspaceId] })
 
+  /** 写成功后先把新行塞进缓存：否则 `items` 还没回读，选中态会被兜底 effect 改回旧条目 */
+  const cacheItem = (item: ContentTemplateItem) => {
+    qc.setQueryData<ContentTemplateList>(['content-templates', workspaceId], prev => {
+      const list = prev?.items ?? []
+      const next = list.some(it => it.id === item.id)
+        ? list.map(it => (it.id === item.id ? item : it))
+        : [...list, item]
+      return { items: next, total: next.length }
+    })
+  }
+
+  const dropCachedItem = (id: number) => {
+    qc.setQueryData<ContentTemplateList>(['content-templates', workspaceId], prev => {
+      const next = (prev?.items ?? []).filter(it => it.id !== id)
+      return { items: next, total: next.length }
+    })
+  }
+
+  const toSelection = (ref: string): Draft | null => {
+    if (ref.startsWith(BUILTIN_PREFIX)) {
+      const template = builtinTemplates.find(it => it.ref === ref)
+      return template ? fromBuiltin(template) : null
+    }
+    const id = Number(ref.slice(CUSTOM_PREFIX.length))
+    const item = items.find(it => it.id === id)
+    return item ? toDraft(item) : null
+  }
+
+  // 首次加载 / 列表变化：默认选中首个自定义模板（与改造前一致），没有则选首个内置。
+  // 两个查询都完成后再选，避免「谁先返回就选谁」造成选中态抖动。
+  const listsReady = templatesQuery.isSuccess && builtinQuery.isSuccess
   useEffect(() => {
-    if (items.length === 0) {
-      setSelectedId(null)
-      setDraft(EMPTY_DRAFT)
-      return
-    }
-    if (selectedId == null || !items.some(it => it.id === selectedId)) {
-      setSelectedId(items[0].id)
-      setDraft(toDraft(items[0]))
-    }
-  }, [items, selectedId])
+    if (!listsReady) return
+    if (selectedRef != null && toSelection(selectedRef) != null) return
+    const next = items.length > 0 ? customRef(items[0].id) : builtinTemplates[0]?.ref ?? null
+    if (next === selectedRef) return
+    setSelectedRef(next)
+    const nextDraft = next == null ? null : toSelection(next)
+    setDraft(nextDraft ?? EMPTY_DRAFT)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listsReady, items, builtinTemplates, selectedRef])
 
-  const dirty = selectedId != null && items.some(it => {
-    if (it.id !== selectedId) return false
-    return (
-      it.name !== draft.name ||
-      it.description !== draft.description ||
-      it.icon !== draft.icon ||
-      it.sort_order !== draft.sort_order ||
-      it.export_template_ref !== draft.export_template_ref ||
-      it.content_markdown !== draft.content_markdown
-    )
-  })
+  const dirty = selectedCustom != null && (
+    selectedCustom.name !== draft.name ||
+    selectedCustom.description !== draft.description ||
+    selectedCustom.icon !== draft.icon ||
+    selectedCustom.sort_order !== draft.sort_order ||
+    selectedCustom.export_template_ref !== draft.export_template_ref ||
+    selectedCustom.content_markdown !== draft.content_markdown
+  )
 
-  const applySwitch = (item: ContentTemplateItem) => {
-    setSelectedId(item.id)
-    setDraft(toDraft(item))
+  const applySwitch = (ref: string) => {
+    setSelectedRef(ref)
+    setDraft(toSelection(ref) ?? EMPTY_DRAFT)
     setPendingSwitch(null)
   }
 
-  /** 切换模板：有未保存修改时先确认，避免静默丢弃 */
-  const select = (item: ContentTemplateItem) => {
-    if (item.id === selectedId) return
+  /** 切换模板：有未保存修改时先确认，避免静默丢弃（内置只读，无需确认） */
+  const select = (ref: string) => {
+    if (ref === selectedRef) return
     if (dirty) {
-      setPendingSwitch(item)
+      setPendingSwitch(ref)
       return
     }
-    applySwitch(item)
+    applySwitch(ref)
   }
 
   /** 新建时生成工作区内唯一默认名：未命名模板 / 未命名模板 2 …（避免第二个必 400） */
@@ -173,18 +269,42 @@ export default function ContentTemplatePanel() {
         content_markdown: '# 标题\n\n正文',
       }),
     onSuccess: item => {
+      cacheItem(item)
       invalidate()
-      setSelectedId(item.id)
+      setSelectedRef(customRef(item.id))
       setDraft(toDraft(item))
       message.success(`已创建「${item.name}」`)
     },
     onError: () => message.error('创建失败'),
   })
 
+  /** 另存为自定义（ADR 0185 D5）：以内置正文 + 元数据创建，名称默认 `原名（自定义）` 并递增 */
+  const saveAsMut = useMutation({
+    mutationFn: () => {
+      if (!selectedBuiltin) throw new Error('未选中内置模板')
+      const name = saveAsName(selectedBuiltin.name, new Set(items.map(item => item.name)))
+      return contentTemplateApi.create(workspaceId, {
+        name,
+        description: selectedBuiltin.description ?? '',
+        icon: selectedBuiltin.icon ?? '',
+        content_markdown: selectedBuiltin.content_markdown,
+        export_template_ref: selectedBuiltin.export_template_ref,
+      })
+    },
+    onSuccess: item => {
+      cacheItem(item)
+      invalidate()
+      setSelectedRef(customRef(item.id))
+      setDraft(toDraft(item))
+      message.success(`已另存为「${item.name}」`)
+    },
+    onError: () => message.error('另存为失败（名称可能重复或绑定非法）'),
+  })
+
   const saveMut = useMutation({
     mutationFn: () => {
-      if (selectedId == null) throw new Error('未选中模板')
-      return contentTemplateApi.update(workspaceId, selectedId, draft)
+      if (selectedCustom == null) throw new Error('未选中模板')
+      return contentTemplateApi.update(workspaceId, selectedCustom.id, draft)
     },
     onSuccess: () => {
       invalidate()
@@ -195,8 +315,9 @@ export default function ContentTemplatePanel() {
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => contentTemplateApi.remove(workspaceId, id),
-    onSuccess: () => {
-      setSelectedId(null)
+    onSuccess: (_data, id) => {
+      dropCachedItem(id)
+      setSelectedRef(null)
       setDraft(EMPTY_DRAFT)
       invalidate()
       message.success('已删除')
@@ -208,8 +329,9 @@ export default function ContentTemplatePanel() {
   const duplicateMut = useMutation({
     mutationFn: (id: number) => contentTemplateApi.duplicate(workspaceId, id),
     onSuccess: item => {
+      cacheItem(item)
       invalidate()
-      setSelectedId(item.id)
+      setSelectedRef(customRef(item.id))
       setDraft(toDraft(item))
       message.success(`已创建副本「${item.name}」`)
     },
@@ -263,19 +385,23 @@ export default function ContentTemplatePanel() {
   }
 
   const exportCurrent = () => {
-    const entry = selectedId == null ? null : items.find(it => it.id === selectedId)
+    const entry = selectedCustom
+      ? {
+          name: selectedCustom.name,
+          description: selectedCustom.description,
+          icon: selectedCustom.icon,
+          content_markdown: selectedCustom.content_markdown,
+        }
+      : selectedBuiltin
+        ? {
+            name: selectedBuiltin.name,
+            description: selectedBuiltin.description,
+            icon: selectedBuiltin.icon,
+            content_markdown: selectedBuiltin.content_markdown,
+          }
+        : null
     if (!entry) return
-    downloadFile(
-      contentTemplateFileText([
-        {
-          name: entry.name,
-          description: entry.description,
-          icon: entry.icon,
-          content_markdown: entry.content_markdown,
-        },
-      ]),
-      contentTemplateFileName(entry.name),
-    )
+    downloadFile(contentTemplateFileText([entry]), contentTemplateFileName(entry.name))
     message.success('模板文件已导出')
   }
 
@@ -331,6 +457,158 @@ export default function ContentTemplatePanel() {
     }
   }
 
+  const toggleGroup = (key: string) =>
+    setCollapsed(groups => ({ ...groups, [key]: !groups[key] }))
+
+  const groupHeader = (key: string, label: string, count: number, testId: string) => (
+    <button
+      type="button"
+      className="cn-doc-tpl-group"
+      aria-expanded={!collapsed[key]}
+      data-testid={testId}
+      onClick={() => toggleGroup(key)}
+    >
+      <span className="cn-doc-tpl-group-title">
+        {collapsed[key] ? <RightOutlined /> : <DownOutlined />}
+        {label}
+      </span>
+      <span>{count}</span>
+    </button>
+  )
+
+  const builtinRowNode = (template: BuiltinContentTemplate) => {
+    const active = template.ref === selectedRef
+    return (
+      <div
+        key={template.ref}
+        role="button"
+        tabIndex={0}
+        data-testid={`content-template-builtin-${template.key}`}
+        className={['cn-qc-row', 'cn-qc-row--selectable', active ? 'cn-qc-row--active' : '']
+          .filter(Boolean)
+          .join(' ')}
+        onClick={() => select(template.ref)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') select(template.ref)
+        }}
+      >
+        <CnListMeta
+          avatar={template.icon || <FileTextOutlined />}
+          title={
+            <span className="cn-doc-tpl-row-title">
+              <Text strong={active}>{template.name}</Text>
+              <Tag>内置</Tag>
+            </span>
+          }
+          description={template.description || `${template.content_markdown.length} 字符`}
+        />
+      </div>
+    )
+  }
+
+  const customRowNode = (item: ContentTemplateItem, index: number) => {
+    const active = customRef(item.id) === selectedRef
+    return (
+      <div
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        draggable
+        data-testid={`content-template-row-${item.id}`}
+        data-drag-over={dropIndex === index ? 'true' : undefined}
+        className={[
+          'cn-qc-row cn-qc-row--selectable cn-qc-row--draggable',
+          active ? 'cn-qc-row--active' : '',
+          dropIndex === index && dragIndex !== index ? 'cn-qc-row--drop' : '',
+        ].filter(Boolean).join(' ')}
+        onClick={() => select(customRef(item.id))}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') select(customRef(item.id))
+        }}
+        onDragStart={() => setDragIndex(index)}
+        onDragEnd={() => {
+          setDragIndex(null)
+          setDropIndex(null)
+        }}
+        onDragOver={e => {
+          // 不 preventDefault 浏览器就禁止 drop（HTML5 DnD 约定）
+          e.preventDefault()
+          setDropIndex(index)
+        }}
+        onDrop={e => {
+          e.preventDefault()
+          onDropRow(index)
+        }}
+      >
+        <span className="cn-qc-row-handle" aria-hidden data-testid={`content-template-handle-${item.id}`}>
+          <HolderOutlined />
+        </span>
+        <CnListMeta
+          avatar={<FileTextOutlined />}
+          title={item.name}
+          description={item.description || `${item.content_markdown.length} 字符`}
+        />
+      </div>
+    )
+  }
+
+  const totalCount = items.length + builtinTemplates.length
+
+  /** 内置条目只读详情：元数据 + 绑定说明 + 正文预览，动作仅「另存为 / 导出」（D5） */
+  const builtinDetail = selectedBuiltin && (
+    <>
+      <Space size={SPACE.sm} wrap>
+        <Tag>内置 · 只读</Tag>
+        <Tag>{selectedBuiltin.export_template_ref ?? '跟随工作区默认'}</Tag>
+        <Tooltip title="以当前正文另建一份可编辑的自定义模板（名称自动加「（自定义）」）">
+          <Button
+            size="small"
+            type="primary"
+            icon={<CopyOutlined />}
+            data-testid="content-template-save-as"
+            loading={saveAsMut.isPending}
+            onClick={() => saveAsMut.mutate()}
+          >
+            另存为自定义
+          </Button>
+        </Tooltip>
+        <Tooltip title="导出为模板文件（JSON，可分享 / 带到别的工作区）">
+          <Button
+            size="small"
+            icon={<DownloadOutlined />}
+            data-testid="content-template-export"
+            onClick={exportCurrent}
+          >
+            导出
+          </Button>
+        </Tooltip>
+      </Space>
+      <div className="cn-doc-tpl-meta">
+        <div>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>说明</Text>
+          <div>{selectedBuiltin.description || '—'}</div>
+        </div>
+        <div>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>绑定排版模板</Text>
+          <div data-testid="content-template-builtin-binding">
+            {exportTemplateLabel(selectedBuiltin.export_template_ref)}
+          </div>
+        </div>
+      </div>
+      <div style={{ border: '1px solid var(--cn-border)', borderRadius: 'var(--cn-radius-base)' }}>
+        <div
+          data-testid="content-template-preview"
+          style={{ padding: `${SPACE.md}px ${SPACE.lg}px`, minHeight: 320 }}
+        >
+          <MarkdownPreview
+            content={selectedBuiltin.content_markdown}
+            workspaceId={Number(workspaceId)}
+          />
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <div className="cn-page" data-testid="document-content-templates-page">
       <header className="cn-page-head">
@@ -361,7 +639,7 @@ export default function ContentTemplatePanel() {
           >
             导入
           </Button>
-          <Tooltip title="把本工作区全部内容模板导出为一个 JSON 文件">
+          <Tooltip title="把本工作区全部自定义内容模板导出为一个 JSON 文件">
             <Button
               icon={<DownloadOutlined />}
               data-testid="content-template-export-all"
@@ -387,12 +665,12 @@ export default function ContentTemplatePanel() {
         <div style={{ flex: '1 1 260px', minWidth: 0 }}>
           <TemplateListBox
             icon={<UnorderedListOutlined />}
-            count={items.length}
+            count={totalCount}
             testId="content-template-list"
             empty={
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="还没有内容模板"
+                description="内置库与自定义模板都为空"
                 style={{ padding: SPACE.lg }}
               >
                 <Button
@@ -406,57 +684,50 @@ export default function ContentTemplatePanel() {
               </Empty>
             }
           >
-            {items.map((item, index) => (
-              <div
-                key={item.id}
-                role="button"
-                tabIndex={0}
-                draggable
-                data-testid={`content-template-row-${item.id}`}
-                data-drag-over={dropIndex === index ? 'true' : undefined}
-                className={[
-                  'cn-qc-row cn-qc-row--selectable cn-qc-row--draggable',
-                  selectedId === item.id ? 'cn-qc-row--active' : '',
-                  dropIndex === index && dragIndex !== index ? 'cn-qc-row--drop' : '',
-                ].filter(Boolean).join(' ')}
-                onClick={() => select(item)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ' ') select(item)
-                }}
-                onDragStart={() => setDragIndex(index)}
-                onDragEnd={() => {
-                  setDragIndex(null)
-                  setDropIndex(null)
-                }}
-                onDragOver={e => {
-                  // 不 preventDefault 浏览器就禁止 drop（HTML5 DnD 约定）
-                  e.preventDefault()
-                  setDropIndex(index)
-                }}
-                onDrop={e => {
-                  e.preventDefault()
-                  onDropRow(index)
-                }}
-              >
-                <span className="cn-qc-row-handle" aria-hidden data-testid={`content-template-handle-${item.id}`}>
-                  <HolderOutlined />
-                </span>
-                <CnListMeta
-                  avatar={<FileTextOutlined />}
-                  title={item.name}
-                  description={item.description || `${item.content_markdown.length} 字符`}
-                />
-              </div>
-            ))}
+            {groupHeader('builtin', '内置模板', builtinTemplates.length, 'content-template-group-builtin')}
+            {!collapsed.builtin &&
+              builtinCategories.map(category => (
+                <div key={category.key} data-testid={`content-template-category-${category.key}`}>
+                  <button
+                    type="button"
+                    className="cn-doc-tpl-group"
+                    aria-expanded={!collapsed[category.key]}
+                    data-testid={`content-template-category-toggle-${category.key}`}
+                    onClick={() => toggleGroup(category.key)}
+                  >
+                    <span className="cn-doc-tpl-group-title">
+                      {collapsed[category.key] ? <RightOutlined /> : <DownOutlined />}
+                      {category.name}
+                    </span>
+                    <span>{category.templates.length}</span>
+                  </button>
+                  {!collapsed[category.key] && category.templates.map(builtinRowNode)}
+                </div>
+              ))}
+            {groupHeader('custom', '自定义模板', items.length, 'content-template-group-custom')}
+            {!collapsed.custom &&
+              (items.length === 0 ? (
+                <div className="cn-doc-tpl-empty">
+                  <Text type="secondary">还没有自定义模板：选一个内置模板后点「另存为自定义」，或直接「新建模板」。</Text>
+                </div>
+              ) : (
+                items.map(customRowNode)
+              ))}
           </TemplateListBox>
         </div>
 
         <div style={{ flex: '2 1 480px', minWidth: 0 }}>
           <SectionBox
-            title={selectedId == null ? '模板内容' : draft.name || '未命名模板'}
+            title={
+              selectedCustom != null
+                ? draft.name || '未命名模板'
+                : selectedBuiltin != null
+                  ? selectedBuiltin.name
+                  : '模板内容'
+            }
             icon={<FileTextOutlined />}
             extra={
-              selectedId == null ? null : (
+              selectedCustom == null ? null : (
                 <Space size={SPACE.sm}>
                   <Segmented
                     size="small"
@@ -484,7 +755,7 @@ export default function ContentTemplatePanel() {
                       icon={<CopyOutlined />}
                       data-testid="content-template-duplicate"
                       loading={duplicateMut.isPending}
-                      onClick={() => duplicateMut.mutate(selectedId)}
+                      onClick={() => duplicateMut.mutate(selectedCustom.id)}
                     >
                       副本
                     </Button>
@@ -505,7 +776,7 @@ export default function ContentTemplatePanel() {
                     okText="删除"
                     okButtonProps={{ danger: true }}
                     cancelText="取消"
-                    onConfirm={() => deleteMut.mutate(selectedId)}
+                    onConfirm={() => deleteMut.mutate(selectedCustom.id)}
                   >
                     <Button
                       size="small"
@@ -522,8 +793,12 @@ export default function ContentTemplatePanel() {
             }
             testId="content-template-editor"
           >
-            {selectedId == null ? (
+            {selectedRef == null ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择左侧模板，或新建首个模板" />
+            ) : isBuiltin ? (
+              <Space orientation="vertical" size={SPACE.md} style={{ width: '100%' }}>
+                {builtinDetail}
+              </Space>
             ) : (
               <Space orientation="vertical" size={SPACE.md} style={{ width: '100%' }}>
                 {viewMode === 'edit' && (

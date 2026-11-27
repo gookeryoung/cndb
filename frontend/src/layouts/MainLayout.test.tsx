@@ -681,7 +681,7 @@ describe('MainLayout 表级导航（2026-11-03 取消）', () => {
 })
 
 describe('MainLayout 文档区二级导航', () => {
-    it('进入文档页显示二级导航：文档结构 / 导出模板 / 修改申请 / 问题清单页签（ADR 0152 / 0177）', async () => {
+    it('进入文档页显示二级导航：文档结构 / 内容模板 / 导出模板 / 修改申请 / 问题清单页签（ADR 0152 / 0177）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => {
@@ -691,12 +691,15 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         expect(screen.getByTestId('document-tab-templates')).toBeVisible()
         expect(screen.getByTestId('document-tab-change-requests')).toBeVisible()
-        // 「导出模板」紧邻「质量检查」右侧（ADR 0152 入口位置口径）；命名取直白一套（ADR 0177 C2）
+        // 「内容模板」在「导出模板」左侧，两者共用同一模板页（ADR 0177 C3）
         const tabs = Array.from(screen.getByTestId('documents-crumb').querySelectorAll('.cn-table-tab')).map(
             node => node.textContent ?? '',
         )
-        expect(tabs.findIndex(text => text.includes('导出模板'))).toBe(
+        expect(tabs.findIndex(text => text.includes('内容模板'))).toBe(
             tabs.findIndex(text => text.includes('质量检查')) + 1,
+        )
+        expect(tabs.findIndex(text => text.includes('导出模板'))).toBe(
+            tabs.findIndex(text => text.includes('内容模板')) + 1,
         )
         // 「模板」不能作为泛称单独出现在页签上（ADR 0177 C2）
         expect(tabs.some(text => text.trim() === '模板')).toBe(false)

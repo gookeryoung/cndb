@@ -102,4 +102,66 @@ test.describe("文档模板整合与文档级绑定", () => {
       await apiCall(page.request, token, "delete", `/workspaces/${wid}/documents/${docId}`).catch(() => undefined);
     }
   });
+
+  // 需求 0185：内置库只读、按分类分组，可作为「从模板新建」来源，可另存为自定义
+  test("内置库「科研项目管理」→ 从模板新建 → 另存为（自定义）", async ({ page }) => {
+    test.skip(test.info().project.name === "chromium-anon", "anon 项目跳过");
+
+    // ── 模板页：内置库按分类分组，条目带「内置」徽标 ──
+    await page.goto(`/w/${wid}/documents/templates?kind=content`);
+    await expect(page.getByTestId("document-content-templates-page")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("content-template-category-research-pm")).toContainText("科研项目管理");
+    const builtinRow = page.getByTestId("content-template-builtin-research-pm.weekly-report");
+    await expect(builtinRow).toContainText("内置");
+    await builtinRow.click();
+    // 内置只读：只有另存为 / 导出
+    await expect(page.getByTestId("content-template-save-as")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("content-template-save")).toHaveCount(0);
+    await expect(page.getByTestId("content-template-delete")).toHaveCount(0);
+    await expect(page.getByTestId("content-template-preview")).toContainText("本周进展");
+
+    // ── 文档列表：「从模板新建」按内置分类分组 ──
+    await page.goto(`/w/${wid}/documents`);
+    await page.getByTestId("doc-create-menu").click();
+    await page.getByText("从模板新建").click();
+    const picker = page.getByRole("dialog", { name: "从模板新建文档" });
+    await expect(picker).toBeVisible({ timeout: 10_000 });
+    await expect(picker.getByTestId("content-template-picker-category-research-pm")).toContainText(
+      "科研项目管理",
+    );
+    await picker.getByTestId("content-template-option-research-pm.weekly-report").click();
+
+    await expect(page).toHaveURL(new RegExp(`/w/${wid}/documents/\\d+`), { timeout: 20_000 });
+    const docId = Number(/\/documents\/(\d+)/.exec(page.url())?.[1]);
+    expect(Number.isFinite(docId)).toBe(true);
+
+    try {
+      // 新建出的文档正文含内置骨架章节
+      const content = await apiCall(page.request, token, "get", `/workspaces/${wid}/documents/${docId}/content`);
+      expect(JSON.stringify(content.body)).toContain("本周进展");
+
+      // ── 另存为自定义：出现「（自定义）」条目且可编辑 ──
+      await page.goto(`/w/${wid}/documents/templates?kind=content`);
+      await page.getByTestId("content-template-builtin-research-pm.weekly-report").click();
+      await page.getByTestId("content-template-save-as").click();
+      await expect(page.getByTestId("content-template-name")).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId("content-template-name")).toHaveValue("项目周报（自定义）");
+    } finally {
+      await apiCall(page.request, token, "delete", `/workspaces/${wid}/documents/${docId}`).catch(() => undefined);
+      // 清理本用例创建的「（自定义）」条目
+      const listed = await apiCall(page.request, token, "get", `/workspaces/${wid}/document-content-templates`);
+      const rows = (listed.body as { items?: Array<{ id: number; name: string }> }).items ?? [];
+      for (const row of rows) {
+        if (row.name.startsWith("项目周报（自定义")) {
+          await apiCall(
+            page.request,
+            token,
+            "delete",
+            `/workspaces/${wid}/document-content-templates/${row.id}`,
+          ).catch(() => undefined);
+        }
+      }
+    }
+  });
 });
+

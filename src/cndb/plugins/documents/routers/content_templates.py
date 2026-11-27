@@ -5,6 +5,7 @@
 只共用 ``services/templates_common`` 的契约层（名称唯一 / 404 / 列表 envelope / 门控）。
 
 - GET    ""          列表（成员可读；`{items, total}`）
+- GET    /builtin    内置库（成员可读；ADR 0185 D4：代码常量两级结构，只读）
 - GET    /{id}       单个模板（成员可读；跨工作区 404）
 - POST   ""          新建（editor+，工作区内名称唯一）
 - PATCH  /{id}       更新（editor+）
@@ -46,6 +47,20 @@ def list_content_templates(
     """列出工作区内容模板（成员可读）."""
     _require_member(db, workspace_id, current_user)
     return services.content_templates.list_content_templates(db, workspace_id)
+
+
+@router.get("/builtin")
+def list_builtin_content_templates(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """列出内置内容模板库（成员可读；ADR 0185 D4）.
+
+    该路由必须声明在 ``/{template_id}`` **之前**：否则路径段 ``builtin`` 会被当成 int 解析而 422。
+    """
+    _require_member(db, workspace_id, current_user)
+    return services.content_templates.list_builtin_content_templates()
 
 
 @router.get("/{template_id}")

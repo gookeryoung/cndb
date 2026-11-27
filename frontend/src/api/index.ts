@@ -84,6 +84,9 @@ export type {
 export { llmApi } from './llm'
 export { contentTemplateApi } from './contentTemplates'
 export type {
+  BuiltinContentCategory,
+  BuiltinContentLibrary,
+  BuiltinContentTemplate,
   ContentTemplateCreatePayload,
   ContentTemplateItem,
   ContentTemplateList,

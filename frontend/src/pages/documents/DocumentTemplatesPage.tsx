@@ -7,7 +7,7 @@
  * - `?kind=content`        → `ContentTemplatePanel`（内容模板，面板自带 `.cn-page` 与页头）
  *
  * 旧路径 `/documents/content-templates` 由 `App.tsx` 重定向到 `?kind=content`，深链不断；
- * 文档区页签「导出模板 / 内容模板」即分区开关，不在页内再放一套 Segmented。
+ * 文档区页签「内容模板 / 导出模板」（内容模板在前）即分区开关，不在页内再放一套 Segmented。
  */
 
 import { useSearchParams } from 'react-router-dom'

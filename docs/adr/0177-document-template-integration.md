@@ -48,7 +48,7 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 
 设计目标（不变量）：
 
-- **I1 语义不外溢**：整合只发生在契约层与 UI 层；导出模板的 `is_default` 唯一性、内置只读、内容模板「无内置行 / 无默认锚点」逐条不变。
+- **I1 语义不外溢**：整合只发生在契约层与 UI 层；导出模板的 `is_default` 唯一性、内置只读、内容模板「无内置**行** / 无默认锚点」（表里不预置内置行、不产生默认模板）逐条不变。ADR 0185 起内容模板另有一层**只读内置库**（代码常量、两级别分类 → 模板、不落表、无写端点），与本 I1 不冲突：内置库不产生 `documents_contenttemplate` 行，也不产生默认模板。
 - **I2 绑定只影响视觉**：`export_template_ref` 只参与 docx / pdf 渲染参数解析，不参与任何权限、可见性、配额或列表过滤判定。
 - **I3 绑定失败不得阻断导出**：绑定解析失败一律静默回落到「工作区默认 → `research`」，导出主流程永远能出文件，且错误信息不区分「不存在 / 跨工作区 / 已删除」。
 - **I4 单一解析入口**：文档绑定的解析只能发生在 `resolve_export_template` 内部，导出器与 router 不得各自读取 `Document.export_template_ref`。
@@ -220,6 +220,7 @@ op.add_column("documents_contenttemplate", sa.Column("export_template_ref", sa.S
 | 导出视觉参数解析 | `resolve_export_template` | 在原三段链**末尾追加**文档绑定一段，终点仍为内置 `research` | ADR 0152 I1 / I2（本 ADR 扩展 D9） |
 | 内置预设只读 | `BUILTIN_TEMPLATES` | 不变；绑定可指向内置 key | ADR 0152 I4 |
 | 内容模板范围 | `documents_contenttemplate` | 仍无内置行、无工作区级默认锚点；只新增「可选绑定排版模板」 | 需求 0169 |
+| 内容模板内置库 | `documents/services/content_builtins.py` | 只读代码常量，不落表、不进备份、无写端点；「无内置行 / 无默认锚点」仍成立 | ADR 0185 |
 | 文档元数据 | `PATCH /{doc_id}` | 新增一个纯视觉字段，不参与权限 / 可见性 | ADR 0161（H64 口径不变） |
 | 跨工作区移动 | `services/move.py` | 移动时清空 id 型 ref、保留 builtin | ADR 0155 |
 | 文档副本 | 需求 0172 | 副本复制绑定 | 需求 0172 |

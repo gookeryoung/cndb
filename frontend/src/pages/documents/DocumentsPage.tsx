@@ -332,11 +332,18 @@ export default function DocumentsPage() {
     onError: () => message.error('创建失败'),
   })
 
-  /** 模板选择弹层的数据（需求 0169 C4）：只在弹层打开时拉取 */
+  /** 模板选择弹层的数据（需求 0169 C4 / ADR 0185 D6）：只在弹层打开时拉取 */
   const contentTemplatesQuery = useQuery({
     queryKey: ['content-templates', workspaceId],
     queryFn: () => contentTemplateApi.list(workspaceId),
     enabled: templatePickerOpen,
+  })
+  // 内置库（ADR 0185 D4）：独立只读端点，用于选择器两级分组
+  const builtinTemplatesQuery = useQuery({
+    queryKey: ['content-templates-builtin', workspaceId],
+    queryFn: () => contentTemplateApi.listBuiltin(workspaceId),
+    enabled: templatePickerOpen,
+    staleTime: Infinity,
   })
   const templateItems = useMemo(() => {
     const items = contentTemplatesQuery.data?.items ?? []
@@ -348,6 +355,26 @@ export default function DocumentsPage() {
         (item.description ?? '').toLowerCase().includes(keyword),
     )
   }, [contentTemplatesQuery.data, templateKeyword])
+  /** 内置分类（搜索同时过滤两组，空分类自动隐藏） */
+  const builtinTemplateGroups = useMemo(() => {
+    const keyword = templateKeyword.trim().toLowerCase()
+    return (builtinTemplatesQuery.data?.categories ?? [])
+      .map(category => ({
+        ...category,
+        templates: keyword
+          ? category.templates.filter(
+              template =>
+                template.name.toLowerCase().includes(keyword) ||
+                (template.description ?? '').toLowerCase().includes(keyword),
+            )
+          : category.templates,
+      }))
+      .filter(category => category.templates.length > 0)
+  }, [builtinTemplatesQuery.data, templateKeyword])
+  const builtinTemplateCount = useMemo(
+    () => (builtinTemplatesQuery.data?.categories ?? []).reduce((sum, c) => sum + c.templates.length, 0),
+    [builtinTemplatesQuery.data],
+  )
 
   const duplicateMut = useMutation({
     mutationFn: (id: number) => documentsApi.duplicate(workspaceId, id),
@@ -1641,9 +1668,9 @@ export default function DocumentsPage() {
               </Button>
             }
           />
-        ) : contentTemplatesQuery.isLoading ? (
+        ) : contentTemplatesQuery.isLoading || builtinTemplatesQuery.isLoading ? (
           <Text type="secondary">加载模板…</Text>
-        ) : (contentTemplatesQuery.data?.items.length ?? 0) === 0 ? (
+        ) : (contentTemplatesQuery.data?.items.length ?? 0) + builtinTemplateCount === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有内容模板">
             <Button
               type="primary"
@@ -1664,43 +1691,99 @@ export default function DocumentsPage() {
               data-testid="content-template-search"
               onChange={e => setTemplateKeyword(e.target.value)}
             />
-            {templateItems.length === 0 ? (
+            {templateItems.length === 0 && builtinTemplateGroups.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的模板" />
             ) : (
-              <div style={{ maxHeight: 380, overflowY: 'auto' }}>
-                {templateItems.map(item => (
-                  <div
-                    key={item.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-disabled={createMut.isPending}
-                    data-testid={`content-template-option-${item.id}`}
-                    className="cn-qc-row cn-qc-row--selectable"
-                    onClick={() =>
-                      !createMut.isPending &&
-                      createMut.mutate({
-                        title: item.name,
-                        content: item.content_markdown,
-                        export_template_ref: item.export_template_ref,
-                      })
-                    }
-                    onKeyDown={e => {
-                      if ((e.key === 'Enter' || e.key === ' ') && !createMut.isPending) {
-                        createMut.mutate({
-                          title: item.name,
-                          content: item.content_markdown,
-                          export_template_ref: item.export_template_ref,
-                        })
-                      }
-                    }}
-                  >
-                    <CnListMeta
-                      avatar={item.icon || <SnippetsOutlined />}
-                      title={item.name}
-                      description={item.description || `${item.content_markdown.length} 字符`}
-                    />
+              <div style={{ maxHeight: 380, overflowY: 'auto' }} data-testid="content-template-picker-list">
+                {/* 内置库两级分组（ADR 0185 D6）：分类标题 + 条目，正文与绑定均取接口返回值 */}
+                {builtinTemplateGroups.map(category => (
+                  <div key={category.key} data-testid={`content-template-picker-category-${category.key}`}>
+                    <div className="cn-doc-tpl-group" role="presentation">
+                      <span className="cn-doc-tpl-group-title">{category.name}</span>
+                      <span>{category.templates.length}</span>
+                    </div>
+                    {category.templates.map(template => (
+                      <div
+                        key={template.ref}
+                        role="button"
+                        tabIndex={0}
+                        aria-disabled={createMut.isPending}
+                        data-testid={`content-template-option-${template.key}`}
+                        className="cn-qc-row cn-qc-row--selectable"
+                        onClick={() =>
+                          !createMut.isPending &&
+                          createMut.mutate({
+                            title: template.name,
+                            content: template.content_markdown,
+                            export_template_ref: template.export_template_ref,
+                          })
+                        }
+                        onKeyDown={e => {
+                          if ((e.key === 'Enter' || e.key === ' ') && !createMut.isPending) {
+                            createMut.mutate({
+                              title: template.name,
+                              content: template.content_markdown,
+                              export_template_ref: template.export_template_ref,
+                            })
+                          }
+                        }}
+                      >
+                        <CnListMeta
+                          avatar={template.icon || <SnippetsOutlined />}
+                          title={
+                            <span className="cn-doc-tpl-row-title">
+                              <Text strong>{template.name}</Text>
+                              <Tag>内置</Tag>
+                            </span>
+                          }
+                          description={template.description || `${template.content_markdown.length} 字符`}
+                        />
+                      </div>
+                    ))}
                   </div>
                 ))}
+                {/* 我的模板（自定义）：既有平铺不变（C6） */}
+                {templateItems.length > 0 && (
+                  <div data-testid="content-template-picker-custom">
+                    <div className="cn-doc-tpl-group" role="presentation">
+                      <span className="cn-doc-tpl-group-title">我的模板</span>
+                      <span>{templateItems.length}</span>
+                    </div>
+                    {templateItems.map(item => (
+                      <div
+                        key={item.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-disabled={createMut.isPending}
+                        data-testid={`content-template-option-${item.id}`}
+                        className="cn-qc-row cn-qc-row--selectable"
+                        onClick={() =>
+                          !createMut.isPending &&
+                          createMut.mutate({
+                            title: item.name,
+                            content: item.content_markdown,
+                            export_template_ref: item.export_template_ref,
+                          })
+                        }
+                        onKeyDown={e => {
+                          if ((e.key === 'Enter' || e.key === ' ') && !createMut.isPending) {
+                            createMut.mutate({
+                              title: item.name,
+                              content: item.content_markdown,
+                              export_template_ref: item.export_template_ref,
+                            })
+                          }
+                        }}
+                      >
+                        <CnListMeta
+                          avatar={item.icon || <SnippetsOutlined />}
+                          title={item.name}
+                          description={item.description || `${item.content_markdown.length} 字符`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </Space>

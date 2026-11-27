@@ -183,3 +183,156 @@ class TestContentTemplatesBackup:
 
         clear_workspace_content(wid, db)
         assert db.query(ContentTemplate).filter(ContentTemplate.workspace_id == wid).count() == 0
+
+
+class TestBuiltinContentLibrary:
+    """ADR 0185：内置库是代码常量，只读、不入库、不进备份."""
+
+    def test_category_and_template_keys_unique(self):
+        """I2：分类 key 唯一；模板 key 扁平全局唯一（跨分类也不重复）."""
+        from cndb.plugins.documents.services.content_builtins import (
+            BUILTIN_CONTENT_CATEGORIES,
+            BUILTIN_CONTENT_TEMPLATES,
+        )
+
+        category_keys = [c.key for c in BUILTIN_CONTENT_CATEGORIES]
+        assert len(category_keys) == len(set(category_keys))
+        # 模板 dict 的 key 与模板自身 key 一致，天然去重；再断言等价于列表长度
+        assert set(BUILTIN_CONTENT_TEMPLATES) == {t.key for t in BUILTIN_CONTENT_TEMPLATES.values()}
+
+    def test_every_template_belongs_to_existing_category(self):
+        """I2：模板 category 必须存在于分类常量."""
+        from cndb.plugins.documents.services.content_builtins import (
+            BUILTIN_CONTENT_CATEGORIES,
+            BUILTIN_CONTENT_TEMPLATES,
+        )
+
+        categories = {c.key for c in BUILTIN_CONTENT_CATEGORIES}
+        for template in BUILTIN_CONTENT_TEMPLATES.values():
+            assert template.category in categories, template.key
+
+    def test_ref_prefix_and_no_key_collision_with_export_templates(self):
+        """I3：ref 恒为 `builtin:<key>`，且与导出模板内置 key 集合无交集."""
+        from cndb.plugins.documents.services.content_builtins import BUILTIN_CONTENT_TEMPLATES
+        from cndb.plugins.documents.services.export.templates import BUILTIN_TEMPLATES
+
+        for key, template in BUILTIN_CONTENT_TEMPLATES.items():
+            assert template.ref == f"builtin:{key}"
+            assert key not in BUILTIN_TEMPLATES, f"内容模板 key 与导出模板内置 key 撞名：{key}"
+
+    def test_content_is_portable(self):
+        """I4：正文非空、不以一级标题起、不含任何动态引用."""
+        from cndb.plugins.documents.services.content_builtins import (
+            BUILTIN_CONTENT_TEMPLATES,
+            FORBIDDEN_CONTENT_SNIPPETS,
+        )
+
+        for key, template in BUILTIN_CONTENT_TEMPLATES.items():
+            body = template.content_markdown
+            assert body.strip(), key
+            assert body.lstrip().startswith("## "), key
+            assert "\n# " not in f"\n{body}", key
+            for snippet in FORBIDDEN_CONTENT_SNIPPETS:
+                assert snippet not in body, f"{key} 正文含动态引用 {snippet}"
+
+    def test_first_batch_sections(self):
+        """C3：首批 6 套覆盖立项 → 执行 → 结题，章节标题可断言."""
+        from cndb.plugins.documents.services.content_builtins import BUILTIN_CONTENT_TEMPLATES
+
+        expected = {
+            "research-pm.project-proposal": ["一、项目基本信息", "三、研究目标与研究内容", "六、经费预算"],
+            "research-pm.project-plan": ["二、任务分解（WBS）", "三、考核指标", "四、里程碑计划"],
+            "research-pm.progress-report": ["二、主要进展", "三、考核指标完成情况", "四、经费执行情况"],
+            "research-pm.weekly-report": ["一、本周进展", "三、风险与阻塞", "四、下周计划"],
+            "research-pm.meeting-notes": ["一、会议信息", "四、决议事项", "五、待办事项"],
+            "research-pm.final-report": ["二、任务与指标完成情况", "三、主要研究成果", "四、经费决算"],
+        }
+        assert set(BUILTIN_CONTENT_TEMPLATES) == set(expected)
+        for key, headings in expected.items():
+            body = BUILTIN_CONTENT_TEMPLATES[key].content_markdown
+            for heading in headings:
+                assert f"## {heading}" in body, f"{key} 缺章节：{heading}"
+
+    def test_library_follows_sort_order(self):
+        """I2：接口顺序即 sort_order 顺序，前端不重排."""
+        from cndb.plugins.documents.services.content_templates import list_builtin_content_templates
+
+        library = list_builtin_content_templates()
+        categories = library["categories"]
+        assert [c["key"] for c in categories] == ["research-pm"]
+        orders = [t["sort_order"] for t in categories[0]["templates"]]
+        assert orders == sorted(orders)
+        assert len(categories[0]["templates"]) == 6
+
+    def test_api_exposes_builtin_library(self, client, auth_headers):
+        """D4：`GET .../builtin` 成员可读，结构与常量一致；未被 `/{id}` 遮蔽."""
+        wid = _ws(client, auth_headers, "内置库读取")
+        base = API.format(wid=wid)
+
+        r = client.get(f"{base}/builtin", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert list(body) == ["categories"]
+        category = body["categories"][0]
+        assert category["key"] == "research-pm"
+        assert category["name"] == "科研项目管理"
+        template = category["templates"][0]
+        assert template["ref"] == "builtin:research-pm.project-proposal"
+        assert template["content_markdown"].startswith("## 一、项目基本信息")
+
+    def test_builtin_route_not_shadowed_by_id_route(self, client, auth_headers):
+        """回归：`/builtin` 不能被 `/{template_id}` 当成 int 解析（422）."""
+        wid = _ws(client, auth_headers, "内置库路由")
+        r = client.get(f"{API.format(wid=wid)}/builtin", headers=auth_headers)
+        assert r.status_code == 200, r.text
+
+    def test_custom_list_payload_unaffected(self, client, auth_headers):
+        """C6：内置库不出现在自定义列表的 items / total 中."""
+        wid = _ws(client, auth_headers, "内置库不影响列表")
+        _create(client, wid, auth_headers, "周报")
+        body = client.get(API.format(wid=wid), headers=auth_headers).json()
+        assert body["total"] == 1
+        assert all(item["name"] != "项目周报" for item in body["items"])
+
+    def test_builtin_ref_is_invalid_template_id(self, client, auth_headers):
+        """内置无写端点：以 `builtin:xx` 取单条按非法 id 处理（422）."""
+        wid = _ws(client, auth_headers, "内置库无写路径")
+        r = client.get(f"{API.format(wid=wid)}/builtin:research-pm.weekly-report", headers=auth_headers)
+        assert r.status_code == 422, r.text
+
+    def test_non_member_cannot_read_builtin(self, client, auth_headers):
+        """H64：内置库同自定义列表同一门槛（成员可读）."""
+        wid = _ws(client, auth_headers, "内置库私密")
+        r = client.post(
+            "/api/v1/accounts/auth/register",
+            json={"username": "builtin_outsider", "email": "builtin_outsider@example.com", "password": "passw0rd"},
+        )
+        assert r.status_code in (200, 201), r.text
+        r = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": "builtin_outsider", "password": "passw0rd"},
+        )
+        outsider = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        r = client.get(f"{API.format(wid=wid)}/builtin", headers=outsider)
+        assert r.status_code in (403, 404), r.text
+
+    def test_backup_has_no_builtin_entries(self, db, client, auth_headers, tmp_path):
+        """I1：备份 `content_templates[]` 与内置库无交集."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.documents.services.content_builtins import (
+            BUILTIN_CONTENT_TEMPLATES,
+            builtin_content_ref,
+        )
+        from cndb.plugins.workspaces.services.workspace_backup import build_workspace_backup_v17
+
+        wid = _ws(client, auth_headers, "内置库备份")
+        _create(client, wid, auth_headers, "会议纪要")
+        owner = db.query(User).filter(User.username == "testuser").first()
+        assert owner is not None
+        backup, _files = build_workspace_backup_v17(db, wid, owner, rows_dir=tmp_path)
+        names = {row["name"] for row in backup["content_templates"]}
+        builtin_names = {t.name for t in BUILTIN_CONTENT_TEMPLATES.values()}
+        assert names == {"会议纪要"}
+        assert names.isdisjoint(builtin_names)
+        assert not any(str(row.get("name", "")).startswith("builtin:") for row in backup["content_templates"])
+        assert builtin_content_ref("research-pm.weekly-report") not in str(backup["content_templates"])

@@ -2,6 +2,9 @@
 
 内容模板是工作区级 Markdown 正文骨架，供「从模板新建文档」使用。
 与导出模板（ADR 0152）完全独立：不参与导出渲染、不预置内置行、无默认锚点。
+
+内置库（ADR 0185）是**代码常量**：不落表、不进备份、无写端点，因此本模块只有
+读入口 ``list_builtin_content_templates``，不参与任何写路径。
 """
 
 from __future__ import annotations
@@ -15,9 +18,28 @@ from cndb.core.errors import BadRequestError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import ContentTemplate
 from cndb.plugins.documents.services import templates_common
+from cndb.plugins.documents.services.content_builtins import (
+    BuiltinContentTemplate,
+    builtin_content_library,
+    builtin_content_template,
+)
 from cndb.plugins.documents.services.export import templates as template_cfg
 
 _TABLE = ContentTemplate
+
+
+def list_builtin_content_templates() -> dict[str, Any]:
+    """内置库（ADR 0185 D1 / D4）：代码常量，只读、不入库、不分页.
+
+    返回 ``{"categories": [...]}``；分类与模板都已按 ``sort_order`` 排序并校验 I2 / I4。
+    与自定义列表端点分离，避免 ``id`` 从 ``int`` 变字符串（D4）。
+    """
+    return builtin_content_library()
+
+
+def get_builtin_content_template(key: str) -> BuiltinContentTemplate | None:
+    """按 key 取内置模板（I3：``ref = builtin:<key>`` 的 key 部分）."""
+    return builtin_content_template(key)
 
 
 def _validated_ref(db: Session, workspace_id: int, ref: str | None) -> str | None:
@@ -182,7 +204,9 @@ __all__ = [
     "create_content_template",
     "delete_content_template",
     "duplicate_content_template",
+    "get_builtin_content_template",
     "get_content_template",
+    "list_builtin_content_templates",
     "list_content_templates",
     "resolve_template_content",
     "update_content_template",
