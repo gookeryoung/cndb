@@ -47,11 +47,57 @@
       "totalBytes": 1317968
     }
   },
-  "ci": {},
+  "ci": {
+    "coldGrid": {
+      "lcp": 812,
+      "fcp": 412,
+      "ttfb": 3,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1316069
+    },
+    "documentView": {
+      "lcp": 616,
+      "fcp": 616,
+      "ttfb": 3,
+      "jsBytes": 824703,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 994573
+    },
+    "gridInteraction": {
+      "lcp": 824,
+      "fcp": 424,
+      "ttfb": 4,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1317211
+    },
+    "gridPaging": {
+      "lcp": 812,
+      "fcp": 412,
+      "ttfb": 4,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1316069
+    },
+    "gridInlineEdit": {
+      "lcp": 804,
+      "fcp": 412,
+      "ttfb": 3,
+      "jsBytes": 1159320,
+      "cssBytes": 30676,
+      "fontBytes": 112109,
+      "totalBytes": 1317965
+    }
+  },
   "_meta": {
-    "environment": "local",
+    "environment": "ci",
     "runs": 3,
-    "reason": "本地三轮中位数（ADR 0116 P3）",
-    "updatedAt": "2026-11-27T06:25:54.881Z"
+    "reason": "CI 口径 3 轮中位数（本地复现 runner：CI=true + 隔离后端 + 静态产物）",
+    "updatedAt": "2026-11-27T06:36:39.655Z"
   }
 }

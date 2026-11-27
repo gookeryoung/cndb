@@ -1,6 +1,6 @@
 # ADR 0153: 多工作区统一管理（团队层 + 工作区权限边界）
 
-Status: Proposed（待评审）
+Status: Accepted（P0 / P1 / P2 / P3 全部落地，2026-11-27 人工评审通过；P3「工作区链接」由 ADR 0154 承接实现）
 Date: 2026-11-25
 Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/deps.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/design/models.py`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`docs/CONSTRAINTS.md`
 需求卡片: `docs/requirements/0153-multi-workspace-team-model.md`（需求原文与约束编号的唯一副本）
@@ -274,8 +274,8 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 / P3 全部已落地（P3「工作区链接」按 C6 另立为 ADR 0154 并已 Implementation，本文档不再单独承载）；`Status` 仍为 `Proposed`，**仅剩人工评审这一卡点**（H5 / H7），评审通过后改 `Accepted` 即可。
+- 当前阶段：P0 / P1 / P2 / P3 全部已落地（P3「工作区链接」按 C6 另立为 ADR 0154 并已 Implemented，本文档不再单独承载）；2026-11-27 人工评审通过，`Status` 已置 `Accepted`。
 - 已完成：需求卡片 0153（C1-C9）；ADR 决策记录 D1-D11 与不变量 I1-I8；H49-H52 已登记；P0 能力位抽取 + `GET /{wid}/capabilities` + 前端 `useCapabilities`；P1 团队域（迁移 / 团队 API / 团队页 / 两平面分离 / `public` 可见性 / 团队 403 文案 / 备份提示性 `team`）；P2（`allow_member_invite` 自助加入 `POST /{wid}/join`、设计库 `visibility=team`、`GET /teams/{id}/search` 团队内检索、`team.*` 事件与检索缓存失效）
-- 下一步：① **人工评审**：确认 D1-D11 / I1-I8 与已落地实现一致后，把 `Status` 改为 `Accepted`（`docs/adr/README.md` 索引同批改）；② `private` 收紧已落地（迁移 `f2b3c4d5e6a7`，见已知坑 ①），无需再做；③ P3 已由 ADR 0154 承接落地；④ 团队内检索前端入口已接（TeamPage「团队内搜索」），如需顶栏全局入口再评估性能
+- 下一步：无（全部期次已落地、评审已通过）。延伸项按需另立：团队内检索的顶栏全局入口（当前只在 TeamPage，如需全局入口先评估性能）；`private` 收紧已落地（迁移 `f2b3c4d5e6a7`，见已知坑 ①）。
 - 已知坑：① `visibility=private` 已收紧（迁移 `f2b3c4d5e6a7` 先把存量 `private` 归一为 `member`，再启用「仅所有者」语义）；downgrade 为**空操作**——旧版代码不读取该字段，回滚数据反而会篡改用户意图；② 其他插件仍直接调 `get_member_role`（数据面视图，与 `resolve_capabilities().data_role` 等价），P2 若引入「可见性收紧 / 策略默认」，这些入口会与能力位不一致，须同批切换；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时以 `/capabilities` 为准；④ SQLite 不支持 ADD CONSTRAINT，团队迁移用 `batch_alter_table(recreate='always')` 重建 `workspaces_workspace`，大库升级耗时随工作区表规模增长（一次性）
 - 最近一次全绿：`make check-fast` + `make cov`（7398 passed，95.03%）+ 前端 `vitest run`（受影响目录 113 passed；全量由并行会话的 0152 模板重构占用，非本 ADR 回归）@ `a372931a`（2026-11-25）

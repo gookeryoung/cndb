@@ -1,6 +1,6 @@
 # ADR 0159: 多链接汇总与跨工作区关联（分析数据源 P3）
 
-Status: Proposed（待评审）
+Status: Implemented（P0 / P1 / P2 全部落地，P3 明确不做；2026-11-27 评审通过）
 Date: 2026-11-25
 Related: `src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/workspaces/services/links.py`、`frontend/src/pages/analytics/AnalyticsPage.tsx`、`docs/CONSTRAINTS.md`
 需求卡片: `docs/requirements/0159-multi-link-union-and-join.md`（需求原文与约束编号的唯一副本）
@@ -220,8 +220,8 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0（union）/ P1（join）/ P2（前端 + e2e）全部落地；P3 明确不做
+- 当前阶段：P0（union）/ P1（join）/ P2（前端 + e2e）全部落地；P3 明确不做。2026-11-27 评审通过，`Status` 已置 `Implemented`。
 - 已完成：需求卡片 0159（C1-C10）；ADR 决策记录 D1-D9、不变量 L1-L6；P0（`union`：列映射、类型严格同族、fail-closed、共享扫描额度、列名固化、模板校验；`compute_rows` 抽出复用）；P1（`join`：左 = 表 / 链接、右 = 链接，仅 `left` / `inner`，**左表驱动**，右表未匹配行不出现（H62），冲突列 `left.` / `right.`、右表关联键不重复输出，关联键必须可见（隐藏 → 400），表侧同样按字段隐藏裁剪）；P2（数据源下拉「组合数据源」入口；`CompositeSourceModal` 配置 union 列映射 / join 左右与关联键；`unionAutoColumns` 仅映射同名且同族输入；`compositeInputStatuses` 逐项标注可读 / 已失效并禁用运行（C8）；validate / compute / 模板保存均携带 `source`，复合源 `filters=[]`；另存模板固化 `config.source`，深链重开可还原）；H61-H63 已登记
-- 下一步：无（P0-P2 全部落地，P3 明确不做）。验收如需全量回归：`make e2e`（含前端构建 + 隔离数据）。**仅剩人工评审**：`Status` 仍为 `Proposed`，确认 D1-D9 / L1-L6 与实现一致后改 `Accepted`（`docs/adr/README.md` 索引同批改）——按 H5 / H7 由人拍板，自动化流程不改状态
+- 下一步：无（P0-P2 全部落地，P3 明确不做，评审已通过）。验收如需全量回归：`make e2e`（含前端构建 + 隔离数据）。
 - 已知坑：① **join 必须由左表驱动**（`left` / `inner` 都用左表行集迭代），否则右表未匹配行会泄露存在性；② 列映射 / 关联键的可见性校验要在保存期做（执行期只兜底），否则模板存下来必然失败；③ 复合源的字段清单要固化进 `config`（L4），不要执行期重新推导；④ 扫描额度是**共享预算**，实现时先扣再取，避免 5 个输入各自取满；⑤ 单源路径不要顺手重构（0158 的既有用例是回归基线）；⑥ union 类型族必须覆盖字段 registry 的**真实类型名**（`float` / `longtext` / `timestamp`），并与前端 `fieldFamily` 同口径——漏 `float` 会让真实小数表（如「预算金额」）被误判跨族 400；⑦ 自动列映射只能映射**同名且同族**的输入（如 lookup vs text 不能混映射），否则生成必然校验失败的配置；⑧ 同一张源表只允许一条生效中链接（ADR 0154 §4.2），e2e 建 union 需用**两张不同表**；e2e 走 `src/cndb/static` 静态产物，改前端后先 `pnpm build`（`make e2e` 已内置）
 - 最近一次全绿：`make check-fast`（0 error）+ `make test`（7629 passed，17 skipped）+ 前端全量 283 文件 / 3488 passed + `analytics-union-join.spec.ts`（2 passed，含 setup）@ P2（2026-11-25）
