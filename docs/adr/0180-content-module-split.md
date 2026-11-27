@@ -157,7 +157,7 @@ Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/018
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/documents/services/content/` | `tests/test_documents_content_split.py` | ``5840ca05`` |
-| P1 | 未开始 | — | — | — |
+| P1 | 已落地 | `src/cndb/plugins/documents/services/content/write.py`、`src/cndb/plugins/documents/services/content/trash.py` | `tests/test_documents_content_split.py` | ``591c2a79`` |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
 
@@ -165,10 +165,11 @@ Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/018
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（包结构 + `storage` / `access` + `_legacy.py`，原 `content.py` 删除），P1-P3 未开始。
-- 下一步：P1 搬 `write.py` / `trash.py`——`create_document` 被字符串 patch（`tests/test_cov_workspaces_extra.py:289`），搬走后**必须保证包顶层仍是调用实际取值点**（D3 双轨），`_legacy.py` 内跨模块调用保持 `import ... as _pkg` 再 `_pkg.create_document(...)`。
+- 当前阶段：P0 / P1 已落地（包结构 + `storage` / `access` / `write` / `trash`，原 `content.py` 删除；`_legacy.py` 769 行仍托管 links / tags / fts / serialize / graph / duplicate），P2-P3 未开始。
+- 下一步：P2 搬 `links.py` / `tags.py` / `fts.py` / `serialize.py`——`_legacy.py` 内 `repair_wikilinks` 会调 `update_content`（现在 write.py）与 `serialize_document`，搬 links 时必须经 `_pkg.repair_wikilinks(...)` / `_pkg.update_content(...)` 解析；`_refresh_tag_counts` 被 `routers/tags.py:24` 直接 import，搬走后包顶层必须仍是同一对象。
 - 已知坑：
   - `EXTERNAL_MIN_SIZE` 原先是从 `cndb.plugins.documents.models` 导入到 `content` 模块命名空间的**隐式转发**，拆包后三个测试（`test_documents_robustness.py:29`、`test_documents_storage_gc.py:17`、`test_workspace_storage_usage.py:157`）通过 `content_service.EXTERNAL_MIN_SIZE` 取它——P0 已在 `__init__.py` 显式再导出，否则收集期直接 `AttributeError`。
   - 包顶层 `_DOCS_DIR` 的赋值块必须放在 import 之后（放到前面会触发 ruff `E402`）。
   - 删掉 `content.py` 会让 `make adr-check` 报一批 `Related 路径不存在`（历史 ADR 里 `services/content.py` 与带行号的 `content.py:87-96` 全部失效），已统一改成 `services/content/` 目录；改的是「当时的证据路径」，行号一并失效属预期。
   - `_legacy.py` 是过渡文件（1332 行），结构测试对它放宽到 1400 行上限；P3 删除后该放宽项要一起去掉。
+  - P1 起 `write.py` / `trash.py` 对同包的 import 只允许 `access` / `storage`（结构测试白名单校验）——写路径需要 `_apply_tags` / `sync_fts` 时**不能** `from .tags import ...`（tags / fts 在 P2 才拆且属上层），一律 `_pkg.<name>(...)` 延迟解析，包内依赖图才保持无环。

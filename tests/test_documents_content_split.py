@@ -237,6 +237,30 @@ def test_private_symbols_still_importable() -> None:
     assert callable(_serialize_document)
 
 
+def test_write_and_trash_depend_only_downward() -> None:
+    """I2：write / trash 只依赖同包的 access、storage 与包自身（P1）."""
+    for name in ("write.py", "trash.py"):
+        deps = _module_imports(PKG_DIR / name)
+        assert deps <= {"access", "storage"}, f"{name} 依赖越界：{sorted(deps)}"
+        source = (PKG_DIR / name).read_text(encoding="utf-8")
+        assert "_pkg." in source, f"{name} 跨模块调用未经包属性解析"
+
+
+def test_moved_symbols_live_in_their_module() -> None:
+    """P1：write / trash 的符号已搬离 _legacy，且包顶层仍指向同一对象."""
+    from cndb.plugins.documents.services.content import trash as trash_mod
+    from cndb.plugins.documents.services.content import write as write_mod
+
+    assert write_mod.create_document is content_pkg.create_document
+    assert write_mod.update_content is content_pkg.update_content
+    assert write_mod.rollback_version is content_pkg.rollback_version
+    assert trash_mod.purge_document is content_pkg.purge_document
+    assert trash_mod.restore_document is content_pkg.restore_document
+    legacy = importlib.import_module(f"{PKG_PREFIX}._legacy")
+    assert not hasattr(legacy, "create_document")
+    assert not hasattr(legacy, "purge_document")
+
+
 def test_reexported_mutable_state_reads_through_package() -> None:
     """D3：包顶层 patch 的函数/常量，包内调用点必须经包属性解析才能生效."""
     source = (PKG_DIR / "_legacy.py").read_text(encoding="utf-8")
