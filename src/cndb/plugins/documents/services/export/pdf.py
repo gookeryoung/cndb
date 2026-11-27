@@ -45,6 +45,11 @@ from cndb.plugins.documents.services.export.markdown_blocks import (
     parse_inline,
     plain_text,
 )
+from cndb.plugins.documents.services.export.numbering import (
+    has_explicit_caption_number,
+    heading_level_offset,
+    resolve_heading_numbering,
+)
 from cndb.plugins.documents.services.export.pdf_fonts import _ensure_pdf_font, ensure_pdf_font
 from cndb.plugins.documents.services.export.table_refs import TableResolver, parse_table_ref_line
 from cndb.plugins.documents.services.export.templates import (
@@ -503,8 +508,18 @@ def _render_pdf(
     counters = [0] * 6
     figure_no = 0
     table_no = 0
+    segments = split_inline_chart_segments(markdown_text)
+    plain_blocks = [parse_blocks(segment) for segment in segments if isinstance(segment, str)]
+
+    # 编号权威判定（ADR 0186 I1 / I2）：全篇只看一次，正文自带序号则模板编号让位
+    all_blocks = [block for blocks_ in plain_blocks for block in blocks_]
+    heading_scheme = resolve_heading_numbering(cfg.numbering.mode, cfg.numbering.heading, all_blocks)
+    # 正文最高一级标题视为编号第 1 级（文档标题由文件名 / core_properties.title 承担）
+    number_offset = heading_level_offset(all_blocks)
 
     def _caption_text(kind: str, style_cfg: Any, number: int, text: str) -> str:
+        if has_explicit_caption_number(text):  # 正文已自带「图 1」，不叠加
+            return text.strip()
         label = "图" if kind == "figure" else "表"
         if style_cfg.numbering == "n-n":
             return f"{label} {counters[0] or 1}-{number}　{text}".strip()
@@ -614,8 +629,8 @@ def _render_pdf(
 
     def _add_heading(block: HeadingBlock) -> None:
         level = min(max(block.level, 1), 6)
-        advance_counters(counters, level)
-        prefix = heading_prefix(cfg.numbering.heading, level, counters)
+        advance_counters(counters, max(level - number_offset, 1))
+        prefix = heading_prefix(heading_scheme, max(level - number_offset, 1), counters)
         text = _pdf_text_rml(block.spans, heading_fonts[level], bold=cfg.heading(level).bold)
         if prefix:
             text = f"{_pdf_escape(prefix)} {text}"
@@ -689,7 +704,7 @@ def _render_pdf(
             if table_caption and caption_cfg.position == "below":
                 _add_caption("table", caption_cfg, table_no, table_caption)
 
-    for segment in split_inline_chart_segments(markdown_text):
+    for segment in segments:
         if isinstance(segment, str):
             _add_blocks(parse_blocks(segment))
             continue

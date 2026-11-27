@@ -484,6 +484,24 @@ class TestExportWithTemplate:
         assert r.status_code == 200
         assert r.content[:4] == b"%PDF"
 
+    def test_export_docx_does_not_double_handwritten_numbers(self, client, ws, owner_headers):
+        """ADR 0186 C1 / H72：正文已写序号的文档导出时不再叠加模板编号."""
+        body = "## 一、项目基本信息" + chr(10) + chr(10) + "正文" + chr(10)
+        doc_id = _create_doc(client, ws, owner_headers, body)
+        r = _export(client, ws, doc_id, owner_headers, format="docx", template="builtin:official")
+        assert r.status_code == 200
+        document = Document(io.BytesIO(r.content))
+        heading = next(p for p in document.paragraphs if "项目基本信息" in p.text)
+        assert heading.text.strip() == "一、项目基本信息"
+
+    def test_export_markdown_never_adds_numbering(self, client, ws, owner_headers):
+        """ADR 0186 C7 / I3：md 导出与最新正文逐字一致（自动编号只在 docx / pdf 渲染期）."""
+        body = "## 项目基本信息" + chr(10) + chr(10) + "正文" + chr(10)
+        doc_id = _create_doc(client, ws, owner_headers, body)
+        r = _export(client, ws, doc_id, owner_headers, format="md", template="builtin:research")
+        assert r.status_code == 200
+        assert r.content.decode("utf-8") == body
+
     def test_markdown_ignores_template(self, client, ws, owner_headers):
         doc_id = _create_doc(client, ws, owner_headers, "# 一\n\n正文\n")
         r = _export(client, ws, doc_id, owner_headers, format="md", template="builtin:thesis")
@@ -514,7 +532,8 @@ class TestDocxTemplateFeatures:
         assert not any(text.startswith("表：") for text in texts)
 
     def test_heading_numbering_and_page_footer(self):
-        document = self._docx("# 一\n\n## 二\n", "official")
+        # ADR 0186：编号权威归模板，正文只写层级（旧用例用「# 一」当正文，本身就是叠加反例）
+        document = self._docx("# 概述\n\n## 背景\n", "official")
         texts = [p.text for p in document.paragraphs if p.text.strip()]
         assert texts[0].startswith("一、")
         assert texts[1].startswith("（一）")
@@ -725,6 +744,23 @@ class TestStoreBranches:
         assert updated.status_code == 200
         assert updated.json()["is_default"] is False
         assert updated.json()["config"]["numbering"]["heading"] == "arabic_multilevel"
+        # ADR 0186 C3：新增 mode 字段随配置往返，缺键时读回 auto
+        assert updated.json()["config"]["numbering"]["mode"] == "auto"
+
+    def test_numbering_mode_roundtrip_and_validation(self, client, ws, owner_headers):
+        """ADR 0186 C3：`mode` 可选值 auto / force / off，非法值拒绝."""
+        created = client.post(
+            TEMPLATES.format(ws=ws.id), json={"name": "编号方式", "preset_key": "research"}, headers=owner_headers
+        ).json()
+        url = f"{TEMPLATES.format(ws=ws.id)}/{created['ref']}"
+        config = config_to_dict(BUILTIN_TEMPLATES["research"].config)
+        config["numbering"]["mode"] = "force"
+        updated = client.put(url, json={"config": config}, headers=owner_headers)
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["config"]["numbering"]["mode"] == "force"
+
+        config["numbering"]["mode"] = "always"
+        assert client.put(url, json={"config": config}, headers=owner_headers).status_code in (400, 422)
 
     def test_workspace_missing_is_404(self, client, owner_headers):
         assert client.get(TEMPLATES.format(ws=999999), headers=owner_headers).status_code == 404

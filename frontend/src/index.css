@@ -10635,6 +10635,14 @@ body.cn-doc-focus-view .cn-doc-stats {
   line-height: 1.4;
 }
 
+/* 编号方式提示（ADR 0186）：仅在 force 档出现，提示可能重复编号 */
+.cn-doc-tpl-hint {
+  margin-top: var(--cn-space-xs);
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-warning, #d46b08);
+  line-height: 1.4;
+}
+
 .cn-doc-tpl-field-control {
   min-width: 0;
   display: flex;

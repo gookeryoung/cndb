@@ -57,6 +57,7 @@
 | H31 | 首屏 / 受控 chunk 禁止静态引入重型依赖（echarts / jspdf / html2canvas-pro / nunjucks 等）与按需弹层（Dialog / Modal / Drawer / Manager / Editor），必须 lazy 到按需 chunk | `make frontend-static` | 全局 |
 | H32 | `bundle-budget` 基线 / 上限只能经脚本调整：必须带 `--reason`，`--set-budget` 必须 `--only`，禁止手改 JSON；单次基线上调 >10% 须在 PR 说明 | `frontend/scripts/bundle-budget.mjs` | 全局 |
 | H71 | 内置内容模板正文禁动态引用：`documents/services/content_builtins.py` 的正文只能是纯 Markdown，禁止 `{{table:…}}` / `[[双链]]` / `/w/` / `documents?` 等工作区 · 文档 · 用户相关引用，新增内置模板同样受约束（否则任意工作区新建即产生悬空引用） | `make test` | ADR 0185 I4 |
+| H72 | 标题编号单一权威：一次导出的标题序号只能由一个层产生——正文（含内容模板骨架）出现显式序号时导出模板编号必须让位，不得叠加、不得报错、不得改动用户正文；是否让位只由正文标题块判定（全篇 all-or-nothing，与模板配置 / 文档状态 / 权限无关）；判定只发生在 docx / pdf 渲染期，`format=md` 与压缩包导出不写序号；判定失败按「不叠加」静默降级（记 debug 日志，不中断导出） | `make test` | ADR 0186 I1 |
 
 ## 权限与安全
 

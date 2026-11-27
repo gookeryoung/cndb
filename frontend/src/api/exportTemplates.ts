@@ -19,6 +19,8 @@ export type TemplateLineRule = 'multiple' | 'fixed'
 export type TemplatePageNumber = 'none' | 'plain' | 'page' | 'page_of_total'
 /** 标题自动编号方案 */
 export type TemplateHeadingNumbering = 'none' | 'arabic_multilevel' | 'chapter_chinese' | 'cn_ordinal'
+/** 编号叠加时机（ADR 0186）：auto = 正文自带序号时让位；force = 总是叠加；off = 从不编号 */
+export type TemplateNumberingMode = 'auto' | 'force' | 'off'
 /** 表格样式：全网格 / 三线表 */
 export type TemplateTableStyle = 'single' | 'three_line'
 /** 列表项目符号 */
@@ -119,7 +121,7 @@ export interface ExportTemplateConfig {
   header_footer: TemplateHeaderFooter
   body: TemplateBody
   headings: TemplateHeading[]
-  numbering: { heading: TemplateHeadingNumbering }
+  numbering: { heading: TemplateHeadingNumbering; mode: TemplateNumberingMode }
   table: TemplateTable
   captions: TemplateCaptions
   lists: TemplateList

@@ -32,6 +32,7 @@ export type {
 } from './charts'
 export { tableApi, tableGroupApi, fieldApi, auditApi, permissionApi, tableMembersApi, rowPermissionApi } from './tables'
 export type { DdlImpact } from './tables'
+export type { LinkGraph, LinkGraphEdge, LinkGraphNode, LinkGraphTargetState } from './types'
 export { recordApi } from './records'
 export type {
   AggregateMetricPayload,
@@ -112,6 +113,7 @@ export type {
   TemplateLineRule,
   TemplateList,
   TemplateListMarker,
+  TemplateNumberingMode,
   TemplatePage,
   TemplatePageNumber,
   TemplatePaper,

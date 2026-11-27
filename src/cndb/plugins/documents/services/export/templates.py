@@ -32,6 +32,7 @@ ALIGNS: tuple[str, ...] = ("left", "center", "right", "justify")
 LINE_SPACING_RULES: tuple[str, ...] = ("multiple", "fixed")
 PAGE_NUMBER_MODES: tuple[str, ...] = ("none", "plain", "page", "page_of_total")
 HEADING_NUMBERING: tuple[str, ...] = ("none", "arabic_multilevel", "chapter_chinese", "cn_ordinal")
+HEADING_NUMBERING_MODES: tuple[str, ...] = ("auto", "force", "off")
 TABLE_STYLES: tuple[str, ...] = ("single", "three_line")
 LIST_MARKERS: tuple[str, ...] = ("bullet", "dash", "dot")
 CAPTION_POSITIONS: tuple[str, ...] = ("above", "below")
@@ -110,11 +111,20 @@ class HeadingConfig(BaseModel):
 
 
 class NumberingConfig(BaseModel):
-    """标题自动编号方案."""
+    """标题自动编号方案 + 叠加时机（ADR 0186）.
+
+    ``mode`` 决定模板编号何时生效（编号权威只有模板一处，正文自带序号时让位）：
+
+    - ``auto``（默认）：正文标题已含显式序号（``一、`` / ``3.1`` / ``第一章``）时本次
+      导出不叠加，否则按 ``heading`` 生成；
+    - ``force``：始终按 ``heading`` 生成（升级前行为，可能产生重复编号）；
+    - ``off``：从不生成编号（语义是「这篇不要编号」，与 ``heading="none"`` 区分）。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     heading: Literal["none", "arabic_multilevel", "chapter_chinese", "cn_ordinal"] = "none"
+    mode: Literal["auto", "force", "off"] = "auto"
 
 
 class TableConfig(BaseModel):
@@ -895,6 +905,7 @@ __all__ = [
     "DEFAULT_TEMPLATE_KEY",
     "DEFAULT_TEMPLATE_REF",
     "HEADING_NUMBERING",
+    "HEADING_NUMBERING_MODES",
     "LINE_SPACING_RULES",
     "LIST_MARKERS",
     "PAGE_NUMBER_MODES",

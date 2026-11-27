@@ -236,22 +236,36 @@ class TestBuiltinContentLibrary:
                 assert snippet not in body, f"{key} 正文含动态引用 {snippet}"
 
     def test_first_batch_sections(self):
-        """C3：首批 6 套覆盖立项 → 执行 → 结题，章节标题可断言."""
+        """C3 + ADR 0186 D6：首批 6 套覆盖立项 → 执行 → 结题，章节标题可断言（标题不带序号）."""
         from cndb.plugins.documents.services.content_builtins import BUILTIN_CONTENT_TEMPLATES
 
         expected = {
-            "research-pm.project-proposal": ["一、项目基本信息", "三、研究目标与研究内容", "六、经费预算"],
-            "research-pm.project-plan": ["二、任务分解（WBS）", "三、考核指标", "四、里程碑计划"],
-            "research-pm.progress-report": ["二、主要进展", "三、考核指标完成情况", "四、经费执行情况"],
-            "research-pm.weekly-report": ["一、本周进展", "三、风险与阻塞", "四、下周计划"],
-            "research-pm.meeting-notes": ["一、会议信息", "四、决议事项", "五、待办事项"],
-            "research-pm.final-report": ["二、任务与指标完成情况", "三、主要研究成果", "四、经费决算"],
+            "research-pm.project-proposal": ["项目基本信息", "研究目标与研究内容", "经费预算"],
+            "research-pm.project-plan": ["任务分解（WBS）", "考核指标", "里程碑计划"],
+            "research-pm.progress-report": ["主要进展", "考核指标完成情况", "经费执行情况"],
+            "research-pm.weekly-report": ["本周进展", "风险与阻塞", "下周计划"],
+            "research-pm.meeting-notes": ["会议信息", "决议事项", "待办事项"],
+            "research-pm.final-report": ["任务与指标完成情况", "主要研究成果", "经费决算"],
         }
         assert set(BUILTIN_CONTENT_TEMPLATES) == set(expected)
         for key, headings in expected.items():
             body = BUILTIN_CONTENT_TEMPLATES[key].content_markdown
             for heading in headings:
                 assert f"## {heading}" in body, f"{key} 缺章节：{heading}"
+
+    def test_builtin_headings_carry_no_explicit_numbers(self):
+        """ADR 0186 C5 / D6：内置骨架标题行不带手写序号（编号归导出模板）."""
+        import re
+
+        from cndb.plugins.documents.services.content_builtins import BUILTIN_CONTENT_TEMPLATES
+        from cndb.plugins.documents.services.export.markdown_blocks import parse_blocks
+        from cndb.plugins.documents.services.export.numbering import has_explicit_heading_numbers
+
+        numbered = re.compile(r"^#{2,6}\s+(?:[一二三四五六七八九十]+、|[0-9]+(?:\.[0-9]+)*\.?\s)")
+        for key, template in BUILTIN_CONTENT_TEMPLATES.items():
+            for line in template.content_markdown.splitlines():
+                assert not numbered.match(line), f"{key} 标题仍带序号：{line}"
+            assert not has_explicit_heading_numbers(parse_blocks(template.content_markdown)), key
 
     def test_library_follows_sort_order(self):
         """I2：接口顺序即 sort_order 顺序，前端不重排."""
@@ -278,7 +292,7 @@ class TestBuiltinContentLibrary:
         assert category["name"] == "科研项目管理"
         template = category["templates"][0]
         assert template["ref"] == "builtin:research-pm.project-proposal"
-        assert template["content_markdown"].startswith("## 一、项目基本信息")
+        assert template["content_markdown"].startswith("## 项目基本信息")
 
     def test_builtin_route_not_shadowed_by_id_route(self, client, auth_headers):
         """回归：`/builtin` 不能被 `/{template_id}` 当成 int 解析（422）."""

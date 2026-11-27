@@ -1201,6 +1201,29 @@ class TestConstraints:
         second = json.dumps(_ok(content, resolver=_two_parts_resolver()), sort_keys=True)
         assert first == second
 
+    def test_known_end_author_pose_is_respected(self):
+        """已知端带作者变换时，求解按「求解位姿 ∘ 作者位姿」定位（回归：曾误报冲突）."""
+        ir = _ok(
+            'translate([100, 0, 0]) use "wheel" as w\n'
+            'use "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 coincident(a = w.origin, b = a.origin, offset = [0, 0, 12])",
+            resolver=_two_parts_resolver(),
+        )
+        # axle 作者位姿在 z 轴无位移：附加位姿 = 已知端世界点 + offset - 自身作者位姿
+        assert ir["nodes"][1]["transform"]["ops"] == [["translate", [100.0, 0.0, 12.0]]]
+        assert all(entry["status"] == "ok" for entry in ir["constraints"])
+
+    def test_known_end_author_pose_distance(self):
+        ir = _ok(
+            'translate([50, 0, 0]) use "wheel" as w\n'
+            'use "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 distance(a = w.origin, b = a.origin, value = 40)",
+            resolver=_two_parts_resolver(),
+        )
+        assert ir["nodes"][1]["transform"]["ops"] == [["translate", [10.0, 0.0, 0.0]]]
+
     def test_unlabeled_instances_keep_author_pose(self):
         ir = _ok(
             'use "wheel"\nuse "axle"\nbox(w = 1, h = 1, d = 1)',

@@ -214,6 +214,23 @@ describe('文档内容模板页（需求 0169）', () => {
 
     await waitFor(() => expect(savedPayload).toMatchObject({ export_template_ref: 'builtin:thesis' }))
   })
+
+  it('「去除标题序号」只剥标题行序号，保存后生效（ADR 0186 C6）', async () => {
+    renderPage()
+    expect(await screen.findByTestId('content-template-row-1')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('template-markdown'), {
+      target: { value: '## 一、会议信息\n\n1. 第一条待办\n' },
+    })
+    fireEvent.click(screen.getByTestId('content-template-strip-numbers'))
+    expect(screen.getByTestId('template-markdown')).toHaveValue('## 会议信息\n\n1. 第一条待办\n')
+    // 无序号标题时按钮禁用
+    expect(screen.getByTestId('content-template-strip-numbers')).toBeDisabled()
+
+    fireEvent.click(screen.getByTestId('content-template-save'))
+    await waitFor(() =>
+      expect(savedPayload).toMatchObject({ content_markdown: '## 会议信息\n\n1. 第一条待办\n' }),
+    )
+  })
 })
 
 describe('内容模板能力对齐（ADR 0177 C5）', () => {

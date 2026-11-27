@@ -58,6 +58,7 @@ import {
   contentTemplateFileText,
   parseContentTemplateFile,
 } from './contentTemplateFile'
+import { hasHeadingNumbers, stripHeadingNumbers } from './contentTemplateNumbers'
 import { readTextFile, suggestImportName } from './templateFile'
 import { SPACE } from '@/theme/tokens'
 
@@ -850,15 +851,32 @@ export default function ContentTemplatePanel() {
                       : '正文在「从模板新建文档」时作为初始 Markdown 写入；左侧清单可拖拽排序'}
                   </Text>
                   {viewMode === 'edit' && (
-                    <Segmented
-                      size="small"
-                      value={editorMode}
-                      options={[
-                        { label: '实时', value: 'live' },
-                        { label: '源码', value: 'source' },
-                      ]}
-                      onChange={value => setEditorMode(value as MarkdownEditorMode)}
-                    />
+                    <Space size={SPACE.sm}>
+                      <Tooltip title="把标题行开头的手写序号（一、/ 3.1 / 第一章）去掉：编号交给导出模板，避免导出时重复">
+                        <Button
+                          size="small"
+                          data-testid="content-template-strip-numbers"
+                          disabled={!hasHeadingNumbers(draft.content_markdown)}
+                          onClick={() => {
+                            const result = stripHeadingNumbers(draft.content_markdown)
+                            if (result.changed === 0) return
+                            setDraft(prev => ({ ...prev, content_markdown: result.text }))
+                            message.success(`已去除 ${result.changed} 个标题序号，保存后生效`)
+                          }}
+                        >
+                          去除标题序号
+                        </Button>
+                      </Tooltip>
+                      <Segmented
+                        size="small"
+                        value={editorMode}
+                        options={[
+                          { label: '实时', value: 'live' },
+                          { label: '源码', value: 'source' },
+                        ]}
+                        onChange={value => setEditorMode(value as MarkdownEditorMode)}
+                      />
+                    </Space>
                   )}
                 </div>
                 <div style={{ border: '1px solid var(--cn-border)', borderRadius: 'var(--cn-radius-base)' }}>

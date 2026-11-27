@@ -10,6 +10,7 @@ import type {
   TemplateHeadingNumbering,
   TemplateLineRule,
   TemplateListMarker,
+  TemplateNumberingMode,
   TemplatePageNumber,
   TemplatePaper,
   TemplateTableStyle,
@@ -43,6 +44,13 @@ export const PAGE_NUMBER_OPTIONS: Option<TemplatePageNumber>[] = [
   { value: 'plain', label: '1' },
   { value: 'page', label: '第 X 页' },
   { value: 'page_of_total', label: '第 X 页 共 Y 页' },
+]
+
+/** 编号叠加时机（ADR 0186）：编号权威只在模板一处，正文自带序号时默认让位 */
+export const NUMBERING_MODE_OPTIONS: Option<TemplateNumberingMode>[] = [
+  { value: 'auto', label: '自动（正文已有序号时不重复）' },
+  { value: 'force', label: '总是叠加（可能重复）' },
+  { value: 'off', label: '不编号' },
 ]
 
 /** 标题编号方案：标注推荐文体，避免「各类文件套错序数」 */

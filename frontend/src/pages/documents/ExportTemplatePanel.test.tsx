@@ -51,7 +51,7 @@ function makeConfig(patch: Partial<ExportTemplateConfig['body']> = {}): ExportTe
       first_line_indent_chars: 0,
       keep_with_next: true,
     })),
-    numbering: { heading: 'none' },
+    numbering: { heading: 'none', mode: 'auto' },
     table: {
       style: 'single',
       header_bg: '#E6EEF5',
@@ -300,7 +300,7 @@ describe('ExportTemplatePanel', () => {
           config: {
             ...thesis,
             header_footer: { ...thesis.header_footer, header_text: '某某公司', page_number: 'page_of_total' },
-            numbering: { heading: 'chapter_chinese' },
+            numbering: { heading: 'chapter_chinese', mode: 'auto' },
             captions: {
               figure: { enabled: true, position: 'below', numbering: 'n', size: 9, align: 'center' },
               table: { enabled: true, position: 'above', numbering: 'n', size: 9, align: 'center' },
@@ -337,6 +337,33 @@ describe('templateOptions', () => {
     expect(NUMBERING_OPTIONS.find(o => o.value === 'cn_ordinal')?.label).toContain('GB/T 9704')
     expect(NUMBERING_OPTIONS.find(o => o.value === 'chapter_chinese')?.label).toContain('论文')
     expect(NUMBERING_OPTIONS.find(o => o.value === 'arabic_multilevel')?.label).toContain('研究报告')
+  })
+
+  it('编号方式三档：force 出现重复提示，且 mode 进入保存载荷（ADR 0186 C3）', async () => {
+    const calls = setupHandlers()
+    renderPanel()
+    // 「标题与编号」分组默认收起，先展开
+    fireEvent.click(await screen.findByText('标题与编号'))
+    const modeSelect = await screen.findByTestId('template-numbering-mode')
+    // 默认 auto：无提示
+    expect(screen.queryByTestId('template-numbering-force-hint')).not.toBeInTheDocument()
+    fireEvent.mouseDown(within(modeSelect).getByRole('combobox'))
+    fireEvent.click(await screen.findByTitle('总是叠加（可能重复）'))
+    expect(await screen.findByTestId('template-numbering-force-hint')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('template-save-btn'))
+    await waitFor(() => expect(calls.put).toHaveLength(1))
+    const body = calls.put[0].body as { config: ExportTemplateConfig }
+    expect(body.config.numbering.mode).toBe('force')
+  })
+
+  it('编号方式选 off 时预览不画标题编号', async () => {
+    const research = { ...BUILTIN_RESEARCH }
+    research.config = { ...research.config, numbering: { heading: 'arabic_multilevel', mode: 'off' } }
+    setupHandlers({ items: [research], defaultRef: research.ref })
+    renderPanel()
+    expect(await screen.findByTestId('template-preview')).toBeInTheDocument()
+    expect(screen.queryByText(/^1 概述$/)).not.toBeInTheDocument()
+    expect(screen.getByText('概述')).toBeInTheDocument()
   })
 
   it('页脚页码文案与导出侧一致', () => {

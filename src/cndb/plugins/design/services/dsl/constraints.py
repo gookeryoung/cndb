@@ -330,7 +330,9 @@ def _solve_unknown(
     """已知一端位姿，解另一端（返回「附加位姿」，作者位姿已并入锚点映射）."""
     known_anchor = _anchor(decl.refs[known].anchor, decl.refs[known].line, decl.refs[known].col)
     unknown_anchor = _anchor(decl.refs[unknown].anchor, decl.refs[unknown].line, decl.refs[unknown].col)
-    known_pose = poses[decl.refs[known].label]
+    # 已知端的世界锚点必须经「求解位姿 ∘ 作者位姿」复合，与 ``_verify`` 同口径；
+    # 否则已知端带作者变换（translate / rotate）时求解结果会与复验相冲突。
+    known_pose = _compose_label_pose(authored[decl.refs[known].label], poses[decl.refs[known].label])
     known_point, known_axis = _world(known_pose, known_anchor)
     # 未知端的局部锚点先经作者位姿映射：unknown_local = authored · anchor
     local_point = _apply(authored[decl.refs[unknown].label], unknown_anchor.point)

@@ -50,6 +50,7 @@ import {
   LATIN_FONTS,
   LINE_RULE_OPTIONS,
   LIST_MARKER_OPTIONS,
+  NUMBERING_MODE_OPTIONS,
   NUMBERING_OPTIONS,
   PAPER_OPTIONS,
   PAGE_NUMBER_OPTIONS,
@@ -123,7 +124,7 @@ function templateSummary(config: ExportTemplateConfig): string {
     body.line_spacing_rule === 'fixed' ? `固定行距 ${body.line_spacing_pt}pt` : `${body.line_spacing} 倍行距`,
   ]
   if (body.first_line_indent_chars > 0) parts.push(`首行缩进 ${body.first_line_indent_chars} 字符`)
-  if (numbering.heading !== 'none') parts.push('标题自动编号')
+  if (numbering.mode !== 'off' && numbering.heading !== 'none') parts.push('标题自动编号')
   return parts.join(' · ')
 }
 
@@ -131,12 +132,15 @@ function templateSummary(config: ExportTemplateConfig): string {
 function TemplatePreview({ config }: { config: ExportTemplateConfig }) {
   const styles = useMemo(() => previewStyles(config), [config])
   const { numbering, captions, lists } = config
+  // 编号叠加时机（ADR 0186）：预览示例正文不带序号，因此 `auto` 与 `force` 效果相同；
+  // `off` 一律不画前缀（否则预览会展示一个实际不生效的编号）
+  const previewScheme = numbering.mode === 'off' ? 'none' : numbering.heading
   // 标题编号计数器：与导出侧同一口径（进入某级时本级 +1、更深层清零）
   const counters = [0, 0, 0, 0, 0, 0]
   const headingText = (level: number, text: string) => {
     counters[level - 1] += 1
     for (let index = level; index < counters.length; index += 1) counters[index] = 0
-    const prefix = numberingPrefix(numbering.heading, level, counters)
+    const prefix = numberingPrefix(previewScheme, level, counters)
     return prefix ? `${prefix} ${text}` : text
   }
   const marker = lists.marker === 'dash' ? '–' : lists.marker === 'dot' ? '·' : '•'
@@ -968,7 +972,21 @@ export default function ExportTemplatePanel() {
                       options={NUMBERING_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
                     />
                   </Field>
+                  <Field label="编号方式">
+                    <Select
+                      size="small"
+                      data-testid="template-numbering-mode"
+                      value={draft.numbering.mode}
+                      onChange={v => update(next => { next.numbering.mode = v })}
+                      options={NUMBERING_MODE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                    />
+                  </Field>
                 </div>
+                {draft.numbering.mode === 'force' && (
+                  <div className="cn-doc-tpl-hint" data-testid="template-numbering-force-hint">
+                    正文已自行写了序号时会出现重复编号，建议改用「自动」。
+                  </div>
+                )}
                 <div className="cn-doc-tpl-headings">
                   <div className="cn-doc-tpl-headings-head">
                     <span>级别</span>
