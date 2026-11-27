@@ -1,6 +1,6 @@
 # ADR 0185: 内容模板内置库（分类 → 模板两级，代码常量只读，首批「科研项目管理」）
 
-Status: Proposed（实现已完成，待人工确认 Status 改 Accepted / Implemented）
+Status: Implemented
 Date: 2026-11-27
 Related: `src/cndb/plugins/documents/services/content_builtins.py`、`src/cndb/plugins/documents/services/content_templates.py`、`src/cndb/plugins/documents/routers/content_templates.py`、`src/cndb/plugins/documents/models.py`、`frontend/src/pages/documents/ContentTemplatePanel.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/api/contentTemplates.ts`、`docs/requirements/0185-content-template-builtin-library.md`、`docs/adr/0152-document-export-templates.md`、`docs/adr/0177-document-template-integration.md`
 需求卡片: `docs/requirements/0185-content-template-builtin-library.md`（需求原文与约束编号的唯一副本）
@@ -49,7 +49,7 @@ Related: `src/cndb/plugins/documents/services/content_builtins.py`、`src/cndb/p
 - **I3 引用格式唯一**：内置内容模板一律用 `builtin:<key>`；该前缀与导出模板 ref 前缀相同，但两边 key 集合不得有交集（守卫测试），避免 `/documents/templates` 与内容模板 ref 互相误解析。
 - **I4 内置正文可移植**：正文不得含 `{{table:…}}`、`[[双链]]`、跨工作区 / 文档 / 用户 id 等动态引用；允许 `- [ ]` 与 `（填写）` 占位；保证任意工作区、任意时点新建都不产生悬空引用。
 
-> I1–I4 按 H27 的登记结论：**待人工确认**。评估意见——I1 / I2 / I3 是「内置库不入库」「key 全局唯一且有序」「ref 前缀与导出模板 key 不重叠」，均由单测直接覆盖且只在 documents 插件内生效，暂不构成跨需求长期约束；I4（内置模板正文禁动态引用）会在**每次新增内置模板**时被新作者踩到，且违反后果是「新建出的文档带悬空链接」这种不易回滚的脏数据，建议登记为长期约束（如「内置内容模板正文禁动态引用：`{{table:…}}` / `[[双链]]` / 工作区·文档·用户 id 一律禁止」）。登记属口径变更，须人工确认后由人写入 `docs/CONSTRAINTS.md`，本轮不改台账。
+> I1–I4 的 H27 登记结论（2026-11-27 人工确认）：**I4 已登记为 H71**（`docs/CONSTRAINTS.md` 设计与前端组，来源 `ADR 0185 I4`），校验 `make test`——新增内置模板时必须满足「正文只含纯 Markdown，禁 `{{table:…}}` / `[[双链]]` / `/w/` / `documents?`」，由 `tests/test_documents_content_templates.py::TestBuiltinContentLibrary::test_content_is_portable` 断言。I1 / I2 / I3 不予登记：它们是单测直接覆盖的插件内实现约束（不入库 / key 全局唯一且有序 / ref 前缀与导出模板 key 不重叠），不构成跨需求长期口径。
 
 ## Decision
 
@@ -198,8 +198,8 @@ def builtin_content_template(key: str) -> BuiltinContentTemplate | None:
 
 ## 交接（会话结束更新）
 
-- 当前阶段：实现完成并已提交（`0ae4205e`），待人工确认 `Status` 是否改 `Accepted` / `Implemented`（H5 的人工卡点，LLM 不改 Status 语义）
+- 当前阶段：已落地并提交（`0ae4205e`），`Status` 经人工确认置 `Implemented`（2026-11-27）
 - 已完成：P0 后端常量 `services/content_builtins.py`（分类 `research-pm` + 6 套正文）+ 只读入口 `list_builtin_content_templates` + `GET .../document-content-templates/builtin`（声明在 `/{template_id}` 之前）+ 常量 / 接口 / 备份回归测试；P1 前端 API 类型与 `contentTemplateApi.listBuiltin`、面板两组清单（内置按分类折叠 / 自定义平铺）、`selectedRef` 选中态、只读详情（另存为 / 导出 / 预览）与另存为名称递增；P2 选择器两级分组 + 搜索过滤两组 + 空态口径改「内置 + 自定义都为 0」、e2e 用例、`CONTEXT.md` / `docs/USER_DOC_MAP.md` / 帮助教程 / ADR 0177 I1 表述 / `CHANGELOG.md`
-- 下一步：人工确认 `Status` → 推送（`make push`，H4）；如需把内置库扩展到第二个领域，只追加常量与正文，接口与前端无需改动；I4 是否登记进 `CONSTRAINTS.md` 待人工拍板
+- 下一步：推送到远端（`make push`，H4）；如需把内置库扩展到第二个领域，只追加常量与正文（受 H71 约束），接口与前端无需改动
 - 已知坑：`GET .../builtin` 必须声明在 `/{template_id}` 之前（否则 `builtin` 被当 int 解析 422，回归用例已覆盖）；面板选中态是 `builtin:<key>` / `custom:<id>` 两套 ref，别再退回数字 id；内置正文禁动态引用（I4，测试 `test_content_is_portable` 断言）；面板默认选中要求「两个查询都成功」后才决策，否则选中态会随返回顺序抖动
 - 最近一次全绿：`make check-fast` / `make flow`（7852 passed / 17 skipped）/ `make check-frontend`（核心集合 lines 97.66% / branches 100%，全局 84.02%）/ `pnpm test`（293 文件 / 3651 passed）/ e2e `document-template-integration.spec.ts` 3 passed / `make frontend-build`（预算内）@ 2026-11-27

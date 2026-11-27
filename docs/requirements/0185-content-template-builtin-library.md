@@ -5,7 +5,7 @@
 - 日期：2026-11-27
 - 关联 ADR：`docs/adr/0185-content-template-builtin-library.md`（S2，待评审；H5）
 - 关联前序：`docs/requirements/0169-document-content-templates.md`（内容模板首版）、`docs/adr/0177-document-template-integration.md`（模板整合 / I1 不变量）、`docs/adr/0152-document-export-templates.md`（导出模板内置 6 套，本卡沿用同一「内置只读、代码常量不入库」口径）
-- 状态：**已实现（P0–P2 落地）**，待人工确认 ADR 0185 Status 与提交（S2：触碰「内容模板无内置行 / 无默认锚点」不变量与新增只读契约；D1–D10 已按建议口径实现）
+- 状态：**已实现并提交（P0–P2 落地，`0ae4205e`）**，ADR 0185 经人工确认为 `Implemented`（S2：触碰「内容模板无内置行 / 无默认锚点」不变量与新增只读契约；D1–D10 已按建议口径实现；I4 已登记为 H71）
 
 > 本卡片是需求原文与约束编号的唯一副本：需求变更后先改这里，再同步 ADR；ADR 只引用 C1..Cn。
 
@@ -52,7 +52,7 @@
 
 - [ ] 每条需求句都有 C 编号约束（无遗漏、无「待定」）
 - [x] 未决问题全部有结论，需求方确认
-- [x] ADR 已按建议口径实现（D1–D10），P0–P2 全部落地；Status 待人工确认
+- [x] ADR 已按建议口径实现（D1–D10），P0–P2 全部落地；Status 经人工确认置 `Implemented`（2026-11-27）
 
 ## 附录 A：第一批内置模板（「科研项目管理」）
 

@@ -56,6 +56,7 @@
 | H30 | 页面根容器用 `.cn-page`、空态 / 加载态用 `.cn-state`；断点只允许 `767.98px` / `575.98px`；不新增 `[style*="..."]` 兜底；代码高亮颜色只走 `--cn-code-*`，新增语言只加词法配置 | `make frontend-coverage` | 全局 |
 | H31 | 首屏 / 受控 chunk 禁止静态引入重型依赖（echarts / jspdf / html2canvas-pro / nunjucks 等）与按需弹层（Dialog / Modal / Drawer / Manager / Editor），必须 lazy 到按需 chunk | `make frontend-static` | 全局 |
 | H32 | `bundle-budget` 基线 / 上限只能经脚本调整：必须带 `--reason`，`--set-budget` 必须 `--only`，禁止手改 JSON；单次基线上调 >10% 须在 PR 说明 | `frontend/scripts/bundle-budget.mjs` | 全局 |
+| H71 | 内置内容模板正文禁动态引用：`documents/services/content_builtins.py` 的正文只能是纯 Markdown，禁止 `{{table:…}}` / `[[双链]]` / `/w/` / `documents?` 等工作区 · 文档 · 用户相关引用，新增内置模板同样受约束（否则任意工作区新建即产生悬空引用） | `make test` | ADR 0185 I4 |
 
 ## 权限与安全
 
