@@ -23,6 +23,8 @@ from pathlib import Path
 SCENARIOS: dict[str, str] = {
     "sales": "某企业销售管理",
     "research": "科研项目管理",
+    # 仅设计的工作区：无数据表，只有 examples/datasets/工作区-机械设计示例/designs/ 下的 .cnmd
+    "mechanical": "机械设计示例",
 }
 
 

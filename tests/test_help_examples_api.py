@@ -40,14 +40,22 @@ def test_list_examples_returns_manifest(client, auth_headers):
     assert resp.status_code == 200, resp.text
 
     items = resp.json()["items"]
-    assert [item["key"] for item in items] == ["sales", "research"]
+    assert [item["key"] for item in items] == ["sales", "research", "mechanical"]
     for item in items:
         assert item["name"] and item["summary"]
-        assert item["tables"] and item["highlights"] and item["steps"]
+        assert item["highlights"] and item["steps"]
+        # 数据表场景有 tables；设计场景只有 designs（两者互斥）
+        assert item["tables"] or item["designs"], f"{item['key']} 既没有 tables 也没有 designs"
         for table in item["tables"]:
             assert table["file"].endswith(".csv")
             assert table["title"] and table["description"]
             assert table["rows"] > 0
+        for design in item.get("designs", []):
+            assert design["file"].endswith(".cnmd")
+            assert design["title"] and design["description"]
+            assert design["kind"] in {"assembly", "part"}
+            # 零件文件必须登记为 parts/ 子目录，否则前端无法还原相对路径
+            assert (design["folder"] == "parts") == (design["kind"] == "part")
 
 
 def test_manifest_keys_and_files_are_unique():
@@ -56,7 +64,9 @@ def test_manifest_keys_and_files_are_unique():
     assert len(keys) == len(set(keys))
     for item in HELP_EXAMPLE_MANIFEST:
         assert re.fullmatch(r"[a-z][a-z0-9_-]{1,31}", item["key"])
+        # 文件名在场景内唯一，且 tables / designs 不交叉（同一文件名只登记一次）
         files = [table["file"] for table in item["tables"]]
+        files += [design["file"] for design in item.get("designs", [])]
         assert len(files) == len(set(files))
 
 
@@ -85,6 +95,12 @@ def test_every_manifest_file_is_downloadable(client, auth_headers, scenario):
         resp = client.get(_download_url(scenario, table["file"]), headers=auth_headers)
         assert resp.status_code == 200, f"{scenario}/{table['file']}: {resp.text[:200]}"
         assert resp.content
+    for design in example.get("designs", []):
+        resp = client.get(_download_url(scenario, design["file"]), headers=auth_headers)
+        assert resp.status_code == 200, f"{scenario}/{design['file']}: {resp.text[:200]}"
+        assert resp.content
+        # .cnmd 是 UTF-8 纯文本，不能按 CSV 下发（否则浏览器当表格打开）
+        assert resp.headers["content-type"].startswith("text/plain")
 
 
 def test_download_requires_auth(client):

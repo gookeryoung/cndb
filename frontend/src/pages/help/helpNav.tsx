@@ -110,6 +110,7 @@ export const HELP_SECTIONS: HelpSectionMeta[] = [
         topics: [
             { key: 'sales', label: '某企业销售管理' },
             { key: 'research', label: '科研项目管理' },
+            { key: 'mechanical', label: '机械设计示例' },
         ],
     },
     {

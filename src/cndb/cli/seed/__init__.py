@@ -9,7 +9,9 @@
 5. `examples/datasets/<工作区名>/documents/` — 典型文档种子目录树
 6. `examples/datasets/<工作区名>/datasource.json` — 数据同步任务种子（Provider + 标的 + 幂等键 + 字段映射），只注入配置不触发抓取
 7. `examples/datasets/<工作区名>/pipelines/*.yaml` — 质量检查流水线种子（ADR 0076），一份 YAML 一条定义，保存期全量编译校验
-8. `examples/datasets/<工作区名>/designs/*.cnmd` — 结构设计种子（ADR 0079），一份 .cnmd 一份设计（文件名即标题），保存期编译校验
+8. `examples/datasets/<工作区名>/designs/*.cnmd` — 结构设计种子（ADR 0079），一份 .cnmd 一份设计（文件名即标题），保存期编译校验；
+   `designs/parts/*.cnmd` 为零件文件（供装配 `use` 引用）。设计示例集中在「工作区-机械设计示例」
+   （仅设计、无数据表），其余工作区不带 designs/。
 
 模块划分（原 `cli/seed.py` 单文件 2700 行，按职责拆分）：
 

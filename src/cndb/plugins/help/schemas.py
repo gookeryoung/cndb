@@ -14,6 +14,16 @@ class HelpExampleTableResponse(BaseModel):
     rows: int = Field(description="示例说明用的近似行数")
 
 
+class HelpExampleDesignResponse(BaseModel):
+    """示例中的一份结构设计文件（.cnmd，ADR 0079）."""
+
+    file: str = Field(description="设计文件名（下载白名单）")
+    title: str = Field(description="设计标题（即文件名去后缀）")
+    description: str = Field(description="覆盖的 DSL 语法与看点")
+    kind: str = Field(description="文件类型：assembly（装配）/ part（零件）")
+    folder: str = Field(description="相对 designs/ 的子目录；零件文件为 parts")
+
+
 class HelpExampleResponse(BaseModel):
     """一个示例场景."""
 
@@ -23,6 +33,10 @@ class HelpExampleResponse(BaseModel):
     tables: list[HelpExampleTableResponse] = Field(description="可下载的 CSV 表")
     highlights: list[str] = Field(description="推荐视图 / 分析能力")
     steps: list[str] = Field(description="导入与练习步骤")
+    designs: list[HelpExampleDesignResponse] = Field(
+        default_factory=list,
+        description="可下载的结构设计文件（仅「机械设计示例」场景，与 tables 互斥）",
+    )
 
 
 class HelpExampleListResponse(BaseModel):

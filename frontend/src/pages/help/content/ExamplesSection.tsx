@@ -13,7 +13,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { helpApi, type HelpExampleTable } from '@/api/help'
+import { helpApi, type HelpExampleDesign, type HelpExampleTable } from '@/api/help'
 import HelpFigure from '../HelpFigure'
 
 const { Paragraph, Text } = Typography
@@ -206,6 +206,94 @@ export function ExampleTables({ scenarioKey }: { scenarioKey: string }) {
             dataSource={example.tables}
             scroll={{ x: 640 }}
         />
+    )
+}
+
+/** L3-3 结构设计清单与 .cnmd 下载（「机械设计示例」场景，无数据表）。 */
+export function ExampleDesigns({ scenarioKey }: { scenarioKey: string }) {
+    const { message } = App.useApp()
+    const [downloading, setDownloading] = useState<string | null>(null)
+    const { example } = useExample(scenarioKey)
+
+    const designs = example?.designs ?? []
+    if (!example || designs.length === 0) return null
+
+    const handleDownload = async (design: HelpExampleDesign) => {
+        setDownloading(design.file)
+        try {
+            const blob = await helpApi.downloadExampleFile(scenarioKey, design.file)
+            triggerDownload(design.file, blob)
+        } catch (err) {
+            message.error(err instanceof Error ? err.message : '下载失败，请稍后重试')
+        } finally {
+            setDownloading(null)
+        }
+    }
+
+    const columns: ColumnsType<HelpExampleDesign> = [
+        {
+            title: '设计文件',
+            dataIndex: 'title',
+            key: 'title',
+            render: (_: unknown, design) => (
+                <div>
+                    <Text strong>{design.title}</Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                        {design.folder ? `${design.folder}/` : ''}
+                        {design.file}
+                    </Text>
+                </div>
+            ),
+        },
+        {
+            title: '类型',
+            dataIndex: 'kind',
+            key: 'kind',
+            width: 88,
+            render: (kind: HelpExampleDesign['kind']) => (
+                <Tag color={kind === 'part' ? 'blue' : 'green'}>{kind === 'part' ? '零件' : '装配'}</Tag>
+            ),
+        },
+        {
+            title: '说明',
+            dataIndex: 'description',
+            key: 'description',
+            render: (description: string) => <Text type="secondary">{description}</Text>,
+        },
+        {
+            title: '操作',
+            key: 'action',
+            width: 132,
+            render: (_: unknown, design) => (
+                <Button
+                    size="small"
+                    icon={<DownloadOutlined />}
+                    loading={downloading === design.file}
+                    onClick={() => void handleDownload(design)}
+                    data-testid={`help-example-design-download-${design.file}`}
+                >
+                    下载 .cnmd
+                </Button>
+            ),
+        },
+    ]
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} data-testid="help-example-designs">
+            <Paragraph type="secondary" style={{ margin: 0, fontSize: 'var(--cn-text-xs)' }}>
+                本场景只提供设计文件（不含数据表）。下载后在设计模块「新建」一份设计并粘贴内容即可编译预览；
+                零件文件（类型「零件」）需先建成零件文件，再被装配以 <Text code>use "文件名"</Text> 引用。
+            </Paragraph>
+            <Table<HelpExampleDesign>
+                rowKey="file"
+                size="small"
+                pagination={false}
+                columns={columns}
+                dataSource={designs}
+                scroll={{ x: 720 }}
+            />
+        </div>
     )
 }
 

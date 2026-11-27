@@ -7,6 +7,7 @@ import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
 import {
     ExampleCreateWorkspace,
+    ExampleDesigns,
     ExamplePractice,
     ExamplePreviews,
     ExampleSummary,
@@ -24,6 +25,7 @@ function Scenario({ scenarioKey }: { scenarioKey: string }) {
             <ExampleSummary scenarioKey={scenarioKey} />
             <ExampleCreateWorkspace scenarioKey={scenarioKey} />
             <ExampleTables scenarioKey={scenarioKey} />
+            <ExampleDesigns scenarioKey={scenarioKey} />
             <ExamplePreviews scenarioKey={scenarioKey} />
             <ExamplePractice scenarioKey={scenarioKey} />
         </div>
@@ -93,5 +95,30 @@ describe('ExamplesSection', () => {
         renderProviders(<ExampleSummary scenarioKey="nope" />)
 
         expect(await screen.findByTestId('help-examples-missing')).toBeVisible()
+    })
+
+    it('设计场景渲染 .cnmd 清单与下载入口，且不渲染数据表', async () => {
+        renderProviders(<Scenario scenarioKey="mechanical" />)
+
+        expect(await screen.findByTestId('help-example-designs')).toBeVisible()
+        // 装配与零件都列出，零件标注类型与 parts/ 相对路径
+        expect(screen.getByText('行星减速器')).toBeVisible()
+        expect(screen.getByText('货架单元')).toBeVisible()
+        expect(screen.getByText('parts/货架单元.cnmd')).toBeVisible()
+        expect(screen.getByText('零件')).toBeVisible()
+        expect(screen.getByText('装配')).toBeVisible()
+        // 该场景无数据表：CSV 下载按钮一个都不渲染
+        expect(screen.queryByTestId(/help-example-download-/)).toBeNull()
+        expect(screen.getByTestId('help-example-design-download-行星减速器.cnmd')).toBeVisible()
+    })
+
+    it('点击「下载 .cnmd」走鉴权 blob 并触发浏览器下载', async () => {
+        const createObjectURL = vi.fn(() => 'blob:mock-cnmd')
+        Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+
+        renderProviders(<Scenario scenarioKey="mechanical" />)
+
+        fireEvent.click(await screen.findByTestId('help-example-design-download-货架单元.cnmd'))
+        await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
     })
 })

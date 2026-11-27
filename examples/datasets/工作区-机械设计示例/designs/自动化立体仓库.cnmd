@@ -1,0 +1,183 @@
+// 自动化立体仓库（AS/RS）：大规模参数化阵列 + 分文件零件批量实例化 + 约束链
+//
+// 这是一个「规模与性能」示例：7 跨 × 6 层 × 2 排 = 84 个货位，每个货位都是
+// 一份分文件零件「货架单元」（15 个图元）的独立实例，再叠加 14 组整列立柱、
+// 2 对通长地脚与 2 台堆垛机 —— 单次编译约 1500 个图元，接近依赖闭包的图元预算
+// 上限（2000），用来观察编译耗时、IR 体积、3D 预览与侧栏装配树在真实规模下的表现。
+// 调小 bays / levels / rows 即可逐级降规（三者乘积受该预算约束，不是无界的）。
+param bays = 7                  // 沿 X 方向的货架跨数
+param levels = 6                // 沿 Z 方向的层数
+param rows = 2                  // 沿 Y 方向的货架排数
+param bay_w = 1200              // 跨距 mm
+param level_h = 900             // 层高 mm
+param depth_d = 1100            // 货位进深 mm
+param post = 80                 // 立柱截面边长
+param row_pitch = 3000          // 排间距（含巷道）
+param box_h_high = 620          // 高货箱高度
+param box_h_low = 520           // 低货箱高度
+param rack_h = levels * level_h // 货架总高（派生参数，随 levels 联动）
+param rack_len = bays * bay_w   // 货架总长（派生参数，随 bays 联动）
+
+// 立柱：方管（外箱减内腔），高度等于货架总高
+module post(h) {
+  difference {
+    box(size = [post, post, h])
+    translate([post / 2, post / 2, -1]) box(size = [post * 0.6, post * 0.6, h + 2])
+  }
+}
+
+// 整列立柱：4 根角柱 + 两道侧向拉杆（与跨数无关，随层数联动）
+module column(span) {
+  post(rack_h)
+  translate([span, 0, 0]) post(rack_h)
+  translate([0, depth_d, 0]) post(rack_h)
+  translate([span, depth_d, 0]) post(rack_h)
+  translate([0, 0, rack_h / 2]) rotate([0, 90, 0]) box(size = [post * 0.5, 30, span])
+  translate([0, depth_d, rack_h / 2]) rotate([0, 90, 0]) box(size = [post * 0.5, 30, span])
+}
+
+// 地脚：通长底板（长度随跨数联动）
+module base_rail(len, y) {
+  translate([-20, y - 60, -20]) box(size = [len + 40, 200, 20])
+}
+
+// 堆垛机：立柱 + 载货台 + 天轨压板 + 地轨轮（torus 演示圆环图元）
+module crane(h) {
+  box(size = [80, 80, h])
+  translate([0, 0, h * 0.55]) box(size = [260, 320, 60])
+  translate([0, 0, h]) box(size = [120, 320, 40])
+  torus(r = 60, tube = 12, fn = 32)
+}
+
+// ── 系统级：立体仓库总成（货架区 / 巷道 / 堆垛机分区装配）──
+system asrs {
+
+  // ── 第 1 排货架：7 跨 × 6 层 = 42 个货位 ──
+  base_rail(rack_len, 0) as base0a
+  base_rail(rack_len, 1100) as base0b
+  translate([-4200, 0, 0]) column(bay_w)
+  translate([-3000, 0, 0]) column(bay_w)
+  translate([-1800, 0, 0]) column(bay_w)
+  translate([-600, 0, 0]) column(bay_w)
+  translate([600, 0, 0]) column(bay_w)
+  translate([1800, 0, 0]) column(bay_w)
+  translate([3000, 0, 0]) column(bay_w)
+  // 第 1 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-2400, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-1200, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([0, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([1200, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([2400, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([3600, 0, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  // 第 2 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-2400, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-1200, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([0, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([1200, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([2400, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([3600, 0, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  // 第 3 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-2400, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-1200, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([0, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([1200, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([2400, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([3600, 0, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  // 第 4 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-2400, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-1200, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([0, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([1200, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([2400, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([3600, 0, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  // 第 5 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-2400, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-1200, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([0, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([1200, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([2400, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([3600, 0, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  // 第 6 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-2400, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-1200, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([0, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([1200, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([2400, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([3600, 0, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  // ── 第 2 排货架：7 跨 × 6 层 = 42 个货位 ──
+  base_rail(rack_len, 3000) as base1a
+  base_rail(rack_len, 4100) as base1b
+  translate([-4200, 3000, 0]) column(bay_w)
+  translate([-3000, 3000, 0]) column(bay_w)
+  translate([-1800, 3000, 0]) column(bay_w)
+  translate([-600, 3000, 0]) column(bay_w)
+  translate([600, 3000, 0]) column(bay_w)
+  translate([1800, 3000, 0]) column(bay_w)
+  translate([3000, 3000, 0]) column(bay_w)
+  // 第 1 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-2400, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-1200, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([0, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([1200, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([2400, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([3600, 3000, 0]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  // 第 2 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-2400, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-1200, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([0, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([1200, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([2400, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([3600, 3000, 900]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  // 第 3 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-2400, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-1200, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([0, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([1200, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([2400, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([3600, 3000, 1800]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  // 第 4 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-2400, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-1200, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([0, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([1200, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([2400, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([3600, 3000, 2700]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  // 第 5 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-2400, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-1200, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([0, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([1200, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([2400, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([3600, 3000, 3600]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  // 第 6 层：7 个货位（高 / 低货箱交替，参数由 use 实参覆盖）
+  translate([-3600, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([-2400, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([-1200, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([0, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([1200, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  translate([2400, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_high)
+  translate([3600, 3000, 4500]) use "货架单元" (bay_w = bay_w, level_h = level_h, depth_d = depth_d, post = post, box_h = box_h_low)
+  // ── 巷道：两排货架之间布置堆垛机（载货高度随货架总高联动）──
+  crane(rack_h) as crane0
+  crane(rack_h) as crane1
+
+  // 约束：左前地脚接地（作者位姿在原点）→ 其余基准件用「重合 + 偏移」逐级定位。
+  // 未加标签的阵列块（整列立柱 / 货位实例）不参与约束，保持作者位姿。
+  constraint c_ground fixed(a = base0a.origin)
+  constraint c_rail_f coincident(a = base0a.origin, b = base0b.origin, offset = [0, depth_d, 0])
+  constraint c_row_seat coincident(a = base0a.origin, b = base1a.origin, offset = [0, row_pitch, 0])
+  constraint c_row_seat_b coincident(a = base0a.origin, b = base1b.origin, offset = [0, row_pitch + depth_d, 0])
+  constraint c_crane0 coincident(a = base0a.origin, b = crane0.origin, offset = [bay_w / 2, row_pitch / 2, 0])
+  constraint c_crane1 coincident(a = base0a.origin, b = crane1.origin, offset = [bay_w * 3, row_pitch / 2, 0])
+}

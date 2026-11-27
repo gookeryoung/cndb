@@ -198,6 +198,30 @@ export const mockHelpExamples: HelpExampleList = {
       highlights: ['工作分解视图组织层级'],
       steps: ['下载 CSV', '导入为数据表'],
     },
+    {
+      key: 'mechanical',
+      name: '机械设计示例',
+      summary: '全套结构设计示例：从单零件到行星减速器、离心风机叶轮与自动化立体仓库。仅含设计文件，不含数据表。',
+      tables: [],
+      designs: [
+        {
+          file: '行星减速器.cnmd',
+          title: '行星减速器',
+          description: '派生参数链 + 三角函数布齿 + 三级子装配 + 完整约束链。',
+          kind: 'assembly',
+          folder: '',
+        },
+        {
+          file: '货架单元.cnmd',
+          title: '货架单元',
+          description: '零件文件：被「自动化立体仓库」批量实例化。',
+          kind: 'part',
+          folder: 'parts',
+        },
+      ],
+      highlights: ['同一套 DSL 覆盖单零件与千图元规模'],
+      steps: ['下载 .cnmd 文件', '在设计模块新建设计并粘贴内容'],
+    },
   ],
 }
 

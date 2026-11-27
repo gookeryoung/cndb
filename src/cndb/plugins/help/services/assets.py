@@ -13,8 +13,24 @@ from pathlib import Path
 
 from cndb.plugins.help.services.examples import SCENARIO_DIRECTORIES, find_example
 
-# 只接受纯文件名：不含路径分隔符、必须以 .csv 结尾（阻断路径穿越）
-_FILENAME_PATTERN = re.compile(r"^[^/\\]+\.csv$")
+# 只接受纯文件名：不含路径分隔符、必须以 .csv / .cnmd 结尾（阻断路径穿越）
+_FILENAME_PATTERN = re.compile(r"^[^/\\]+\.(csv|cnmd)$")
+
+
+def _design_files(scenario: str) -> dict[str, str]:
+    """场景登记的设计文件 → 相对 designs/ 的路径（含 parts/ 子目录）。
+
+    设计文件可能落在 ``parts/`` 下（零件文件），所以按清单里的 ``folder`` 还原
+    相对路径；未登记 ``designs`` 的场景返回空 dict。
+    """
+    example = find_example(scenario)
+    if example is None:
+        return {}
+    result: dict[str, str] = {}
+    for design in example.get("designs", []):
+        folder = design.get("folder") or ""
+        result[design["file"]] = f"{folder}/{design['file']}" if folder else design["file"]
+    return result
 
 
 def _candidate_dirs() -> tuple[Path, Path]:
@@ -76,13 +92,20 @@ def resolve_example_file(scenario: str, filename: str) -> Path | None:
     example = find_example(scenario)
     if example is None or not _FILENAME_PATTERN.match(filename):
         return None
-    if filename not in {table["file"] for table in example["tables"]}:
+
+    # 白名单分两类：数据表 CSV（工作区根下平铺）与结构设计 .cnmd（designs/ 下，可带 parts/）
+    designs = _design_files(scenario)
+    if filename in designs:
+        rel = f"designs/{designs[filename]}"
+    elif filename in {table["file"] for table in example["tables"]}:
+        rel = filename
+    else:
         return None
 
     for root in (help_dir(), datasets_dir()):
         if root is None:
             continue
-        path = root / SCENARIO_DIRECTORIES[scenario] / filename
+        path = root / SCENARIO_DIRECTORIES[scenario] / rel
         if path.is_file():
             return path
     return None

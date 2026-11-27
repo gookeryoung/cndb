@@ -15,6 +15,17 @@ export interface HelpExampleTable {
   rows: number
 }
 
+/** 一份结构设计文件（.cnmd，ADR 0079） */
+export interface HelpExampleDesign {
+  file: string
+  title: string
+  description: string
+  /** assembly = 装配文件；part = 零件文件（位于 parts/ 下） */
+  kind: 'assembly' | 'part'
+  /** 相对 designs/ 的子目录，零件文件为 'parts' */
+  folder: string
+}
+
 /** 一个示例场景 */
 export interface HelpExample {
   key: string
@@ -23,6 +34,8 @@ export interface HelpExample {
   tables: HelpExampleTable[]
   highlights: string[]
   steps: string[]
+  /** 结构设计清单（仅「机械设计示例」场景，与 tables 互斥）；缺省视为无 */
+  designs?: HelpExampleDesign[]
 }
 
 export interface HelpExampleList {

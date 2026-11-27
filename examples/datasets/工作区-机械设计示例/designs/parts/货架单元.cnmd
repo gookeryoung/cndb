@@ -1,0 +1,49 @@
+// 零件文件：立体仓库的货位单元（4 根立柱 + 双层横梁 + 托盘货箱 + 侧向斜撑）
+// 顶层 param 即公开参数，装配用 use "货架单元"(...) 批量实例化并覆盖（ADR 0086 C1）
+param bay_w = 1200          // 货位跨距（X）
+param level_h = 900         // 货位层高（Z）
+param depth_d = 1100        // 货位进深（Y）
+param post = 80             // 立柱截面边长
+param beam_h = 120          // 横梁高度
+param beam_t = 60           // 横梁厚度
+param pallet_t = 40         // 托盘厚度
+param box_w = 900           // 货箱宽
+param box_d = 800           // 货箱深
+param box_h = 620           // 货箱高
+param brace_t = 16          // 侧向斜撑板厚
+param corner_fn = 24        // 货箱圆角分段数
+
+// 立柱：方管（外箱减内腔），沿 +Z 竖直
+module post(h) {
+  difference {
+    box(size = [post, post, h])
+    translate([post / 2, post / 2, -1]) box(size = [post * 0.6, post * 0.6, h + 2])
+  }
+}
+
+// 横梁：沿 X 的矩形梁，两端各出头 1mm 保证与立柱求并彻底
+module beam(len) {
+  box(size = [len + 2, beam_t, beam_h])
+}
+
+// 托盘 + 货箱：货箱顶面用「箱 ∩ 球」求交造圆角（intersection）
+module cargo(x, y, z) {
+  translate([x, y, z]) box(size = [box_w, box_d, pallet_t])
+  translate([x, y, z + pallet_t]) {
+    intersection {
+      box(size = [box_w * 0.92, box_d * 0.92, box_h])
+      translate([0, 0, -box_h * 0.55]) sphere(r = box_h * 1.9, fn = corner_fn)
+    }
+  }
+}
+
+// 货位本体：4 根立柱 + 前后横梁 + 托盘货箱 + 左右斜撑
+translate([-bay_w / 2, 0, 0]) post(level_h)
+translate([bay_w / 2, 0, 0]) post(level_h)
+translate([-bay_w / 2, depth_d, 0]) post(level_h)
+translate([bay_w / 2, depth_d, 0]) post(level_h)
+cargo(0, depth_d / 2, beam_h)
+translate([0, depth_d / 2 - beam_t / 2, 0]) beam(bay_w)
+translate([0, depth_d / 2 + beam_t / 2, 0]) beam(bay_w)
+translate([-bay_w / 2, depth_d / 2, level_h / 2]) rotate([0, 90, 0]) box(size = [brace_t, depth_d * 0.8, level_h * 0.7])
+translate([bay_w / 2, depth_d / 2, level_h / 2]) rotate([0, 90, 0]) box(size = [brace_t, depth_d * 0.8, level_h * 0.7])

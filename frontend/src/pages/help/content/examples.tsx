@@ -8,6 +8,7 @@
 import type { HelpTopic } from '../helpNav'
 import {
     ExampleCreateWorkspace,
+    ExampleDesigns,
     ExamplePractice,
     ExamplePreviews,
     ExampleSummary,
@@ -30,6 +31,20 @@ function scenarioTopic(key: string, label: string, intro: string): HelpTopic {
     }
 }
 
+/** 设计示例场景：无数据表，故不渲染「创建示例工作区 / 数据表 / 数据预览」三节。 */
+function designTopic(key: string, label: string, intro: string): HelpTopic {
+    return {
+        key,
+        label,
+        intro: <P>{intro}</P>,
+        subsections: [
+            { key: 'scenario', label: '场景说明', body: <ExampleSummary scenarioKey={key} /> },
+            { key: 'designs', label: '设计文件与下载', body: <ExampleDesigns scenarioKey={key} /> },
+            { key: 'practice', label: '怎么练与用法', body: <ExamplePractice scenarioKey={key} /> },
+        ],
+    }
+}
+
 const sales = scenarioTopic(
     'sales',
     '某企业销售管理',
@@ -42,7 +57,13 @@ const research = scenarioTopic(
     '本页你能学到什么：用科研项目数据练层级结构、关联字段与时间视图，并跟着步骤导入练习。适合谁：要搭项目管理场景的成员。',
 )
 
-export const exampleTopics: HelpTopic[] = [sales, research]
+const mechanical = designTopic(
+    'mechanical',
+    '机械设计示例',
+    '本页你能学到什么：从最小零件到千图元装配，逐份看懂结构设计 DSL（参数、布尔、阵列、分文件引用、约束求解）。适合谁：要上手设计模块、或想找现成模板改造的成员。',
+)
+
+export const exampleTopics: HelpTopic[] = [sales, research, mechanical]
 
 /** 供 helpNav 的 HELP_SECTION_LOADERS 按部分懒加载（0090 C1）。 */
 export default exampleTopics

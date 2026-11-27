@@ -99,3 +99,6 @@ pytest-of-*
 
 # 运行期上传暂存（UPLOAD_DIR 落在数据目录，仓库内这个目录只是手动调试残留）
 .uploads/
+
+# 设计 / 脚本临时草稿（`.cnmd` 试验件、一次性校验脚本；正式示例走 examples/datasets/*/designs/）
+.design-scratch/

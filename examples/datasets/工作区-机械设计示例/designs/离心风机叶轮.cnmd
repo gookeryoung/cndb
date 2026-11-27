@@ -1,0 +1,118 @@
+// 离心风机叶轮：回转曲面布尔 + 极坐标叶片阵列 + 镜像 + 六图元混用
+//
+// 这是一个「曲面与布尔」示例，覆盖：
+//   · intersection 造回转曲面：大球 ∩ 圆柱壳 → 喇叭形前盘（导流罩）
+//   · mirror 镜像：后盘由前盘镜像得到对称半壳，演示镜像法向语义
+//   · torus / cone / sphere / tube / box / cyl 六种图元全部出现
+//   · 三角函数圆周阵列：12 片叶片按 360/12 均布，每片再自转 12° 造弯掠
+//   · 约束：轮毂接地，前/后盘、集流器、检视盖全部「重合 + 偏移」定位
+param d_out = 480               // 叶轮外径 mm
+param d_in = 240                // 叶片入口直径 mm
+param width = 120               // 叶片轴向宽度 mm
+param n_blade = 12              // 叶片数（沿圆周均布）
+param blade_t = 6               // 叶片板厚 mm
+param hub_d = 90                // 轮毂直径 mm
+param hub_h = 150               // 轮毂轴向长度 mm
+param shroud_t = 8              // 盘板壁厚 mm
+param bore = 32                 // 轴孔直径 mm
+param key_w = 10                // 键槽宽 mm
+param key_h = 5                 // 键槽深 mm
+param fn_hi = 96                // 曲面细分段数（回转体用高分段）
+
+// 派生参数：叶片中心线半径与单齿角步距（改 n_blade 即整圈重排）
+param r_mid = (d_out + d_in) / 4
+param step_deg = 360 / n_blade
+param step_rad = 2 * PI / n_blade
+
+// 单片叶片：径向直板，绕 Z 旋转 step_deg * i 定位后再自转 12° 造弯掠
+module blade(i) {
+  translate([r_mid * cos(step_rad * i), r_mid * sin(step_rad * i), width / 2])
+    rotate([0, 0, step_deg * i + 12])
+      box(size = [d_out / 2 - d_in / 2, blade_t, width])
+}
+
+// 前盘（导流罩）：球面环带 = 大球 ∩ 圆柱壳，再减出中心进气口
+module shroud() {
+  difference {
+    intersection {
+      sphere(r = d_out * 0.72, fn = fn_hi)
+      tube(od = d_out + 2 * shroud_t, id = d_in - 2, h = width * 1.6, fn = fn_hi)
+    }
+    translate([0, 0, -width * 1.6]) box(size = [d_out * 2, d_out * 2, width * 1.6])
+    translate([0, 0, -1]) cyl(d = d_in, h = width * 1.6 + 2)
+  }
+}
+
+// 后盘：法兰环减中心孔与两个减重孔
+module back_plate() {
+  difference {
+    cyl(d = d_out, h = shroud_t)
+    translate([0, 0, -1]) cyl(d = d_in * 0.92, h = shroud_t + 2)
+    translate([d_out * 0.32, 0, -1]) cyl(d = 8, h = shroud_t + 2)
+    translate([-d_out * 0.32, 0, -1]) cyl(d = 8, h = shroud_t + 2)
+  }
+}
+
+// 轮毂：阶梯轴套（union）+ 轴孔 / 键槽 / 端面油槽（difference）
+module hub() {
+  difference {
+    union {
+      cyl(d = hub_d, h = hub_h)
+      translate([0, 0, hub_h]) cyl(d = hub_d * 1.35, h = 10)
+    }
+    translate([0, 0, -1]) cyl(d = bore, h = hub_h + 12)
+    translate([bore / 2 - key_h, -key_w / 2, -1]) box(size = [key_h + 2, key_w, hub_h + 12])
+    translate([0, 0, hub_h - 14]) torus(r = hub_d * 0.3, tube = 4, fn = 48)
+  }
+}
+
+// 集流器（进气口）：圆环面 + 内锥收口
+module collector() {
+  torus(r = d_in * 0.62, tube = 16, fn = 64)
+  translate([0, 0, -14]) cone(d1 = d_in * 1.5, d2 = d_in, h = 14, fn = 64)
+}
+
+// 检视盖：盖板减轴孔与两个工艺孔，位置 100% 由约束决定
+module cover() {
+  difference {
+    cyl(d = hub_d * 1.6, h = 6)
+    translate([0, 0, -1]) cyl(d = bore * 1.2, h = 8)
+    translate([hub_d * 0.5, 0, -1]) cyl(d = 4, h = 8)
+    translate([-hub_d * 0.5, 0, -1]) cyl(d = 4, h = 8)
+  }
+}
+
+// ── 系统级：叶轮总成 ──
+system impeller {
+  hub() as hub
+  // 后盘：镜像半壳（mirror 沿 Z 翻转，法向由 +Z 变 -Z）
+  mirror([0, 0, 1]) back_plate() as back
+  shroud() as front
+  collector() as inlet
+  // 叶片圈：12 片沿圆周均布（未加标签的组件不参与约束，保持作者位姿）
+  blade(0)
+  blade(1)
+  blade(2)
+  blade(3)
+  blade(4)
+  blade(5)
+  blade(6)
+  blade(7)
+  blade(8)
+  blade(9)
+  blade(10)
+  blade(11)
+  cover() as cover
+
+  // 约束：轮毂接地 → 其余零件「重合 + 轴向偏移」逐级定位 → 同轴校验对中
+  constraint c_base fixed(a = hub.origin)
+  constraint c_back coincident(a = hub.z, b = back.z, offset = [0, 0, 0 - shroud_t])
+  constraint c_front coincident(a = hub.z, b = front.z, offset = [0, 0, width])
+  constraint c_inlet coincident(a = hub.z, b = inlet.z, offset = [0, 0, 0 - 34])
+  constraint c_cover coincident(a = hub.z, b = cover.z, offset = [0, 0, hub_h + 10])
+  constraint c_axis_back concentric(a = hub.z, b = back.z)
+  constraint c_axis_front concentric(a = hub.z, b = front.z)
+  constraint c_axis_inlet concentric(a = hub.z, b = inlet.z)
+  constraint c_axis_cover concentric(a = hub.z, b = cover.z)
+  constraint c_gap distance(a = hub.z, b = front.z, value = width)
+}

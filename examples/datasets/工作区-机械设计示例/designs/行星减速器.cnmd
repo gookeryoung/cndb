@@ -1,0 +1,172 @@
+// 行星减速器（NGW 单级）：参数化齿轮 + 子装配嵌套 + 装配约束链
+//
+// 这是一个「中等复杂度」的结构示例，覆盖：
+//   · param 派生链：模数 m → 各齿轮分度圆半径 → 行星架回转半径
+//   · 三角函数圆周阵列：齿形按 2*PI*i/n 极坐标落位并自转到切向
+//   · 三种布尔：union（轮体+齿）/ difference（减轴孔与内腔）/ 隐含 intersection（见叶轮示例）
+//   · 六种图元：box / cyl / sphere / cone / torus / tube
+//   · module 三级嵌套：carrier_asm → planet_gear → tooth
+//   · system + constraint：壳体接地，其余零件同轴串联（位姿由求解器确定性下推）
+param m = 2                     // 模数 mm
+param b = 14                    // 齿宽 mm
+param shaft_d = 12              // 输入轴 / 太阳轮轴孔直径
+param case_d = 96               // 壳体法兰外径
+param case_h = 52               // 壳体轴向总高
+param bolt_d = 6                // 壳体螺栓孔直径
+param n_sun = 8                 // 太阳轮齿数
+param n_planet = 12             // 行星轮齿数
+param n_ring = 18               // 内齿圈齿数
+param z_ring = b + 8            // 内齿圈下沉量（派生参数）
+
+// 分度圆半径：r = m * z / 2；行星架回转半径 = 太阳轮 + 行星轮分度圆半径
+param r_sun = m * n_sun / 2
+param r_planet = m * n_planet / 2
+param r_ring = m * n_ring / 2
+param r_carrier = r_sun + r_planet
+
+// 齿形：按「序号 i / 齿数 n」自动求角（2*PI*i/n），极坐标落位 + 自转到切向
+module tooth(i, n, r, w, h, t) {
+  translate([r * cos(2 * PI * i / n), r * sin(2 * PI * i / n), 0])
+    rotate([0, 0, 360 * i / n])
+      box(size = [w, h, t])
+}
+
+// 太阳轮：轮体 + 8 齿（union）再减中心轴孔（difference）
+module sun_gear() {
+  difference {
+    union {
+      cyl(d = 2 * r_sun, h = b)
+      tooth(0, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(1, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(2, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(3, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(4, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(5, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(6, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+      tooth(7, n_sun, r_sun + 1.2, 3.0, 3.4, b)
+    }
+    translate([0, 0, -1]) cyl(d = shaft_d, h = b + 2)
+  }
+  translate([0, 0, b]) cyl(d = shaft_d * 2.2, h = 5)   // 轴肩台阶
+}
+
+// 行星轮：轮体 + 12 齿减轴孔（由行星架销轴定位，属二级子装配）
+module planet_gear() {
+  difference {
+    union {
+      cyl(d = 2 * r_planet, h = b)
+      tooth(0, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(1, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(2, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(3, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(4, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(5, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(6, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(7, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(8, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(9, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(10, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+      tooth(11, n_planet, r_planet + 1.2, 2.6, 3.0, b)
+    }
+    translate([0, 0, -1]) cyl(d = 8, h = b + 2)
+  }
+}
+
+// 行星架：三角板（三个销轴座）减中心孔，再竖三根销轴 —— 三级嵌套（内含行星轮）
+module carrier_asm() {
+  difference {
+    union {
+      cyl(d = 2 * r_carrier + 16, h = 6)
+      translate([r_carrier, 0, 0]) cyl(d = 16, h = 6)
+      translate([r_carrier * cos(2 * PI / 3), r_carrier * sin(2 * PI / 3), 0]) cyl(d = 16, h = 6)
+      translate([r_carrier * cos(4 * PI / 3), r_carrier * sin(4 * PI / 3), 0]) cyl(d = 16, h = 6)
+    }
+    translate([0, 0, -1]) cyl(d = shaft_d, h = 8)
+  }
+  translate([r_carrier, 0, 6]) cyl(d = 7.6, h = b + 6)
+  translate([r_carrier * cos(2 * PI / 3), r_carrier * sin(2 * PI / 3), 6]) cyl(d = 7.6, h = b + 6)
+  translate([r_carrier * cos(4 * PI / 3), r_carrier * sin(4 * PI / 3), 6]) cyl(d = 7.6, h = b + 6)
+  translate([r_carrier, 0, 6]) planet_gear()
+  translate([r_carrier * cos(2 * PI / 3), r_carrier * sin(2 * PI / 3), 6]) planet_gear()
+  translate([r_carrier * cos(4 * PI / 3), r_carrier * sin(4 * PI / 3), 6]) planet_gear()
+}
+
+// 内齿圈：外筒（tube）减内腔，顶部再开 6 个端面齿槽
+module ring_gear() {
+  difference {
+    tube(od = 2 * r_ring + 16, id = 2 * r_ring - 1, h = b)
+    tooth(0, n_ring, r_ring - 1.2, 2.6, 3.0, b + 2)
+    tooth(1, n_ring, r_ring - 1.2, 2.6, 3.0, b + 2)
+    tooth(2, n_ring, r_ring - 1.2, 2.6, 3.0, b + 2)
+    tooth(3, n_ring, r_ring - 1.2, 2.6, 3.0, b + 2)
+    tooth(4, n_ring, r_ring - 1.2, 2.6, 3.0, b + 2)
+    tooth(5, n_ring, r_ring - 1.2, 2.6, 3.0, b + 2)
+  }
+}
+
+// 壳体：法兰 + 筒身并集，再减内腔与螺栓圈（8 孔极坐标阵列）
+module housing() {
+  difference {
+    union {
+      cyl(d = case_d, h = 10)
+      tube(od = case_d * 0.82, id = case_d * 0.7, h = case_h)
+    }
+    translate([0, 0, -1]) cyl(d = case_d * 0.62, h = case_h + 2)
+    translate([case_d * 0.36 * cos(2 * PI * 0 / 8), case_d * 0.36 * sin(2 * PI * 0 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 1 / 8), case_d * 0.36 * sin(2 * PI * 1 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 2 / 8), case_d * 0.36 * sin(2 * PI * 2 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 3 / 8), case_d * 0.36 * sin(2 * PI * 3 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 4 / 8), case_d * 0.36 * sin(2 * PI * 4 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 5 / 8), case_d * 0.36 * sin(2 * PI * 5 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 6 / 8), case_d * 0.36 * sin(2 * PI * 6 / 8), -1]) cyl(d = bolt_d, h = 12)
+    translate([case_d * 0.36 * cos(2 * PI * 7 / 8), case_d * 0.36 * sin(2 * PI * 7 / 8), -1]) cyl(d = bolt_d, h = 12)
+  }
+}
+
+// 输入轴：轴身减键槽，端部加导向锥（cone 图元）
+module input_shaft() {
+  difference {
+    union {
+      cyl(d = shaft_d, h = 34)
+      translate([0, 0, 34]) cone(d1 = shaft_d, d2 = shaft_d * 0.5, h = 6)
+    }
+    translate([shaft_d / 4, 0, 8]) box(size = [shaft_d / 2, 4, 12])
+  }
+}
+
+// 端盖：法兰盘减轴承孔与螺栓圈，中心加密封环（torus）
+module end_cover() {
+  difference {
+    cyl(d = case_d * 0.9, h = 8)
+    translate([0, 0, -1]) cyl(d = shaft_d * 2.4, h = 10)
+    translate([case_d * 0.34, 0, -1]) cyl(d = 5, h = 10)
+    translate([-case_d * 0.34, 0, -1]) cyl(d = 5, h = 10)
+    translate([0, case_d * 0.34, -1]) cyl(d = 5, h = 10)
+    translate([0, -case_d * 0.34, -1]) cyl(d = 5, h = 10)
+  }
+  translate([0, 0, 6]) torus(r = shaft_d * 1.4, tube = 2.5, fn = 48)
+}
+
+// ── 系统级：减速器总成（零件作者位姿归零，位置由约束 + 偏移量单一决定）──
+system reducer {
+  housing() as housing
+  ring_gear() as ring
+  sun_gear() as sun
+  carrier_asm() as carrier
+  input_shaft() as input
+  end_cover() as cover
+
+  // 约束：壳体接地；其余零件用「重合 + 轴向偏移」定位，再用同轴校验对中
+  constraint c_ground fixed(a = housing.origin)
+  constraint c_ring coincident(a = housing.z, b = ring.z, offset = [0, 0, z_ring])
+  constraint c_sun coincident(a = ring.z, b = sun.z, offset = [0, 0, 2])
+  constraint c_carrier coincident(a = sun.z, b = carrier.z, offset = [0, 0, 0])
+  constraint c_input coincident(a = housing.z, b = input.z, offset = [0, 0, -6])
+  constraint c_cover coincident(a = housing.z, b = cover.z, offset = [0, 0, case_h])
+  constraint c_axis_ring concentric(a = housing.z, b = ring.z)
+  constraint c_axis_sun concentric(a = ring.z, b = sun.z)
+  constraint c_axis_carrier concentric(a = sun.z, b = carrier.z)
+  constraint c_axis_input concentric(a = housing.z, b = input.z)
+  constraint c_axis_cover concentric(a = housing.z, b = cover.z)
+  constraint c_span distance(a = housing.origin, b = cover.origin, value = case_h)
+}

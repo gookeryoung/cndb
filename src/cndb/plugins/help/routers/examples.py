@@ -37,13 +37,13 @@ def list_examples(
     return {"items": HELP_EXAMPLE_MANIFEST}
 
 
-@router.get("/{scenario}/files/{filename}", response_class=Response, summary="下载示例 CSV")
+@router.get("/{scenario}/files/{filename}", response_class=Response, summary="下载示例 CSV / 设计文件")
 def download_example_file(
     scenario: str,
     filename: str,
     _current_user: Annotated[object, Depends(get_current_user)],
 ) -> Response:
-    """下载清单登记的示例 CSV；非法参数或文件缺失一律 404."""
+    """下载清单登记的文件（数据表 CSV 或结构设计 .cnmd）；非法参数或文件缺失一律 404."""
     path = resolve_example_file(scenario, filename)
     if path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="示例文件暂不可用")
@@ -51,9 +51,11 @@ def download_example_file(
     body = path.read_bytes()
     ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in filename)
     disposition = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
+    # 设计文件是 UTF-8 纯文本（`.cnmd`），按扩展名给类型，避免被当 CSV 打开
+    media_type = "text/plain; charset=utf-8" if path.suffix == ".cnmd" else "text/csv; charset=utf-8"
     return Response(
         content=body,
-        media_type="text/csv; charset=utf-8",
+        media_type=media_type,
         headers={"Content-Disposition": disposition},
     )
 

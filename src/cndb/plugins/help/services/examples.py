@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class HelpExampleTable(TypedDict):
@@ -19,8 +19,22 @@ class HelpExampleTable(TypedDict):
     rows: int
 
 
+class HelpExampleDesign(TypedDict):
+    """示例中的一份结构设计文件（`.cnmd`，ADR 0079）."""
+
+    file: str
+    title: str
+    description: str
+    kind: str
+    folder: str
+
+
 class HelpExample(TypedDict):
-    """一个示例场景."""
+    """一个示例场景.
+
+    ``designs`` 为可选的结构设计清单（仅「机械设计示例」场景使用）：与 ``tables``
+    互斥——该场景不含数据表，只提供可下载的 `.cnmd` 与说明。
+    """
 
     key: str
     name: str
@@ -28,6 +42,7 @@ class HelpExample(TypedDict):
     tables: list[HelpExampleTable]
     highlights: list[str]
     steps: list[str]
+    designs: NotRequired[list[HelpExampleDesign]]
 
 
 HELP_EXAMPLE_MANIFEST: list[HelpExample] = [
@@ -115,6 +130,102 @@ HELP_EXAMPLE_MANIFEST: list[HelpExample] = [
             "用工作分解视图 / 甘特图查看计划",
         ],
     },
+    {
+        "key": "mechanical",
+        "name": "机械设计示例",
+        "summary": "全套结构设计示例：从单零件、四轮小车到行星减速器、离心风机叶轮与自动化立体仓库，覆盖 DSG 的全部语法与规模边界。仅含设计文件，不含数据表。",
+        "tables": [],
+        "designs": [
+            {
+                "file": "法兰板.cnmd",
+                "title": "法兰板",
+                "description": "最小起步：`param` + 单个 `box` 减孔阵列。适合第一次打开设计编辑器时对照。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "L型支座.cnmd",
+                "title": "L型支座",
+                "description": "两个 `box` 并集 + 减孔，演示布尔顺序与 `translate` 定位。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "四轮小车.cnmd",
+                "title": "四轮小车",
+                "description": "与新建默认模板同构：`system` → 组件 → 布尔分组 → 图元，三级大纲的最小完整形态。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "六轴机械臂.cnmd",
+                "title": "六轴机械臂",
+                "description": "一份设计两个并列 `system` 根；组件内嵌套子装配（`forearm` 下挂 `link` / `joint`），演示「系统 → 组件 → 子装配 → 分组 → 零件」五层。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "分文件装配示例.cnmd",
+                "title": "分文件装配示例",
+                "description": '用 `use "轮毂"` 引用 `parts/` 下的零件文件，并演示同一零件多实例（实参覆盖顶层 `param`）。',
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "行星减速器.cnmd",
+                "title": "行星减速器",
+                "description": "派生参数链（`r_sun` / `r_planet` / `r_carrier` 随齿数联动）+ 三角函数极坐标布齿 + 三级子装配 + 完整约束链（12 条 `coincident` / `concentric` / `fixed`）。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "离心风机叶轮.cnmd",
+                "title": "离心风机叶轮",
+                "description": "`intersection` 造回转曲面（前盘导流罩）、`mirror` 生成对称半壳、`torus` 集流器、`cone` 导流帽，六种图元全覆盖。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "自动化立体仓库.cnmd",
+                "title": "自动化立体仓库",
+                "description": "分文件零件批量实例化的规模示例：84 个货位实例引用 `parts/货架单元.cnmd`，展开约 1412 个图元，用于观察编译与预览在大装配下的表现（闭包预算上限 2000）。",
+                "kind": "assembly",
+                "folder": "",
+            },
+            {
+                "file": "轮毂.cnmd",
+                "title": "轮毂",
+                "description": "零件文件（`parts/`）：阶梯轴套 + 减重孔，被「分文件装配示例」以 `use` 引用。",
+                "kind": "part",
+                "folder": "parts",
+            },
+            {
+                "file": "底板.cnmd",
+                "title": "底板",
+                "description": "零件文件（`parts/`）：带减重与安装孔的底板，被「分文件装配示例」复用。",
+                "kind": "part",
+                "folder": "parts",
+            },
+            {
+                "file": "货架单元.cnmd",
+                "title": "货架单元",
+                "description": "零件文件（`parts/`）：单组货位（立柱 + 层板 + 地脚），被「自动化立体仓库」批量实例化。",
+                "kind": "part",
+                "folder": "parts",
+            },
+        ],
+        "highlights": [
+            "同一套 DSL 覆盖单零件、多系统装配与千图元规模",
+            "分文件零件 + `use` 实参覆盖，实现「一份零件、多处不同参数」",
+            "约束求解（`coincident` / `concentric` / `distance` / `fixed`）让位姿由参数单一决定",
+        ],
+        "steps": [
+            "下载感兴趣的 .cnmd 文件",
+            "在设计模块「新建」一份设计，把内容粘进去",
+            "改顶层 param 看几何联动（如行星减速器的齿数 m / z_sun）",
+            "分文件示例需把 parts/ 下的零件先建成零件文件，再用 use 引用",
+        ],
+    },
 ]
 
 # 场景 key → 示例资产目录名（仅服务端使用，接口不暴露）
@@ -123,6 +234,7 @@ HELP_EXAMPLE_MANIFEST: list[HelpExample] = [
 SCENARIO_DIRECTORIES: dict[str, str] = {
     "sales": "工作区-某企业销售管理",
     "research": "科研项目管理",
+    "mechanical": "工作区-机械设计示例",
 }
 
 

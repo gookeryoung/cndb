@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -208,8 +209,9 @@ def test_real_design_examples_are_valid():
     from cndb.cli.seed import paths as seed_paths
 
     ws_cnmds = seed_paths._get_workspace_design_cnmds(base)
-    assert set(ws_cnmds) == {"某企业销售管理"}
-    entries = ws_cnmds["某企业销售管理"]
+    # 设计示例集中在「机械设计示例」工作区（仅设计、无数据表）；其余工作区不带 designs/
+    assert set(ws_cnmds) == {"机械设计示例"}
+    entries = ws_cnmds["机械设计示例"]
     names = [(folder, p.name) for folder, p in entries]
     assert names == [
         ("", "L型支座.cnmd"),
@@ -217,7 +219,11 @@ def test_real_design_examples_are_valid():
         ("", "分文件装配示例.cnmd"),
         ("", "四轮小车.cnmd"),
         ("", "法兰板.cnmd"),
+        ("", "离心风机叶轮.cnmd"),
+        ("", "自动化立体仓库.cnmd"),
+        ("", "行星减速器.cnmd"),
         ("parts", "底板.cnmd"),
+        ("parts", "货架单元.cnmd"),
         ("parts", "轮毂.cnmd"),
     ]
 
@@ -263,7 +269,7 @@ def test_real_complex_system_example_outline():
         Path(__file__).resolve().parents[1]
         / "examples"
         / "datasets"
-        / "工作区-某企业销售管理"
+        / "工作区-机械设计示例"
         / "designs"
         / "六轴机械臂.cnmd"
     )
@@ -280,3 +286,97 @@ def test_real_complex_system_example_outline():
     forearm = next(child for child in robot["children"] if child["kind"] == "assembly" and child["name"] == "forearm")
     nested = {child["name"] for child in forearm["children"] if child["kind"] == "assembly"}
     assert {"link", "joint"} <= nested
+
+
+def _designs_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-机械设计示例" / "designs"
+
+
+def _geom_count(node: dict) -> int:
+    """几何 IR 子树图元计数（布尔 / 组件节点递归，图元为叶）."""
+    return sum(_geom_count(child) for child in node["children"]) if "children" in node else 1
+
+
+def _compile_example(title: str):
+    """按真实种子口径编译示例（装配文件自动解析 parts/ 下的零件文件）."""
+    from cndb.plugins.design.services.dsl.compile import FileSource, compile_design
+    from cndb.plugins.design.services.files import content_hash
+
+    designs = _designs_dir()
+    parts = {p.stem: p.read_text(encoding="utf-8-sig") for p in (designs / "parts").glob("*.cnmd")}
+
+    def resolver(file_key: str):
+        content = parts.get(file_key)
+        if content is None:
+            return None
+        return FileSource(1, file_key, "part", content, 1, content_hash(content))
+
+    content = (designs / f"{title}.cnmd").read_text(encoding="utf-8-sig")
+    return compile_design(content, file_kind="assembly", resolver=resolver)
+
+
+def test_example_gear_reducer_covers_dsl_surface():
+    """行星减速器示例：派生参数链 + 三角函数布齿 + 三级子装配 + 约束求解全绿."""
+    result = _compile_example("行星减速器")
+    assert result.ok, [d.message for d in result.diagnostics]
+    ir = result.ir
+    assert ir
+    # 派生参数：r_carrier = m * n_sun / 2 + m * n_planet / 2（默认 m=2，8 / 12 齿）
+    params = {item["name"]: item["value"] for item in ir["params"]}
+    assert params["r_carrier"] == pytest.approx(20.0)
+    assert params["r_ring"] == pytest.approx(18.0)
+    # 约束全部消解成功（无 warning / error）
+    assert [c["status"] for c in ir["constraints"]] == ["ok"] * len(ir["constraints"])
+    assert len(ir["constraints"]) == 12
+    # 大纲：系统 → 组件（carrier_asm 内嵌 planet_gear）→ 分组 → 零件
+    roots = ir["outline"]["children"]
+    assert [root["kind"] for root in roots] == ["system"]
+    assert _outline_kinds(roots) == {"system", "assembly", "group", "part"}
+    carrier = next(child for child in roots[0]["children"] if child.get("name") == "carrier_asm")
+    nested = {child.get("name") for child in carrier["children"] if child["kind"] == "assembly"}
+    assert "planet_gear" in nested
+    # 规模：接近 100 个图元（比既有示例大一个量级）
+    assert sum(_geom_count(node) for node in ir["nodes"]) >= 80
+
+
+def test_example_impeller_uses_intersection_mirror_and_six_primitives():
+    """离心风机叶轮示例：intersection 曲面 / mirror 镜像 / 六图元全覆盖."""
+    result = _compile_example("离心风机叶轮")
+    assert result.ok, [d.message for d in result.diagnostics]
+    ir = result.ir
+    assert ir
+    primitives = set()
+    ops = set()
+
+    def walk(nodes):
+        for node in nodes:
+            if "children" in node:
+                ops.add(node["op"])
+                walk(node["children"])
+            else:
+                primitives.add(node["op"])
+                for kind, _vector in (node.get("transform") or {}).get("ops", []):
+                    ops.add(kind)
+
+    walk(ir["nodes"])
+    assert primitives == {"box", "cyl", "sphere", "cone", "torus", "tube"}
+    assert {"union", "difference", "intersection", "mirror"} <= ops
+    # 叶片圈 12 片 + 6 个约束组件 = 18 个顶层实例级别的大纲节点
+    assert len(ir["outline"]["children"][0]["children"]) >= 12
+    assert all(c["status"] == "ok" for c in ir["constraints"])
+
+
+def test_example_asrs_reaches_budget_scale():
+    """自动化立体仓库示例：分文件零件批量实例化，图元规模接近闭包预算上限."""
+    result = _compile_example("自动化立体仓库")
+    assert result.ok, [d.message for d in result.diagnostics]
+    ir = result.ir
+    assert ir
+    total = sum(_geom_count(node) for node in ir["nodes"])
+    # 84 个货位 × 15 图元 + 立柱 / 地脚 / 堆垛机 ≈ 1400 图元（预算上限 2000）
+    assert 1200 <= total <= 2000
+    # 单文件原文不大（阵列由循环展开生成），但 IR 规模显著
+    assert len(json.dumps(ir)) > 300_000
+    # 依赖闭包记录了被引用的零件文件（版本可复现，H20）
+    assert [dep.file_key for dep in result.dependencies] == ["货架单元"]
+    assert all(c["status"] == "ok" for c in ir["constraints"])
