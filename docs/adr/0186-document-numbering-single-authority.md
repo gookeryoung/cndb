@@ -209,16 +209,16 @@ def resolve_heading_numbering(mode: str, heading: str, blocks: Sequence[Block]) 
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/export/numbering.py`（新增）、`src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py` | `tests/test_export_numbering.py`（新增）、`tests/test_export_templates.py` | `<sha>` |
-| P1 | 已落地 | `src/cndb/plugins/documents/services/content_builtins.py`、`docs/requirements/0185-content-template-builtin-library.md` | `tests/test_documents_content_templates.py` | `<sha>` |
-| P2 | 已落地 | `frontend/src/api/exportTemplates.ts`、`frontend/src/pages/documents/templateOptions.ts`、`frontend/src/pages/documents/ExportTemplatePanel.tsx`、`frontend/src/pages/documents/ContentTemplatePanel.tsx`、`frontend/src/pages/documents/contentTemplateNumbers.ts`（新增） | `frontend/src/pages/documents/ExportTemplatePanel.test.tsx`、`frontend/src/pages/documents/ContentTemplatePanel.test.tsx`、`frontend/src/pages/documents/contentTemplateNumbers.test.ts`（新增） | `<sha>` |
-| P3 | 已落地 | `CONTEXT.md`、`docs/USER_DOC_MAP.md`、`frontend/src/pages/help/content/tutorials.tsx`、`docs/CONSTRAINTS.md` | `frontend/tests/e2e/critical/document-numbering-authority.spec.ts`（新增） | `<sha>` |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/export/numbering.py`（新增）、`src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py` | `tests/test_export_numbering.py`（新增）、`tests/test_export_templates.py` | `c570d487` |
+| P1 | 已落地 | `src/cndb/plugins/documents/services/content_builtins.py`、`docs/requirements/0185-content-template-builtin-library.md` | `tests/test_documents_content_templates.py` | `c570d487` |
+| P2 | 已落地 | `frontend/src/api/exportTemplates.ts`、`frontend/src/pages/documents/templateOptions.ts`、`frontend/src/pages/documents/ExportTemplatePanel.tsx`、`frontend/src/pages/documents/ContentTemplatePanel.tsx`、`frontend/src/pages/documents/contentTemplateNumbers.ts`（新增） | `frontend/src/pages/documents/ExportTemplatePanel.test.tsx`、`frontend/src/pages/documents/ContentTemplatePanel.test.tsx`、`frontend/src/pages/documents/contentTemplateNumbers.test.ts`（新增） | `c570d487` |
+| P3 | 已落地 | `CONTEXT.md`、`docs/USER_DOC_MAP.md`、`frontend/src/pages/help/content/tutorials.tsx`、`docs/CONSTRAINTS.md` | `frontend/tests/e2e/critical/document-numbering-authority.spec.ts`（新增） | `c570d487` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0–P3 已落地（2026-11-27），等待提交与回填 sha
+- 当前阶段：P0–P3 全部已落地并提交（`c570d487`，2026-11-27），`make adr-check` 归零
 - 已完成：检测器 + `mode` 三档 + docx / pdf 让位 + 题注让位；内置 6 套内容模板去号与 0185 口径修订；前端类型 / 选项 / 面板下拉 /「去除标题序号」工具；H72 登记与文档回填
-- 下一步：提交并回填本表 sha，`make adr-check` 归零
+- 下一步：无（P0–P3 已落地、sha 已回填）。后续若新增编号方案，扩 `NumberingConfig.heading` 枚举并在 `heading_prefix()` 补分支，判定链不变。
 - 已知坑：
   - `templates.py` 的 `NumberingConfig` 是 `extra="forbid"`，前端必须**同时**发 `heading` 与 `mode`，否则新的前端打旧后端会 422（本仓库前后端同版本发布，暂无跨版本需求）。
   - 检测器只认标题文本**开头**的序号模式；「第 3.1 节 目标」这种中间带号的写法不触发让位（有意保守，宁可多编号一次也不误判为手写）。
