@@ -133,12 +133,12 @@ Related: `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugi
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/routers/groups.py`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`、`frontend/src/api/tables.ts`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_tables_link_graph.py`、`frontend/src/pages/tables/TableLinkGraphPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | `2250fb9c` |
-| P1 | 已落地 | `src/cndb/plugins/tables/services/core/link_graph.py`（节点 / 边带 can_edit 位，E5/D8）、`src/cndb/plugins/tables/services/core/links.py`（悬空关联检测与清理，D7）、`src/cndb/plugins/tables/routers/fields.py`（改目标表失效预检，E2′）、`frontend/src/api/types/tables.ts`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`（两步连线 E4 / 建边 E1 / 改边 E2 / 删边 E3） | `tests/test_tables_link_graph.py`（能力位 3 例 + 改目标表拦截 3 例）、`frontend/src/pages/tables/TableLinkGraphPage.test.tsx`（编辑 8 例） | 待提交 |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/link_graph.py`（节点 / 边带 can_edit 位，E5/D8）、`src/cndb/plugins/tables/services/core/links.py`（悬空关联检测与清理，D7）、`src/cndb/plugins/tables/routers/fields.py`（改目标表失效预检，E2′）、`frontend/src/api/types/tables.ts`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`（两步连线 E4 / 建边 E1 / 改边 E2 / 删边 E3） | `tests/test_tables_link_graph.py`（能力位 3 例 + 改目标表拦截 3 例）、`frontend/src/pages/tables/TableLinkGraphPage.test.tsx`（编辑 8 例） | `2d4966bb` |
 | P2 | 未开始 | — | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地并提交（`2250fb9c`）；P1 已落地（2026-11-28，待提交）；P2 未开始。
+- 当前阶段：P0 已落地并提交（`2250fb9c`）；P1 已落地并提交（`2d4966bb`，2026-11-28）；P2 未开始。
 - 已完成：P0（后端聚合接口 + 缓存失效点 + 前端页面 + 页签入口 + 单测）；P1（`can_edit` 判定位、两步点击连线建边、Inspector 改 / 删边、改目标表的失效预检 + `force` 清理）。
 - 下一步：P2（布局 / 备注持久化）需新表 + 迁移 + `backup_io`，届时按 S2 另行评审；P1 不新增写路径（D6），后续若要「拖拽连线」需先推翻 D5 并说明移动端方案。
 - 已知坑：
