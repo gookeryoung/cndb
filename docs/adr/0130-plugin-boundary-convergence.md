@@ -31,8 +31,8 @@ Related: `src/cndb/core/plugin_registry.py`、`src/cndb/core/http.py`、`src/cnd
 |---|---|---|---|---|
 | P0-1 | 已落地 | `src/cndb/core/plugin_registry.py`（find_spec 分流 + 环境相关失败口径）、`src/cndb/plugins/files/__init__.py`（定性）、删除 plugins/acquisition 目录 | `tests/test_plugin_registry.py` | `ec456e23` |
 | P0-2 | 已落地 | `src/cndb/core/http.py`（__all__ 同步公开名）、`src/cndb/plugins/documents/services/content/`、`src/cndb/plugins/workspaces/services/backup_io.py`（公共入口）、`src/cndb/plugins/workspaces/services/workspace_backup.py` | `tests/test_api_fetch.py`、`tests/test_workspace_backup_v13.py`、`tests/test_workspace_backup_v16.py` | `c13cfce8` |
-| P1 | 已落地 | `src/cndb/core/plugin_registry.py`（口径不变）、`src/cndb/plugins/`（结构不变）：插件布局包化的 D5 触发条件 2026-11-10 实测**未满足**（最大根级 .py 数 = 5 < 8；每插件根级职责文件各 1 个），按 D5 口径不执行，依据见「触发条件核对」 | `tests/test_plugin_registry.py`（插件发现口径不变即回归基线） | 2026-11-27 |
-| P2 | 已落地 | `src/cndb/core/`（结构不变）：共享内核化的 D6 触发条件实测**未满足**（被 ≥3 插件依赖且含业务语义的模块数 = 0，8 个候选全是横切能力），按 D6 口径不执行 | `tests/test_plugin_registry.py`（core 与插件边界口径不变即回归基线） | 2026-11-27 |
+| P1 | 已落地 | `src/cndb/core/plugin_registry.py`（口径不变）、`src/cndb/plugins/`（结构不变）：插件布局包化的 D5 触发条件 2026-11-10 实测**未满足**（最大根级 .py 数 = 5 < 8；每插件根级职责文件各 1 个），按 D5 口径不执行，依据见「触发条件核对」 | `tests/test_plugin_registry.py`（插件发现口径不变即回归基线） | `3c889320` |
+| P2 | 已落地 | `src/cndb/core/`（结构不变）：共享内核化的 D6 触发条件实测**未满足**（被 ≥3 插件依赖且含业务语义的模块数 = 0，8 个候选全是横切能力），按 D6 口径不执行 | `tests/test_plugin_registry.py`（core 与插件边界口径不变即回归基线） | `3c889320` |
 
 ## 触发条件核对（2026-11-10，只读统计）
 

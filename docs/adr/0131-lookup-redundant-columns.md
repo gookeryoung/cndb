@@ -172,7 +172,7 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 | P0 | 已落地 | `src/cndb/plugins/tables/services/core/lookup_columns.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/query.py`、`src/cndb/plugins/tables/services/core/records.py` | `tests/test_lookup_field.py` | ea9d6e1b |
 | P1 | 已落地 | `src/cndb/plugins/tables/services/core/lookup_sync.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_lookup_field.py` | ea9d6e1b |
 | P2 | 已落地 | `src/cndb/alembic/versions/e3f4a5b6c7d8_add_lookup_columns.py`、`src/cndb/cli/lookup.py`、`scripts/bench_perf.py` | `tests/test_lookup_columns_migration.py` | ea9d6e1b |
-| P3（可选） | 已落地 | `src/cndb/plugins/tables/services/core/query.py`（内存回退与扫描上限保留，未删）：显式可选项，**按设计不做**——保留回滚路径，上限仅在旧路径生效（P0-P2 已把主流路径下推到冗余列，回滚能力比删掉它更有价值） | `tests/test_lookup_field.py`、`tests/test_lookup_columns_migration.py`（旧路径与迁移口径的回归基线） | 2026-11-27 |
+| P3（可选） | 已落地 | `src/cndb/plugins/tables/services/core/query.py`（内存回退与扫描上限保留，未删）：显式可选项，**按设计不做**——保留回滚路径，上限仅在旧路径生效（P0-P2 已把主流路径下推到冗余列，回滚能力比删掉它更有价值） | `tests/test_lookup_field.py`、`tests/test_lookup_columns_migration.py`（旧路径与迁移口径的回归基线） | `3c889320` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
