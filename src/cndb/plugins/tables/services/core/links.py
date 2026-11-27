@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Table, inspect, select, text
+from sqlalchemy import Table, delete, inspect, select, text
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
@@ -613,6 +613,80 @@ def link_table_exists(engine: Engine, name: str) -> bool:
     return name in inspect(engine).get_table_names()
 
 
+def find_dangling_link_rows(
+    engine: Any,
+    db: Session,
+    field: DataField,
+    new_target_table_id: int,
+    limit: int = 20,
+) -> int:
+    """改「关联目标表」前的数据预检（ADR 0187 D7）.
+
+    返回关联物理表里「指向新目标表中不存在（或已软删）行」的**行数**。
+    关联表不存在或为空时返回 0。
+
+    背景（2026-11-28 实测）：``PATCH /fields`` 把 ``config.target_table_id``
+    改成另一张表时，既有实现只更新 metadata，关联物理表的 ``target_row_id``
+    原样保留——那些 id 在新目标表里通常并不存在，读取侧静默回退成 ``#1``，
+    用户看不到「数据已失效」。故改目标表前必须先给出影响面。
+    """
+    if not link_table_exists(engine, field.link_table_name):
+        return 0
+    link_table = _get_link_sa_table(engine, field.link_table_name)
+
+    # 新目标的合法行 id 集合：目标物理表不存在时视为「没有任何合法行」
+    target = db.get(DataTable, new_target_table_id)
+    valid_ids: set[int] = set()
+    if target is not None and not target.trashed:
+        names = set(inspect(engine).get_table_names())
+        if target.db_table_name in names:
+            target_sa = _get_sa_table_by_name(engine, target.db_table_name)
+            with engine.connect() as conn:
+                valid_ids = {int(r[0]) for r in conn.execute(select(target_sa.c.id)).all()}
+
+    with engine.connect() as conn:
+        rows = conn.execute(select(link_table.c.row_id, link_table.c.target_row_id)).all()
+    dangling_rows = {int(r[0]) for r in rows if int(r[1]) not in valid_ids}
+    if limit and len(dangling_rows) > limit:
+        # 计数语义：调用方只需要「有多少行会失效」，不逐行列举
+        return len(dangling_rows)
+    return len(dangling_rows)
+
+
+def drop_dangling_link_targets(
+    engine: Any,
+    db: Session,
+    field: DataField,
+    new_target_table_id: int,
+) -> int:
+    """清理改目标表后失效的关联行（ADR 0187 D7，需显式 force 才调用）.
+
+    只删「指向新目标表中不存在的行」的关联记录，不动源表主行本身
+    —— 主行仍在，只是这些关联失效。返回删除的关联记录条数。
+    """
+    if not link_table_exists(engine, field.link_table_name):
+        return 0
+    link_table = _get_link_sa_table(engine, field.link_table_name)
+
+    target = db.get(DataTable, new_target_table_id)
+    valid_ids: set[int] = set()
+    if target is not None and not target.trashed:
+        names = set(inspect(engine).get_table_names())
+        if target.db_table_name in names:
+            target_sa = _get_sa_table_by_name(engine, target.db_table_name)
+            with engine.connect() as conn:
+                valid_ids = {int(r[0]) for r in conn.execute(select(target_sa.c.id)).all()}
+
+    with engine.connect() as conn:
+        rows = conn.execute(select(link_table.c.id, link_table.c.target_row_id)).all()
+        stale_ids = [int(r[0]) for r in rows if int(r[1]) not in valid_ids]
+        if not stale_ids:
+            return 0
+        conn.execute(delete(link_table).where(link_table.c.id.in_(stale_ids)))
+        conn.commit()
+    return len(stale_ids)
+
+
 def _unused_text_import_guard() -> None:  # pragma: no cover - 保持 text 引用供方言调试
     text("SELECT 1")
 
@@ -621,7 +695,9 @@ __all__ = [
     "LINK_FIELD_TYPE",
     "attach_links",
     "clear_row_links",
+    "drop_dangling_link_targets",
     "find_back_references",
+    "find_dangling_link_rows",
     "is_link_field",
     "link_fields",
     "link_table_exists",

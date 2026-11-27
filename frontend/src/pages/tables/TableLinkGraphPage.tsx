@@ -14,13 +14,31 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Alert, App as AntApp, Button, Checkbox, Input, Space, Tag, Tooltip, Typography } from 'antd'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Alert,
+  App as AntApp,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd'
 import {
   AimOutlined,
   ApartmentOutlined,
   CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
   FilterOutlined,
+  LinkOutlined,
   MinusOutlined,
   PlusOutlined,
 } from '@ant-design/icons'
@@ -31,7 +49,7 @@ import { LabelLayout } from 'echarts/features'
 import { SVGRenderer } from 'echarts/renderers'
 import type { EChartsCoreOption, EChartsType } from 'echarts/core'
 
-import { tableApi } from '@/api'
+import { fieldApi, tableApi } from '@/api'
 import type { LinkGraphEdge, LinkGraphNode } from '@/api'
 import { useTheme } from '@/theme/ThemeProvider'
 import { SPACE } from '@/theme/tokens'
@@ -580,19 +598,33 @@ export default function TableLinkGraphPage() {
     [syncZoomPct],
   )
 
+  // click 处理器只挂一次（见上），用 ref 读最新交互态
+  const nodeByIdRef = useRef<Map<number, LinkGraphNode>>(new Map())
+  const connectFromRef = useRef<LinkGraphNode | null>(null)
+  const cancelConnectRef = useRef<() => void>(() => {})
+  const pickConnectTargetRef = useRef<(node: LinkGraphNode) => void>(() => {})
+
   useEffect(() => {
     if (!containerRef.current || !graph) return
     const chart = echarts.init(containerRef.current, undefined, { renderer: 'svg' })
     chartRef.current = chart
-    // 单击只选中：图谱里点错一下就跳走是文档图谱首版最被诟病的交互
+    // 单击只选中：图谱里点错一下就跳走是文档图谱首版最被诟病的交互。
+    // P1 E4：连线态下单击的语义变成「选目标表」，故先看连线态（经 ref 读最新值，
+    // 避免把 click 处理器因依赖变化重挂而丢失 echarts 内部状态）。
     chart.on('click', params => {
       if (params.dataType !== 'node') {
         setSelectedId(null)
+        cancelConnectRef.current()
         return
       }
       const data = params.data as { value?: number } | null
       const tid = data?.value
       if (typeof tid !== 'number') return
+      const node = nodeByIdRef.current.get(tid)
+      if (connectFromRef.current) {
+        if (node) pickConnectTargetRef.current(node)
+        return
+      }
       setSelectedId(tid)
     })
     chart.on('dblclick', params => {
@@ -686,6 +718,146 @@ export default function TableLinkGraphPage() {
     },
     [navigate, workspaceId],
   )
+
+  // ── P1 图上编辑（ADR 0187 E1–E4）──────────────────────────────
+  // 不新增写路径：建 / 改 / 删边一律走既有字段端点（D6），本页只做表单预填 + 提交。
+
+  /** 连线中态：E4 两步点击（点源表 → 点目标表），不做拖拽连线（D5） */
+  const [connectFrom, setConnectFrom] = useState<LinkGraphNode | null>(null)
+  /** 连线第二步选定的目标表（弹命名表单前） */
+  const [pendingTarget, setPendingTarget] = useState<LinkGraphNode | null>(null)
+  /** 正在编辑的边（null = 未打开编辑弹窗） */
+  const [editingEdge, setEditingEdge] = useState<LinkGraphEdge | null>(null)
+  const [form] = Form.useForm()
+
+  const queryClient = useQueryClient()
+  const invalidateGraph = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['table-link-graph', workspaceId] })
+  }, [queryClient, workspaceId])
+
+  /** 可连线的目标表：真实节点（虚拟节点没有可建的 link 目标） */
+  const connectTargets = useMemo(
+    () => nodes.filter(node => !node.virtual && node.id > 0),
+    [nodes],
+  )
+
+  const createEdge = useMutation({
+    mutationFn: (payload: { sourceId: number; targetId: number; name: string; multiple: boolean }) =>
+      fieldApi.create(workspaceId, payload.sourceId, {
+        name: payload.name,
+        field_type: 'link',
+        config: { target_table_id: payload.targetId, multiple: payload.multiple },
+      }),
+    onSuccess: () => {
+      message.success('已建立关联')
+      setConnectFrom(null)
+      invalidateGraph()
+    },
+    onError: (err: unknown) => message.error((err instanceof Error ? err.message : '建立关联失败')),
+  })
+
+  const updateEdge = useMutation({
+    mutationFn: (payload: { edge: LinkGraphEdge; name: string; multiple: boolean; targetId: number }) =>
+      fieldApi.update(workspaceId, payload.edge.source, payload.edge.id, {
+        name: payload.name,
+        config: { target_table_id: payload.targetId, multiple: payload.multiple },
+      }),
+    onSuccess: () => {
+      message.success('已更新关联')
+      setEditingEdge(null)
+      invalidateGraph()
+    },
+    onError: (err: unknown) => message.error((err instanceof Error ? err.message : '更新关联失败')),
+  })
+
+  /** 改目标表会失效既有取值（D7）：后端 400 时提示用户确认后带 force 重试 */
+  const updateEdgeForce = useMutation({
+    mutationFn: (payload: { edge: LinkGraphEdge; name: string; multiple: boolean; targetId: number }) =>
+      fieldApi.update(
+        workspaceId,
+        payload.edge.source,
+        payload.edge.id,
+        { name: payload.name, config: { target_table_id: payload.targetId, multiple: payload.multiple } },
+        true,
+      ),
+    onSuccess: () => {
+      message.success('已更新关联（失效关联已清除）')
+      setEditingEdge(null)
+      invalidateGraph()
+    },
+    onError: (err: unknown) => message.error((err instanceof Error ? err.message : '更新关联失败')),
+  })
+
+  const deleteEdge = useMutation({
+    mutationFn: (edge: LinkGraphEdge) => fieldApi.remove(workspaceId, edge.source, edge.id),
+    onSuccess: () => {
+      message.success('已删除关联')
+      setEditingEdge(null)
+      invalidateGraph()
+    },
+    onError: (err: unknown) => message.error((err instanceof Error ? err.message : '删除关联失败')),
+  })
+
+  /** E4：进入连线态。仅当源表可编辑（can_edit）才允许 */
+  const startConnect = useCallback((node: LinkGraphNode) => {
+    if (node.virtual || !node.can_edit) return
+    setConnectFrom(node)
+    setSelectedId(node.id)
+  }, [])
+
+  /** E4：连线态下点第二个节点 = 选目标，弹命名表单 */
+  const pickConnectTarget = useCallback(
+    (target: LinkGraphNode) => {
+      if (!connectFrom || target.virtual || target.id === connectFrom.id) return
+      const suggested = `关联${target.name}`.slice(0, 64)
+      form.setFieldsValue({ name: suggested, multiple: true })
+      setPendingTarget(target)
+    },
+    [connectFrom, form],
+  )
+
+  const cancelConnect = useCallback(() => {
+    setConnectFrom(null)
+    setPendingTarget(null)
+  }, [])
+
+  /** 打开编辑弹窗：从 Inspector 的边列表进入 */
+  const openEdgeEditor = useCallback(
+    (edge: LinkGraphEdge) => {
+      const targetNode = nodes.find(node => node.id === edge.target)
+      form.setFieldsValue({
+        name: edge.field_name,
+        multiple: edge.multiple,
+        targetId: edge.target > 0 ? edge.target : undefined,
+      })
+      setEditingEdge(edge)
+      // targetNode 仅用于校验提示，弹窗里由 Select 自己渲染
+      void targetNode
+    },
+    [form, nodes],
+  )
+
+  // refs 与最新态同步：echarts 的 click 处理器只挂一次，必须能读到当前连线态
+  useEffect(() => {
+    nodeByIdRef.current = new Map(nodes.map(node => [node.id, node]))
+  }, [nodes])
+  useEffect(() => {
+    connectFromRef.current = connectFrom
+  }, [connectFrom])
+  useEffect(() => {
+    cancelConnectRef.current = cancelConnect
+    pickConnectTargetRef.current = pickConnectTarget
+  }, [cancelConnect, pickConnectTarget])
+
+  /** E4：ESC 取消连线（拖拽中按 ESC 是通用预期） */
+  useEffect(() => {
+    if (!connectFrom) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelConnect()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [connectFrom, cancelConnect])
 
   const hiddenCount = Math.max(0, (graph?.nodes?.length ?? 0) - visible.nodes.length)
 
@@ -864,7 +1036,7 @@ export default function TableLinkGraphPage() {
                 ) : (
                   <ul className="cn-tgraph-inspector-list">
                     {selectionLinks.out.map(edge => (
-                      <li key={`out-${edge.id}`}>
+                      <li key={`out-${edge.id}`} data-testid={`table-graph-edge-${edge.id}`}>
                         <a
                           onClick={() => focusNode(edge.target)}
                           role="button"
@@ -873,7 +1045,39 @@ export default function TableLinkGraphPage() {
                         >
                           {nodeNameById(edge.target) || `#${edge.target}`}
                         </a>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                          {` via「${edge.field_name}」`}
+                        </Text>
                         {edge.target_state !== 'ok' && <Tag color="warning">{TARGET_STATE_LABELS[edge.target_state]}</Tag>}
+                        {edge.can_edit && (
+                          <Space size={2}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<EditOutlined />}
+                              aria-label="编辑关联"
+                              data-testid={`table-graph-edge-edit-${edge.id}`}
+                              onClick={() => openEdgeEditor(edge)}
+                            />
+                            <Popconfirm
+                              title="删除这条关联？"
+                              description="会一并删除该字段承载的全部关联数据，且不可撤销。"
+                              okText="删除"
+                              cancelText="取消"
+                              okButtonProps={{ danger: true }}
+                              onConfirm={() => deleteEdge.mutate(edge)}
+                            >
+                              <Button
+                                type="text"
+                                size="small"
+                                danger
+                                icon={<DeleteOutlined />}
+                                aria-label="删除关联"
+                                data-testid={`table-graph-edge-delete-${edge.id}`}
+                              />
+                            </Popconfirm>
+                          </Space>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -914,6 +1118,15 @@ export default function TableLinkGraphPage() {
                   onClick={() => openTable(selected)}
                 >
                   打开表
+                </Button>
+                <Button
+                  size="small"
+                  icon={<LinkOutlined />}
+                  data-testid="table-graph-inspector-connect"
+                  disabled={selected.virtual || selected.id <= 0 || !selected.can_edit}
+                  onClick={() => startConnect(selected)}
+                >
+                  从此表连线
                 </Button>
                 <Button
                   size="small"
@@ -991,6 +1204,124 @@ export default function TableLinkGraphPage() {
           )}
         </aside>
       </div>
+
+      {/* E4：连线中态提示条——明确当前在「选目标」，并提供退出 */}
+      {connectFrom && !pendingTarget && (
+        <Alert
+          type="info"
+          showIcon
+          data-testid="table-graph-connect-hint"
+          message={`正在从「${connectFrom.name}」连线：点另一个表作为目标，按 ESC 取消`}
+          action={
+            <Button size="small" data-testid="table-graph-connect-cancel" onClick={cancelConnect}>
+              取消
+            </Button>
+          }
+          style={{ marginBottom: SPACE.lg }}
+        />
+      )}
+
+      {/* E1：命名并确认建边 */}
+      <Modal
+        open={pendingTarget != null}
+        title="建立关联"
+        okText="建立"
+        cancelText="取消"
+        confirmLoading={createEdge.isPending}
+        onCancel={() => setPendingTarget(null)}
+        onOk={() => {
+          if (!connectFrom || !pendingTarget) return
+          form
+            .validateFields()
+            .then(values =>
+              createEdge.mutate({
+                sourceId: connectFrom.id,
+                targetId: pendingTarget.id,
+                name: String(values.name ?? '').trim(),
+                multiple: Boolean(values.multiple),
+              }),
+            )
+            .catch(() => undefined)
+        }}
+        destroyOnHidden
+      >
+        <Form form={form} layout="vertical" preserve={false}>
+          <Form.Item label="源表">
+            <Input value={connectFrom?.name ?? ''} disabled data-testid="table-graph-connect-source" />
+          </Form.Item>
+          <Form.Item label="目标表">
+            <Input value={pendingTarget?.name ?? ''} disabled data-testid="table-graph-connect-target" />
+          </Form.Item>
+          <Form.Item
+            name="name"
+            label="关联字段名"
+            rules={[{ required: true, message: '请填写关联字段名' }]}
+            extra="这是源表上的字段名，需在源表内唯一"
+          >
+            <Input placeholder="例如：所属项目" data-testid="table-graph-connect-name" />
+          </Form.Item>
+          <Form.Item name="multiple" label="允许多选" valuePropName="checked" extra="勾选后一个单元格可关联多行目标数据">
+            <Switch data-testid="table-graph-connect-multiple" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* E2 / E2′：编辑已有边（名字 / 多选 / 目标表） */}
+      <Modal
+        open={editingEdge != null}
+        title="编辑关联"
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={updateEdge.isPending || updateEdgeForce.isPending}
+        onCancel={() => setEditingEdge(null)}
+        onOk={() => {
+          if (!editingEdge) return
+          form
+            .validateFields()
+            .then(values => {
+              const targetId = Number(values.targetId)
+              const payload = {
+                edge: editingEdge,
+                name: String(values.name ?? '').trim(),
+                multiple: Boolean(values.multiple),
+                targetId,
+              }
+              // D7：改目标表可能失效既有取值，后端首次会 400，确认后带 force 重试
+              if (targetId !== editingEdge.target) {
+                updateEdgeForce.mutate(payload)
+              } else {
+                updateEdge.mutate(payload)
+              }
+            })
+            .catch(() => undefined)
+        }}
+        destroyOnHidden
+      >
+        <Form form={form} layout="vertical" preserve={false}>
+          <Form.Item
+            name="name"
+            label="关联字段名"
+            rules={[{ required: true, message: '请填写关联字段名' }]}
+          >
+            <Input data-testid="table-graph-edge-name" />
+          </Form.Item>
+          <Form.Item
+            name="targetId"
+            label="关联目标表"
+            extra="改成另一张表会让指向旧目标行的关联失效，保存时会先给出影响面"
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              data-testid="table-graph-edge-target"
+              options={connectTargets.map(node => ({ label: node.name, value: node.id }))}
+            />
+          </Form.Item>
+          <Form.Item name="multiple" label="允许多选" valuePropName="checked">
+            <Switch data-testid="table-graph-edge-multiple" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="table-graph-footer-stats">
         显示 {visible.nodes.length} / 共 {graph?.nodes?.length ?? 0} 个节点 · 关联 {visible.edges.length}

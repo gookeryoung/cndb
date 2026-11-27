@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataField, DataTable, TableGroup
-from cndb.plugins.tables.services.core.access import TableAction, preload_table_access
+from cndb.plugins.tables.services.core.access import TableAccessPreload, TableAction, preload_table_access
 
 #: 节点上限：与文档图谱（0168 C6）同量级，超过 500 张表的力导向图已读不出结论
 LINK_GRAPH_MAX_NODES = 500
@@ -77,8 +77,12 @@ def _prune_link_graph_cache(now: float) -> None:
 # ── 聚合 ───────────────────────────────────────────────
 
 
-def _readable_tables(db: Session, workspace_id: int, user: User) -> list[DataTable]:
-    """工作区内当前用户可读的非回收表（按 order / id 排序，判定口径与表列表一致）."""
+def _readable_tables(db: Session, workspace_id: int, user: User) -> tuple[list[DataTable], TableAccessPreload]:
+    """工作区内当前用户可读的非回收表（按 order / id 排序，判定口径与表列表一致）.
+
+    同时返回 ``preload``：P1 的 ``can_edit`` 判定位复用同一份预取数据，
+    不再二次查表（H64 单一判定入口，D8）。
+    """
     candidates = list(
         db.execute(
             select(DataTable)
@@ -89,9 +93,9 @@ def _readable_tables(db: Session, workspace_id: int, user: User) -> list[DataTab
         .all()
     )
     if not candidates:
-        return []
+        return [], preload_table_access(db, [], user)
     preload = preload_table_access(db, candidates, user)
-    return [t for t in candidates if preload.check(db, t, user, TableAction.READ)]
+    return [t for t in candidates if preload.check(db, t, user, TableAction.READ)], preload
 
 
 def _build_payload(
@@ -101,10 +105,14 @@ def _build_payload(
     *,
     max_nodes: int,
 ) -> dict[str, Any]:
-    readable = _readable_tables(db, workspace_id, user)
+    readable, preload = _readable_tables(db, workspace_id, user)
     total = len(readable)
     shown = readable[:max_nodes]
     truncated = total > len(shown)
+
+    # P1 E5 / D8：编辑入口的能力位由后端一次算好，前端只按位显隐。
+    # 边的编辑入口取**源表**的 EDIT_SCHEMA（建 / 改 / 删的都是源表的字段）。
+    can_edit: dict[int, bool] = {t.id: preload.check(db, t, user, TableAction.EDIT_SCHEMA) for t in shown}
 
     # 节点按 id 建索引：边只连「当前窗口内」的节点，窗口外走 edges_out_of_view
     node_ids = {t.id for t in shown}
@@ -186,6 +194,7 @@ def _build_payload(
                     "multiple": multiple,
                     "reference_field_count": ref_count,
                     "target_state": "other_workspace",
+                    "can_edit": can_edit.get(source_id, False),
                 }
             )
             continue
@@ -200,6 +209,7 @@ def _build_payload(
                     "multiple": multiple,
                     "reference_field_count": ref_count,
                     "target_state": "trashed",
+                    "can_edit": can_edit.get(source_id, False),
                 }
             )
             continue
@@ -216,6 +226,7 @@ def _build_payload(
                     "multiple": multiple,
                     "reference_field_count": ref_count,
                     "target_state": "restricted",
+                    "can_edit": can_edit.get(source_id, False),
                 }
             )
             continue
@@ -231,6 +242,7 @@ def _build_payload(
                 "multiple": multiple,
                 "reference_field_count": ref_count,
                 "target_state": "ok",
+                "can_edit": can_edit.get(source_id, False),
             }
         )
 
@@ -253,6 +265,7 @@ def _build_payload(
             "out_degree": out_degree.get(t.id, 0),
             "self_loop": t.id in self_loop_tables,
             "virtual": False,
+            "can_edit": can_edit.get(t.id, False),
         }
         for t in shown
     ]
@@ -271,6 +284,7 @@ def _build_payload(
                 "out_degree": 0,
                 "self_loop": False,
                 "virtual": True,
+                "can_edit": False,
             }
         )
     if trashed_tables:
@@ -286,6 +300,7 @@ def _build_payload(
                 "out_degree": 0,
                 "self_loop": False,
                 "virtual": True,
+                "can_edit": False,
             }
         )
 

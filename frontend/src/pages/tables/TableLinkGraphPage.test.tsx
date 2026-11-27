@@ -41,14 +41,14 @@ vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
 /** 真实表 A→B 一条边 + 指向已删目标的虚线边 + 自关联徽标 */
 const graphPayload = {
   nodes: [
-    { id: 1, name: '项目', description: '', group_id: null, group_name: '', field_count: 5, in_degree: 1, out_degree: 0, self_loop: false, virtual: false },
-    { id: 2, name: '任务', description: '', group_id: 3, group_name: '研发', field_count: 8, in_degree: 0, out_degree: 1, self_loop: false, virtual: false },
-    { id: 3, name: '任务树', description: '', group_id: 3, group_name: '研发', field_count: 4, in_degree: 0, out_degree: 0, self_loop: true, virtual: false },
-    { id: -2, name: '已删除 / 不可访问的表', description: '聚合目标', group_id: null, group_name: '', field_count: 0, in_degree: 1, out_degree: 0, self_loop: false, virtual: true },
+    { id: 1, name: '项目', description: '', group_id: null, group_name: '', field_count: 5, in_degree: 1, out_degree: 0, self_loop: false, virtual: false, can_edit: true },
+    { id: 2, name: '任务', description: '', group_id: 3, group_name: '研发', field_count: 8, in_degree: 0, out_degree: 1, self_loop: false, virtual: false, can_edit: true },
+    { id: 3, name: '任务树', description: '', group_id: 3, group_name: '研发', field_count: 4, in_degree: 0, out_degree: 0, self_loop: true, virtual: false, can_edit: true },
+    { id: -2, name: '已删除 / 不可访问的表', description: '聚合目标', group_id: null, group_name: '', field_count: 0, in_degree: 1, out_degree: 0, self_loop: false, virtual: true, can_edit: false },
   ],
   edges: [
-    { id: 11, field_name: '所属项目', source: 2, target: 1, multiple: true, reference_field_count: 2, target_state: 'ok' },
-    { id: 12, field_name: '指向已删', source: 1, target: -2, multiple: false, reference_field_count: 0, target_state: 'trashed' },
+    { id: 11, field_name: '所属项目', source: 2, target: 1, multiple: true, reference_field_count: 2, target_state: 'ok', can_edit: true },
+    { id: 12, field_name: '指向已删', source: 1, target: -2, multiple: false, reference_field_count: 0, target_state: 'trashed', can_edit: true },
   ],
   total: 3,
   truncated: false,
@@ -306,14 +306,14 @@ describe('关联图页（需求 0187 P0）', () => {
 
 describe('关联图纯函数', () => {
   const nodes: LinkGraphNode[] = [
-    { id: 1, name: '甲', description: '', group_name: '', field_count: 1, in_degree: 1, out_degree: 0, self_loop: false, virtual: false },
-    { id: 2, name: '乙', description: '', group_name: '', field_count: 1, in_degree: 0, out_degree: 1, self_loop: false, virtual: false },
-    { id: 3, name: '丙', description: '', group_name: '', field_count: 1, in_degree: 0, out_degree: 0, self_loop: false, virtual: false },
-    { id: -2, name: '已删', description: '', group_name: '', field_count: 0, in_degree: 0, out_degree: 0, self_loop: false, virtual: true },
+    { id: 1, name: '甲', description: '', group_name: '', field_count: 1, in_degree: 1, out_degree: 0, self_loop: false, virtual: false, can_edit: true },
+    { id: 2, name: '乙', description: '', group_name: '', field_count: 1, in_degree: 0, out_degree: 1, self_loop: false, virtual: false, can_edit: true },
+    { id: 3, name: '丙', description: '', group_name: '', field_count: 1, in_degree: 0, out_degree: 0, self_loop: false, virtual: false, can_edit: true },
+    { id: -2, name: '已删', description: '', group_name: '', field_count: 0, in_degree: 0, out_degree: 0, self_loop: false, virtual: true, can_edit: false },
   ]
   const edges: LinkGraphEdge[] = [
-    { id: 1, field_name: 'a', source: 2, target: 1, multiple: true, reference_field_count: 0, target_state: 'ok' },
-    { id: 2, field_name: 'b', source: 1, target: -2, multiple: false, reference_field_count: 0, target_state: 'trashed' },
+    { id: 1, field_name: 'a', source: 2, target: 1, multiple: true, reference_field_count: 0, target_state: 'ok', can_edit: true },
+    { id: 2, field_name: 'b', source: 1, target: -2, multiple: false, reference_field_count: 0, target_state: 'trashed', can_edit: true },
   ]
 
   it('collectNeighborhood：无向 BFS，1 跳只含直连，2 跳含虚拟目标', () => {
@@ -341,5 +341,198 @@ describe('关联图纯函数', () => {
     expect(isolated.map(n => n.id)).toEqual([3])
     const hubs = findHubs(nodes, degrees)
     expect(hubs.map(n => n.id)).toEqual([1, 2])
+  })
+})
+
+describe('关联图编辑（需求 0187 P1 / ADR 0187 E1–E4）', () => {
+  beforeEach(() => {
+    echartsMock.init.mockClear()
+    echartsMock.setOption.mockClear()
+    echartsMock.on.mockClear()
+    echartsMock.dispose.mockClear()
+    echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
+    server.use(
+      http.get('/api/v1/workspaces/:wid/tables/link-graph', () => HttpResponse.json(graphPayload)),
+    )
+  })
+
+  /** 选中节点：走 echarts click 回调（与真实交互同路径） */
+  async function selectNode(tid: number) {
+    await waitFor(() => expect(handlerOf('click')).toBeDefined())
+    act(() => handlerOf('click')!({ dataType: 'node', data: { value: tid } }))
+  }
+
+  it('E5：can_edit=true 时 Inspector 显示连线与边编辑入口', async () => {
+    renderPage()
+    await selectNode(2)
+
+    expect(await screen.findByTestId('table-graph-inspector-connect')).toBeEnabled()
+    // 节点 2 有一条出边（id=11）→ 有编辑 / 删除入口
+    expect(await screen.findByTestId('table-graph-edge-edit-11')).toBeInTheDocument()
+    expect(await screen.findByTestId('table-graph-edge-delete-11')).toBeInTheDocument()
+  })
+
+  it('E5：can_edit=false 的节点不渲染连线入口', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/tables/link-graph', () =>
+        HttpResponse.json({
+          ...graphPayload,
+          nodes: graphPayload.nodes.map(n => ({ ...n, can_edit: false })),
+          edges: graphPayload.edges.map(e => ({ ...e, can_edit: false })),
+        }),
+      ),
+    )
+    renderPage()
+    await selectNode(2)
+
+    expect(await screen.findByTestId('table-graph-inspector-connect')).toBeDisabled()
+    expect(screen.queryByTestId('table-graph-edge-edit-11')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('table-graph-edge-delete-11')).not.toBeInTheDocument()
+  })
+
+  it('E1 + E4：两步点击连线，提交 link 字段的建字段请求', async () => {
+    let captured: { wid: string; tid: string; body: Record<string, unknown> } | null = null
+    server.use(
+      http.post('/api/v1/workspaces/:wid/tables/:tid/fields', async ({ request, params }) => {
+        captured = {
+          wid: String(params.wid),
+          tid: String(params.tid),
+          body: (await request.json()) as Record<string, unknown>,
+        }
+        return HttpResponse.json({ id: 99 }, { status: 201 })
+      }),
+    )
+
+    renderPage()
+    // 第一步：从节点 2 开始连线
+    await selectNode(2)
+    fireEvent.click(await screen.findByTestId('table-graph-inspector-connect'))
+    expect(await screen.findByTestId('table-graph-connect-hint')).toBeInTheDocument()
+
+    // 第二步：点节点 1 作为目标
+    await waitFor(() => expect(handlerOf('click')).toBeDefined())
+    act(() => handlerOf('click')!({ dataType: 'node', data: { value: 1 } }))
+
+    const nameInput = await screen.findByTestId('table-graph-connect-name')
+    expect((nameInput as HTMLInputElement).value).toBe('关联项目')
+    fireEvent.change(nameInput, { target: { value: '所属项目' } })
+    fireEvent.click(screen.getByRole('button', { name: /建\s*立/ }))
+
+    await waitFor(() => expect(captured).not.toBeNull())
+    expect(captured!.tid).toBe('2')
+    expect(captured!.body).toMatchObject({
+      name: '所属项目',
+      field_type: 'link',
+      config: { target_table_id: 1, multiple: true },
+    })
+  })
+
+  it('E4：ESC 取消连线，不再进入选目标态', async () => {
+    renderPage()
+    await selectNode(2)
+    fireEvent.click(await screen.findByTestId('table-graph-inspector-connect'))
+    expect(await screen.findByTestId('table-graph-connect-hint')).toBeInTheDocument()
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    await waitFor(() =>
+      expect(screen.queryByTestId('table-graph-connect-hint')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('E2：编辑边只提交名字 / 多选 / 目标，不夹带未改的键', async () => {
+    let captured: Record<string, unknown> | null = null
+    server.use(
+      http.patch('/api/v1/workspaces/:wid/tables/:tid/fields/:fid', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 11 })
+      }),
+    )
+
+    renderPage()
+    await selectNode(2)
+    fireEvent.click(await screen.findByTestId('table-graph-edge-edit-11'))
+
+    const nameInput = await screen.findByTestId('table-graph-edge-name')
+    fireEvent.change(nameInput, { target: { value: '归属项目' } })
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    await waitFor(() => expect(captured).not.toBeNull())
+    expect(captured).toMatchObject({
+      name: '归属项目',
+      config: { target_table_id: 1, multiple: true },
+    })
+    // 未改的键不进 payload（后端 PATCH 语义是「只处理显式出现的键」）
+    expect(captured).not.toHaveProperty('field_type')
+    expect(captured).not.toHaveProperty('required')
+  })
+
+  it('E2′：改目标表时带 force 重试（D7 失效预检）', async () => {
+    const calls: Array<{ fid: string; force: boolean }> = []
+    server.use(
+      http.patch('/api/v1/workspaces/:wid/tables/:tid/fields/:fid', ({ request, params }) => {
+        const url = new URL(request.url)
+        calls.push({ fid: String(params.fid), force: url.searchParams.get('force') === 'true' })
+        return HttpResponse.json({ id: 11 })
+      }),
+    )
+
+    renderPage()
+    await selectNode(2)
+    fireEvent.click(await screen.findByTestId('table-graph-edge-edit-11'))
+
+    // 把目标从 1 改成 3 → 走带 force 的分支
+    const targetSelect = await screen.findByTestId('table-graph-edge-target')
+    fireEvent.mouseDown(targetSelect)
+    const option = await screen.findByTitle('任务树')
+    fireEvent.click(option)
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0))
+    expect(calls[0]).toEqual({ fid: '11', force: true })
+  })
+
+  it('E3：删除边需二次确认后才发请求', async () => {
+    let deleted = 0
+    server.use(
+      http.delete('/api/v1/workspaces/:wid/tables/:tid/fields/:fid', () => {
+        deleted += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+
+    renderPage()
+    await selectNode(2)
+    fireEvent.click(await screen.findByTestId('table-graph-edge-delete-11'))
+
+    // 确认框未确认前不得发请求
+    expect(await screen.findByText('删除这条关联？')).toBeInTheDocument()
+    expect(deleted).toBe(0)
+    fireEvent.click(screen.getByRole('button', { name: /^删\s*除$/ }))
+    await waitFor(() => expect(deleted).toBe(1))
+  })
+
+  it('E6：写成功后失效关联图查询（写后即见）', async () => {
+    let graphHits = 0
+    server.use(
+      http.get('/api/v1/workspaces/:wid/tables/link-graph', () => {
+        graphHits += 1
+        return HttpResponse.json(graphPayload)
+      }),
+      http.delete('/api/v1/workspaces/:wid/tables/:tid/fields/:fid', () =>
+        new HttpResponse(null, { status: 204 }),
+      ),
+    )
+
+    renderPage()
+    await selectNode(2)
+    await waitFor(() => expect(graphHits).toBe(1))
+    fireEvent.click(await screen.findByTestId('table-graph-edge-delete-11'))
+    fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+
+    await waitFor(() => expect(graphHits).toBe(2))
   })
 })

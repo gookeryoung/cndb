@@ -266,3 +266,153 @@ class TestLinkGraphCacheInvalidation:
         assert _graph(client, wid_one, auth_headers)["edges"] != []
         _link(client, wid_two, a["id"], auth_headers, "指向乙", b["id"])
         assert _graph(client, wid_two, auth_headers)["edges"] != []
+
+
+class TestCanEditFlag:
+    """P1 E5 / D8：编辑入口的能力位由后端算，前端只按位显隐."""
+
+    def test_owner_sees_can_edit_true(self, client, auth_headers):
+        wid = _ws(client, auth_headers, "关联图能力位 owner")
+        a = _table(client, wid, auth_headers, "甲")
+        b = _table(client, wid, auth_headers, "乙")
+        _link(client, wid, a["id"], auth_headers, "指向乙", b["id"])
+        _reset_cache()
+
+        payload = _graph(client, wid, auth_headers)
+        nodes = {n["id"]: n for n in payload["nodes"]}
+        assert nodes[a["id"]]["can_edit"] is True
+        assert nodes[b["id"]]["can_edit"] is True
+        assert payload["edges"][0]["can_edit"] is True
+
+    def test_viewer_cannot_edit(self, client, auth_headers, db):
+        """viewer 有 READ 但无 EDIT_SCHEMA：节点仍是节点，但编辑入口必须关闭."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
+
+        wid = _ws(client, auth_headers, "关联图能力位 viewer")
+
+        viewer = User(username="graph_edit_viewer", nickname="graph_edit_viewer")
+        viewer.set_password("passw0rd")
+        db.add(viewer)
+        db.commit()
+        db.add(WorkspaceMember(workspace_id=wid, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+
+        a = _table(client, wid, auth_headers, "甲")
+        b = _table(client, wid, auth_headers, "乙")
+        _link(client, wid, a["id"], auth_headers, "指向乙", b["id"])
+
+        r = client.post(
+            "/api/v1/accounts/auth/login",
+            json={"login": viewer.username, "password": "passw0rd"},
+        )
+        assert r.status_code == 200, r.text
+        viewer_auth = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        _reset_cache()
+
+        payload = _graph(client, wid, viewer_auth)
+        assert payload["nodes"], "viewer 应能看到可读表节点"
+        assert all(n["can_edit"] is False for n in payload["nodes"])
+        assert all(e["can_edit"] is False for e in payload["edges"])
+
+    def test_virtual_node_is_never_editable(self, client, auth_headers, db):
+        """虚拟聚合节点没有对应的真实表，恒不可编辑."""
+        from cndb.plugins.tables.models import DataTable
+
+        wid = _ws(client, auth_headers, "关联图能力位虚拟")
+        a = _table(client, wid, auth_headers, "甲")
+        b = _table(client, wid, auth_headers, "乙")
+        _link(client, wid, a["id"], auth_headers, "指向乙", b["id"])
+
+        # 把目标表送进回收站 → 该边改连「已删除 / 不可访问」虚拟节点
+        target = db.get(DataTable, b["id"])
+        target.trashed = True
+        db.commit()
+        _reset_cache()
+
+        payload = _graph(client, wid, auth_headers)
+        virtual = next(n for n in payload["nodes"] if n["virtual"])
+        assert virtual["can_edit"] is False
+        assert payload["edges"][0]["target_state"] == "trashed"
+
+
+class TestChangeTargetTableGuard:
+    """P1 E2′ / D7：改关联目标表时，失效关联必须先给影响面并要求 force.
+
+    实测背景（2026-11-28）：改目标表只更新 metadata，关联物理表的 target_row_id
+    原样保留，读取侧静默回退为 `#1`——用户看不出数据已失效。
+    """
+
+    def _seed(self, client, auth_headers):
+        wid = _ws(client, auth_headers, "改目标表拦截")
+        a = _table(client, wid, auth_headers, "源表")
+        b = _table(client, wid, auth_headers, "旧目标")
+        c = _table(client, wid, auth_headers, "新目标")
+        field = _link(client, wid, a["id"], auth_headers, "关联", b["id"])
+
+        # 旧目标建 1 行，源表建 1 行并关联它
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{b['id']}/records",
+            json={"values": {}},
+            headers=auth_headers,
+        )
+        assert r.status_code == 201, r.text
+        target_row = r.json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{a['id']}/records",
+            json={"values": {"关联": [target_row]}},
+            headers=auth_headers,
+        )
+        assert r.status_code == 201, r.text
+        return wid, a, b, c, field
+
+    def test_change_target_without_force_is_rejected(self, client, auth_headers):
+        wid, a, _b, c, field = self._seed(client, auth_headers)
+
+        r = client.patch(
+            FIELDS.format(wid=wid, tid=a["id"]) + f"/{field['id']}",
+            json={"config": {"target_table_id": c["id"], "multiple": True}},
+            headers=auth_headers,
+        )
+        assert r.status_code == 400, r.text
+        detail = r.json()["detail"]
+        assert "失效" in detail
+        assert "force" in detail
+
+        # 被拒绝后配置不得变更
+        fields = client.get(FIELDS.format(wid=wid, tid=a["id"]), headers=auth_headers).json()
+        current = next(f for f in fields if f["id"] == field["id"])
+        assert current["config"]["target_table_id"] == _b["id"]
+
+    def test_change_target_with_force_clears_dangling(self, client, auth_headers):
+        wid, a, _b, c, field = self._seed(client, auth_headers)
+
+        r = client.patch(
+            FIELDS.format(wid=wid, tid=a["id"]) + f"/{field['id']}",
+            params={"force": True},
+            json={"config": {"target_table_id": c["id"], "multiple": True}},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["config"]["target_table_id"] == c["id"]
+
+        # 失效关联被清理：源表行仍在，但该字段取值变空
+        rows = client.get(f"/api/v1/workspaces/{wid}/tables/{a['id']}/records", headers=auth_headers).json()["rows"]
+        assert len(rows) == 1, "源表主行不得被删除，只清理失效关联"
+        assert not rows[0].get("关联"), f"失效关联应被清除，实际: {rows[0].get('关联')}"
+
+    def test_change_target_without_dangling_needs_no_force(self, client, auth_headers):
+        """没有任何关联数据时改目标表是安全操作，不该无谓拦截."""
+        wid = _ws(client, auth_headers, "改目标表无数据")
+        a = _table(client, wid, auth_headers, "源表")
+        b = _table(client, wid, auth_headers, "旧目标")
+        c = _table(client, wid, auth_headers, "新目标")
+        field = _link(client, wid, a["id"], auth_headers, "关联", b["id"])
+
+        r = client.patch(
+            FIELDS.format(wid=wid, tid=a["id"]) + f"/{field['id']}",
+            json={"config": {"target_table_id": c["id"], "multiple": True}},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["config"]["target_table_id"] == c["id"]

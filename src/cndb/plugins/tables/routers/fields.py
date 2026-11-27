@@ -45,6 +45,8 @@ from cndb.plugins.tables.services.core.ddl import (
     table_has_rows,
 )
 from cndb.plugins.tables.services.core.links import (
+    drop_dangling_link_targets,
+    find_dangling_link_rows,
     find_duplicate_link_values,
     find_null_link_rows,
     is_link_field,
@@ -609,6 +611,31 @@ def update_field(
             shown = "、".join(f"'{value}'（行 {'、'.join(str(i) for i in ids)}）" for value, ids in dups)
             suffix = "（仅展示前 10 组）" if len(dups) >= 10 else ""
             raise HTTPException(status_code=400, detail=f"字段「{df.name}」启用唯一失败，存在重复值：{shown}{suffix}")
+
+    # ── 改「关联目标表」的失效预检（ADR 0187 D7）──
+    # 实测（2026-11-28）：把 link 的目标从 B 改到 C 后，关联物理表里指向旧目标 B 的
+    # target_row_id 原样保留，读取侧静默回退为 `#1`——用户完全看不出数据已失效。
+    # 因此先算影响面：存在失效关联且未显式 force 时拒绝，带 force 才清理后继续。
+    old_target_id = (old_field.config or {}).get("target_table_id")
+    new_target_id = (update_data.get("config") or {}).get("target_table_id") if "config" in update_data else None
+    if (
+        is_link_field(df)
+        and isinstance(old_target_id, int)
+        and isinstance(new_target_id, int)
+        and new_target_id != old_target_id
+    ):
+        dangling = find_dangling_link_rows(engine, db, df, new_target_id)
+        if dangling and not force:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"字段「{df.name}」改关联目标表会让 {dangling} 行已有取值失效"
+                    f"（这些关联指向的行在新目标表中不存在）；请确认后重试（带 force=true），"
+                    "确认后这些失效关联会被清除"
+                ),
+            )
+        if dangling:
+            drop_dangling_link_targets(engine, db, df, new_target_id)
 
     # 记录变更前旧值（物理 DDL 失败时恢复 metadata，保证与物理状态一致）
     old_values = {key: getattr(df, key) for key in update_data}

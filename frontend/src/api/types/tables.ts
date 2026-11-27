@@ -22,6 +22,8 @@ export interface LinkGraphNode {
   self_loop: boolean
   /** 虚拟节点（其他工作区 / 已删除不可访问的聚合目标）恒为 true，id 为负 */
   virtual: boolean
+  /** 当前用户能否改这张表的字段结构（EDIT_SCHEMA，ADR 0187 E5/D8）；虚拟节点恒 false */
+  can_edit: boolean
 }
 
 /** 关联图边（一条 link 字段 = 一条边；lookup 只计入 reference_field_count） */
@@ -33,6 +35,8 @@ export interface LinkGraphEdge {
   multiple: boolean
   reference_field_count: number
   target_state: LinkGraphTargetState
+  /** 能否编辑这条边（取**源表**的 EDIT_SCHEMA，ADR 0187 E5/D8） */
+  can_edit: boolean
 }
 
 /** GET /tables/link-graph 响应 */
