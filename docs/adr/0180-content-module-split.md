@@ -156,7 +156,7 @@ Related: `src/cndb/plugins/documents/services/content/`、`docs/requirements/018
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/content/` | `tests/test_documents_content_split.py` | ``b5f86148`` |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/content/` | `tests/test_documents_content_split.py` | ``5840ca05`` |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
