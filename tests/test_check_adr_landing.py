@@ -125,6 +125,32 @@ class TestCrossChecks:
         assert errors == []
         assert any("Status is still Proposed" in item for item in warnings)
 
+    def test_all_landed_but_accepted_warns(self, isolated: Path) -> None:
+        """已评审但期次后来才补齐的 ADR 会停在 Accepted，README 要求置 Implemented."""
+        path = _write_adr(
+            isolated,
+            status="Accepted",
+            rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |",
+        )
+
+        errors, warnings = adr_check._check_file(path, "ADR 0007")
+
+        assert errors == []
+        assert any("Status is still Accepted" in item for item in warnings)
+
+    def test_partially_landed_accepted_does_not_warn(self, isolated: Path) -> None:
+        """还有未开始分期时 Accepted 是正确状态，不得报漂移."""
+        path = _write_adr(
+            isolated,
+            status="Accepted",
+            rows=("| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |\n| P1 | 未开始 | — | — | — |"),
+        )
+
+        errors, warnings = adr_check._check_file(path, "ADR 0007")
+
+        assert errors == []
+        assert warnings == []
+
     def test_missing_changelog_entry_is_error(self, isolated: Path) -> None:
         path = _write_adr(
             isolated,

@@ -160,8 +160,14 @@ def _check_file(path: Path, changelog: str) -> tuple[list[str], list[str]]:
 
     if rows and all(row.get(COL_STATE, "").strip() == "已落地" for row in rows):
         adr_id = _adr_id(path)
-        if status == "Proposed":
-            warnings.append("all phases landed but Status is still Proposed (needs a human review update)")
+        # README 第 4 行的口径：分期全部落地一律置 Implemented。只查 Proposed 会漏掉
+        # Accepted（已评审但期次后来才补齐）这一类漂移——2026-11-28 一次核查就发现
+        # 26 份 ADR 全期已落地却停在 Accepted，索引里的「落地阶段」也随之过期。
+        if status in {"Proposed", "Accepted"}:
+            warnings.append(
+                f"all phases landed but Status is still {status} "
+                "(README: all landed -> Implemented; needs a human review update)"
+            )
         if adr_id and f"ADR {adr_id}" not in changelog:
             errors.append(f"CHANGELOG does not mention ADR {adr_id} (landed phases need an `(ADR {adr_id} Pn)` entry)")
 

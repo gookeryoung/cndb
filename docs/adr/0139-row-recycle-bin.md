@@ -159,9 +159,9 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已实现；e2e `row-recycle-bin.spec.ts` 待本地/CI 实跑验证。
+- 当前阶段：P0-P2 已实现（P0-P1 `ff4be4c7`，P2 `91e78f8b`）；e2e `row-recycle-bin.spec.ts` 已随 P2 落地，本地/CI 实跑结果待回填。
 - 已完成：`trash_rows` / `restore_rows` / `purge_rows` 三入口；`bulk_delete` 改软删；软删 / 恢复重算 lookup 冗余列；读路径（`_read_source_values`）排除软删目标行；`trashed=none|only|include` 三态 + 删除时间 / 操作人；`purge` / 批量恢复端点；删除影子表命名与用量统计；`rows_retention.purge_expired_rows` + `cndb tables purge-trash`（30 天 / dry-run / `days=0` 关闭 / 时间未知不清理）；前端工具栏「回收站」+ `RowRecycleBinDrawer`（恢复 / 彻底删除二次确认）；归档携带软删状态并在恢复时还原。
-- 下一步：跑 `make e2e`（`critical/row-recycle-bin.spec.ts`）；观察回收站体积与保留期任务执行情况后回填本表。
+- 下一步：无未落地分期。收尾项（人工）：跑 `make e2e` 实跑 `critical/row-recycle-bin.spec.ts` 并回填结果；观察回收站体积与保留期任务执行情况。
 - 已知坑：
   - `_trashed_at` 在早期库可能缺失列，本 ADR 不做自动 ALTER（只报告）。
   - 软删后 link 关系仍在，但 `attach_links` / lookup 解析都排除软删目标（`links.py:407`、`lookups.py::_read_source_values`），因此回收站行对外表现为"已删除"；恢复即恢复显示。

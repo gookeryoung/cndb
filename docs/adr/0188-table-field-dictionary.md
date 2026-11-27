@@ -141,14 +141,14 @@ services/dictionary/score.py    中间模型 → 标准符合度指标 + 缺口�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/alembic/versions/a7b8c9d0e1f2_add_field_business_metadata.py`；`src/cndb/plugins/tables/models.py`；`src/cndb/plugins/tables/schemas/models.py`；`src/cndb/plugins/tables/routers/fields.py`；`src/cndb/plugins/tables/routers/dictionary.py`；`src/cndb/plugins/tables/services/dictionary/build.py` | `tests/test_table_dictionary.py`、`tests/test_migration_field_business_metadata.py`、`frontend/src/pages/fields/FieldManager/FieldConfigPanel.test.tsx`、`frontend/src/pages/settings/TableSettingsPage.test.tsx` | 待提交 |
-| P1 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`；`src/cndb/plugins/workspaces/services/backup_io.py`；`src/cndb/render/markdown_export/`；`src/cndb/plugins/documents/plugin.py`；`src/cndb/plugins/tables/services/dictionary/export_render.py` | `tests/test_backup_field_metadata.py`、`tests/test_cov_documents_extra.py`、`frontend/src/pages/settings/TableSettingsPage.test.tsx` | 待提交 |
-| P2 | 已落地 | `src/cndb/plugins/tables/services/dictionary/score.py`；`src/cndb/plugins/tables/routers/dictionary.py`（score 与工作区合订） | `tests/test_table_dictionary.py`、`frontend/src/pages/settings/TableSettingsPage.test.tsx` | 待提交 |
+| P0 | 已落地 | `src/cndb/alembic/versions/a7b8c9d0e1f2_add_field_business_metadata.py`；`src/cndb/plugins/tables/models.py`；`src/cndb/plugins/tables/schemas/models.py`；`src/cndb/plugins/tables/routers/fields.py`；`src/cndb/plugins/tables/routers/dictionary.py`；`src/cndb/plugins/tables/services/dictionary/build.py` | `tests/test_table_dictionary.py`、`tests/test_migration_field_business_metadata.py`、`frontend/src/pages/fields/FieldManager/FieldConfigPanel.test.tsx`、`frontend/src/pages/settings/TableSettingsPage.test.tsx` | `2250fb9c` |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`；`src/cndb/plugins/workspaces/services/backup_io.py`；`src/cndb/render/markdown_export/`；`src/cndb/plugins/documents/plugin.py`；`src/cndb/plugins/tables/services/dictionary/export_render.py` | `tests/test_backup_field_metadata.py`、`tests/test_cov_documents_extra.py`、`frontend/src/pages/settings/TableSettingsPage.test.tsx` | `2250fb9c` |
+| P2 | 已落地 | `src/cndb/plugins/tables/services/dictionary/score.py`；`src/cndb/plugins/tables/routers/dictionary.py`（score 与工作区合订） | `tests/test_table_dictionary.py`、`frontend/src/pages/settings/TableSettingsPage.test.tsx` | `2250fb9c` |
 
 ## 交接
 
-- 当前阶段：P0–P2 已全部落地（业务元数据 / 五格式导出 / 符合度 / 合订 / 备份往返）；提交 sha 待提交后回填。
-- 已知限制：
+- 当前阶段：P0–P2 已全部落地并提交（`2250fb9c`，2026-11-28；业务元数据 / 五格式导出 / 符合度 / 合订 / 备份往返）。
+- 已知坑（含已知限制）：
   - 枚举选项的「业务含义」没有落点（`config.options[]` 只有 label / value / color），枚举字典该列固定「未填写」；要补齐需扩 `SelectOption`（下一轮，改 `field_types/select.py` 的 schema 与前端选项编辑器）。
   - 「变更记录」章节依赖 `tables_auditlog`，而字段级动作（create / update / delete field）当前**没有**写审计；本节先如实输出「暂无字段级变更记录」。补字段级审计是独立小项。
   - `schema_hash` 只覆盖结构，不含业务口径文本；改口径不会触发「结构已变更」提示（这是刻意的）。

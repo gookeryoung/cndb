@@ -1,6 +1,6 @@
-# ADR 0187: 数据表关联图（link 关系聚合可视化，P0 只读）
+# ADR 0187: 数据表关联图（link 关系聚合可视化；P0 只读 + P1 图上编辑）
 
-Status: Accepted（2026-11-28 用户确认「先P0」并验收 P0 范围）
+Status: Accepted（2026-11-28 用户确认「先P0」并验收 P0；同日「立项」P1 并评审通过、已落地；仅剩 P2 未开始，故未置 Implemented）
 Date: 2026-11-28
 Related: `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/routers/groups.py`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`、`frontend/src/api/tables.ts`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx`
 需求卡片: `docs/requirements/0187-table-link-graph.md`（需求原文与约束编号的唯一副本）
@@ -97,7 +97,7 @@ Related: `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugi
 | 期 | 内容 | 风险 |
 |---|---|---|
 | **P0** | 只读关联图（本 ADR 全部内容） | 低 |
-| **P1** | 图上建 / 改 / 删边（复用字段端点 + 二次确认 + 写后失效） | 中 |
+| **P1** | 图上建 / 改 / 删边（复用字段端点 + 二次确认 + 写后失效）；新增 `can_edit` 判定位与「改目标表」的影响面拦截 | 中 |
 | **P2** | 布局 / 备注持久化（需新表 + 迁移 + `backup_io`，届时另行评审） | 中 |
 
 ## 决策记录（唯一决策台账）
@@ -109,11 +109,15 @@ Related: `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugi
 | D3 | 跨区 / 已删目标怎么画 | 聚合虚拟节点（负 id），不带目标表名 | I1 / H17 / H53 | 「逐目标建断链节点」（泄漏表名与存在性） | `_build_payload` |
 | D4 | 图缓存失效策略 | 显式失效（写路径调用）+ 30s TTL 兜底 | 0182 C1 教训：只靠 TTL 会被当成「保存没生效」 | 「纯 TTL」（已知坑） | `invalidate_link_graph_cache` + 三处写路径 |
 | D5 | 编辑交互载体 | P0 只读；P1 复用字段端点，两步点击连线（不与力导向拖拽冲突） | 0182 C6 单击 / 双击分离结论 | 「拖拽连线建边」（与节点拖拽冲突、移动端不可用） | — |
+| D6 | P1 是否新增写路径 | 不新增：建 / 改 / 删边一律走既有 `POST/PATCH/DELETE .../fields`，图页只做「表单预填 + 提交」 | 需求卡片 P1「复用字段端点」；0130 插件边界 | 「新增 `/link-graph/edges` 写端点」（与字段 CRUD 双写、权限口径要维护两套） | `TableLinkGraphPage.tsx` |
+| D7 | 改「目标表」要不要拦 | **要**：`PATCH` 改 `config.target_table_id` 时，关联物理表里指向旧目标、且在新目标中不存在（或已软删）的行，必须先给出影响行数并要求显式 `force`，否则 400 拒绝 | **2026-11-28 实测**：把 link 目标从 B 改到 C（C 无行）后 PATCH 返回 200，关联物理表存量行原样保留，读取侧静默回退为 `#1`——悬空关联无任何提示 | 「静默放行，靠读侧回退兜底」（用户看不到数据已失效）；「自动清理全部悬空行」（破坏性且不可逆，无二次确认） | `routers/fields.py::update_field` |
+| D8 | `can_edit` 怎么算 | 后端在节点上带 `can_edit`（该表 `EDIT_SCHEMA`）与 `can_connect`（同时可写源表 schema），前端只按位显隐；边上的编辑入口取源表的能力 | H64 单一判定入口 | 「前端按 workspace role 自己算」（与后端判定漂移，H64 违规） | `services/core/link_graph.py` |
 
 ## Consequences
 
-- **正向**：零迁移拿到全局引用视图；交互与文档图谱同范式，学习成本为零；节点载荷已带 `can_edit` 语义位（P1 直接消费）。
-- **负向**：图数据按用户身份缓存（同工作区多身份各占条目）；P1 编辑落地前「图上不能改」是已知限制。
+- **正向**：零迁移拿到全局引用视图；交互与文档图谱同范式，学习成本为零；P1 编辑复用既有字段端点，不新增写路径与权限口径。
+- **负向**：图数据按用户身份缓存（同工作区多身份各占条目）；P1 落地前「图上不能改」是已知限制。
+- **勘误（2026-11-28）**：P0 的 Consequences 曾写「节点载荷已带 `can_edit` 语义位（P1 直接消费）」，实际 P0 代码未实现该字段——P1 把它作为 E5 的第一件事补上，并以 D8 定死计算口径。
 - **风险与缓解**：超大工作区（>500 表）靠截断 + `edges_out_of_view` 提示 + 聚焦模式兜底。
 
 ## 与既有 ADR 的关系
@@ -128,14 +132,19 @@ Related: `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugi
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/routers/groups.py`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`、`frontend/src/api/tables.ts`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_tables_link_graph.py`、`frontend/src/pages/tables/TableLinkGraphPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | 待提交 |
-| P1 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/tables/services/core/link_graph.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/routers/groups.py`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`、`frontend/src/api/tables.ts`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_tables_link_graph.py`、`frontend/src/pages/tables/TableLinkGraphPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | `2250fb9c` |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/link_graph.py`（节点 / 边带 can_edit 位，E5/D8）、`src/cndb/plugins/tables/services/core/links.py`（悬空关联检测与清理，D7）、`src/cndb/plugins/tables/routers/fields.py`（改目标表失效预检，E2′）、`frontend/src/api/types/tables.ts`、`frontend/src/pages/tables/TableLinkGraphPage.tsx`（两步连线 E4 / 建边 E1 / 改边 E2 / 删边 E3） | `tests/test_tables_link_graph.py`（能力位 3 例 + 改目标表拦截 3 例）、`frontend/src/pages/tables/TableLinkGraphPage.test.tsx`（编辑 8 例） | 待提交 |
 | P2 | 未开始 | — | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（只读关联图），待提交后回填 sha。
-- 已完成：P0（后端聚合接口 + 缓存失效点 + 前端页面 + 页签入口 + 单测）。
-- 下一步：P1 编辑能力（图上建 / 改 / 删边，复用字段端点）；属新需求，开工前先补卡片分期约束。
-- 已知坑：echarts `graphRoam` 缺省锚点是画布 (0,0)，缩放必须显式带 `originX/originY`（0168 踩过，本页已按中心锚点实现）；前端单测里 jsdom 无布局，断言缩放锚点前要 `Object.defineProperty` 显式给画布尺寸。
-- 最近一次全绿：`make flow` @ 待提交（2026-11-28）
+- 当前阶段：P0 已落地并提交（`2250fb9c`）；P1 已落地（2026-11-28，待提交）；P2 未开始。
+- 已完成：P0（后端聚合接口 + 缓存失效点 + 前端页面 + 页签入口 + 单测）；P1（`can_edit` 判定位、两步点击连线建边、Inspector 改 / 删边、改目标表的失效预检 + `force` 清理）。
+- 下一步：P2（布局 / 备注持久化）需新表 + 迁移 + `backup_io`，届时按 S2 另行评审；P1 不新增写路径（D6），后续若要「拖拽连线」需先推翻 D5 并说明移动端方案。
+- 已知坑：
+  - echarts `graphRoam` 缺省锚点是画布 (0,0)，缩放必须显式带 `originX/originY`（0168 踩过，本页已按中心锚点实现）；前端单测里 jsdom 无布局，断言缩放锚点前要 `Object.defineProperty` 显式给画布尺寸。
+  - **echarts 的 `click` 处理器只挂一次**（在 init 的 useEffect 里），P1 引入「连线态」后必须经 ref（`connectFromRef` / `nodeByIdRef` / `pickConnectTargetRef`）读最新交互态，否则处理器会读到闭包里的旧值、或在依赖变化时被重挂而丢失 echarts 内部状态。
+  - 两个 Modal（建边 / 改边）**共用同一个 `form` 实例**：打开前必须 `setFieldsValue` 把对应字段全量写一遍（含 `targetId`），否则会带上一次弹窗的残留值。
+  - antd 6 会在两字中文按钮中间插空格（「复 位」「删 除」），前端测试用 `getByRole('button', { name })` 必须写正则 `/删\s*除/`，否则匹配不到。
+  - 改目标表的失效判定按「新目标表中不存在的行 id」计算（D7）；若新目标表**物理表尚未创建**，合法行集为空，等于全部关联失效——这是有意的保守口径。
+- 最近一次全绿：`make flow` @ `2250fb9c`（2026-11-28，7944 passed / 17 skipped）

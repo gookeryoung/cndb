@@ -154,9 +154,9 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已全部落地（含双上下文 e2e `critical/record-conflict.spec.ts`，本地待 `make e2e` 实跑）。
+- 当前阶段：P0-P2 已全部落地（P0-P1 `ff4be4c7`，P2 `708ed4e1`；含双上下文 e2e `critical/record-conflict.spec.ts`）。
 - 已完成：`_rev` 列（新表 `build_sa_table` 建出 + 旧表 `ensure_row_version_column` 懒补）；`row_etag` / `parse_if_match`；`update_row(expected_rev=…)` 条件更新 + 409 `record_stale`；行载荷 `_etag`；各写路径 `_rev=_rev+1`（直编 / 批量 / 批量逐行 / 软删 / 恢复 / 治理合并）；导出与备份剔出 `_etag` / `_rev`；前端 `client.ts` 保留 `code`、`hooks.ts` 带 `If-Match` 且 409 时回滚 + 明确提示（不自动重放）。
-- 下一步：`make e2e` 实跑两条新 spec（record-conflict / row-recycle-bin）；观察 `record_stale` 发生率后由人确认 Status 是否改 `Implemented`。
+- 下一步：无未落地分期。收尾项（人工）：`make e2e` 实跑两条 spec（record-conflict / row-recycle-bin）；Status 已由人工确认为 `Implemented`（`1f78e290`）。
 - 已知坑：
   - `_rev` 已从 `_row_to_dict` 键空间排除（只露 `_etag`）；业务字段若叫 `id` 会覆盖行 id，ETag 用单独留存的主键计算。
   - 导入 upsert 的 `_rev` 自增已合进现有 `UPDATE ... SET`（`bulk_update_rows` 两个分支），无额外往返。

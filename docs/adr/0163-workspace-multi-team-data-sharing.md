@@ -158,8 +158,8 @@ Related: ADR 0153（团队层）、ADR 0154（工作区链接与团队数据授�
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 全部已落地（未提交，等待用户确认提交）
+- 当前阶段：P0 / P1 / P2 全部已落地并提交（`bc505abb`，2026-11-26）
 - 已完成：需求卡片 0163（C1-C5）；ADR Accepted（含 H57 修订，2026-11-26 人工确认）；P0 授予面 role 扩展；P1 403 归因文案 + 前端授权卡；P2 e2e + CHANGELOG 回填
-- 下一步：用户确认后提交（`feat: 团队授权扩展 viewer/editor 并收口多团队数据共享 (ADR 0163)`）
+- 下一步：无未落地分期。已提交（`bc505abb`，`feat: 团队数据授权扩展 viewer/editor 支撑工作区多团队共享 (ADR 0163)`）；e2e `critical/workspace-team-access-editor.spec.ts` 实跑结果待回填。
 - 已知坑：① `grant_team_access` 覆盖分支显式传 role 才会改角色——链接路径不传，owner 手工 editor 授权不会被链接批准降级；② e2e 授权前置放 beforeAll（用例相互独立，重试不依赖其它用例）；③ 设置页团队授权卡在 `?section=permissions` 分区
 - 最近一次全绿：`make check-fast` + 单跑 e2e `workspace-team-access-editor.spec.ts`（2 例通过）@ 本轮（2026-11-26）
