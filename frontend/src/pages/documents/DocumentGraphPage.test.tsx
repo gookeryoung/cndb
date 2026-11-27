@@ -86,6 +86,12 @@ function doubleClickNode(docId: number, isFolder = false) {
   act(() => handler?.({ dataType: 'node', data: { value: docId, is_folder: isFolder } }))
 }
 
+/** 节点尺寸：目录节点用 [宽, 高] 表达圆角方形（0184 C9），取宽参与比较 */
+function sizeOf(item: { symbolSize?: number | number[] }): number {
+  const size = item.symbolSize
+  return Array.isArray(size) ? size[0] : (size ?? 0)
+}
+
 /** 最近一次「完整图」option：标签显隐是单独一次 setOption 下发的，只带 label 没有 data */
 function lastGraphOption() {
   for (let i = echartsMock.setOption.mock.calls.length - 1; i >= 0; i -= 1) {
@@ -271,9 +277,10 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     expect(series.blur.itemStyle.opacity).toBeLessThan(0.5)
 
     // 度数分级：甲连了 2 条边，孤立文件夹 0 条，前者必须更大
-    expect(series.data[0].symbolSize).toBeGreaterThan(series.data[2].symbolSize)
-    expect(series.data[2].symbolSize).toBe(14)
-    expect(series.data.every((d: { symbolSize: number }) => d.symbolSize <= 40)).toBe(true)
+    expect(sizeOf(series.data[0])).toBeGreaterThan(sizeOf(series.data[2]))
+    // 需求 0184 C3：孤立点（非断链且度 0）在画布上退到 10px
+    expect(sizeOf(series.data[2])).toBe(10)
+    expect(series.data.every((d: { symbolSize?: number | number[] }) => sizeOf(d) <= 40)).toBe(true)
   })
 
   it('滚轮缩放后倍率读数跟随视图（graphroam 事件）', async () => {
@@ -415,15 +422,18 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
       }
       return undefined
     }
-    expect(forceOf()).toMatchObject({ repulsion: 180, edgeLength: 100, gravity: 0.08 })
+    // 需求 0184 C12：默认斥力 220（仍在 0182 C9 的 40–600 滑轨内），边长摊成区间
+    expect(forceOf()).toMatchObject({ repulsion: 220, edgeLength: [60, 140], gravity: 0.08 })
 
-    const slider = screen.getByTestId('graph-force-repulsion-wrap').querySelector('[role="slider"]') as HTMLElement
+    // 需求 0184 C10：力参数面板已从画布浮层移入 Inspector 折叠区，默认收起
+    fireEvent.click(screen.getByText('布局参数'))
+    const slider = (await screen.findByTestId('graph-force-repulsion-wrap')).querySelector('[role="slider"]') as HTMLElement
     // rc-slider 的键盘处理读 keyCode（antd 6 / rc-slider 11），只给 key 不会触发
     fireEvent.keyDown(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
-    await waitFor(() => expect(forceOf().repulsion).toBe(200))
+    await waitFor(() => expect(forceOf().repulsion).toBe(240))
 
     fireEvent.click(screen.getByTestId('graph-force-reset'))
-    await waitFor(() => expect(forceOf()).toMatchObject({ repulsion: 180, edgeLength: 100, gravity: 0.08 }))
+    await waitFor(() => expect(forceOf()).toMatchObject({ repulsion: 220, edgeLength: [60, 140], gravity: 0.08 }))
   })
 
   it('编辑器深链：?focus=2 直接以该文档为中心打开', async () => {
@@ -655,5 +665,164 @@ describe('图谱单双向边表达（需求 0183）', () => {
     expect(note).toHaveTextContent('互引')
     fireEvent.click(note)
     expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 4 / 共 4')
+  })
+})
+
+describe('图谱视觉打磨（需求 0184 P0）', () => {
+  beforeEach(() => {
+    echartsMock.init.mockClear()
+    echartsMock.setOption.mockClear()
+    echartsMock.on.mockClear()
+    echartsMock.dispose.mockClear()
+    echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(graphPayload)),
+    )
+  })
+
+  it('孤立点在画布上淡化并隐藏标签，侧栏清单仍保留（C3）', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const series = lastGraphOption()
+    const isolated = series.data[2]
+    // 资料夹是目录节点：符号是圆角方形，尺寸写成 [宽, 高]（C9），取宽比较
+    expect(sizeOf(isolated)).toBe(10)
+    expect(isolated.itemStyle.opacity).toBeLessThan(0.5)
+    expect(isolated.label.show).toBe(false)
+    expect(isolated.isolated).toBe(true)
+    // 0182 C8 的孤岛清单不受影响：画布淡化不等于功能移除
+    expect(screen.getByTestId('graph-isolated-list')).toHaveTextContent('资料夹')
+  })
+
+  it('边默认弱化：线细且淡，断链仍用 error 色虚线（C6）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const series = lastGraphOption()
+    const solid = series.links[0]
+    expect(solid.lineStyle.type).toBe('solid')
+    expect(solid.lineStyle.width).toBe(1)
+    expect(solid.lineStyle.opacity).toBeLessThan(0.4)
+
+    const broken = series.links[1]
+    expect(broken.lineStyle.type).toBe('dashed')
+    // 断链靠形状 + 颜色双通道，不靠加粗争权重
+    expect(broken.lineStyle.width).toBe(1)
+    expect(String(broken.lineStyle.color)).not.toContain('var(')
+  })
+
+  it('标签底衬只给度数 ≥2 的节点，其余保持透明（C7）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const series = lastGraphOption()
+    // 甲有两条出链，交叉边最密，给它底衬
+    expect(series.data[0].label.backgroundColor).toBeTruthy()
+    expect(series.data[0].label.backgroundColor).not.toBe('transparent')
+    // 乙只有一条边，不加底衬，免得满屏小方块
+    expect(series.data[1].label.backgroundColor).toBe('transparent')
+    expect(series.data[0].label.padding).toEqual([2, 4])
+  })
+
+  it('单击选中：选中节点加描边与投影，非邻接节点被压暗（C1/C2）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    const before = lastGraphOption()
+    const idleBorder = before.data[0].itemStyle.borderColor
+    const idleSize = before.data[0].symbolSize
+
+    clickNode(1)
+    await waitFor(() => expect(lastGraphOption()?.data?.[0]?.selected).toBe(true))
+
+    const after = lastGraphOption()
+    // 选中节点：描边换成主色 + 投影 + 轻微放大，填充色不动（格式色仍是主信息）
+    expect(after.data[0].itemStyle.borderColor).not.toBe(idleBorder)
+    expect(after.data[0].itemStyle.borderWidth).toBe(2)
+    expect(after.data[0].itemStyle.shadowBlur).toBeGreaterThan(0)
+    expect(after.data[0].symbolSize).toBeGreaterThan(idleSize)
+    expect(after.data[0].symbolSize).toBeLessThanOrEqual(40)
+
+    // 非邻接节点压暗，但仍在画布上（保留位置线索）
+    expect(after.data[2].itemStyle.opacity).toBeLessThan(0.2)
+    // 邻接边加粗加亮，非邻接边几乎看不见
+    expect(after.links[0].lineStyle.width).toBeGreaterThan(before.links[0].lineStyle.width)
+    expect(after.links[0].lineStyle.opacity).toBeGreaterThan(before.links[0].lineStyle.opacity)
+  })
+
+  it('点画布空白处取消选中，视图回到常态（C2）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    clickNode(1)
+    await waitFor(() => expect(lastGraphOption()?.data?.[0]?.selected).toBe(true))
+
+    const clickHandler = handlerOf('click')
+    act(() => clickHandler?.({ dataType: 'series', data: { value: 1 } }))
+    await waitFor(() => expect(lastGraphOption()?.data?.[0]?.selected).toBe(false))
+    // 取消后不再是「选中态」，节点回到默认透明度
+    expect(lastGraphOption()?.data?.[2]?.itemStyle?.opacity).toBeGreaterThan(0.3)
+  })
+})
+describe('图谱布局稳定与画布纹理（需求 0184 P2）', () => {
+  beforeEach(() => {
+    echartsMock.init.mockClear()
+    echartsMock.setOption.mockClear()
+    echartsMock.on.mockClear()
+    echartsMock.dispose.mockClear()
+    echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(graphPayload)),
+    )
+  })
+
+  it('力导向从环形初值起步、开布局动画，边长为区间值（C12）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    // 随机初值每次收敛结果不同，重建后图形会「换一张脸」：初值必须是确定性布局
+    const series = echartsMock.setOption.mock.calls[0][0].series[0]
+    expect(series.force.initLayout).toBe('circular')
+    expect(series.force.edgeLength).toEqual([60, 140])
+    expect(series.layoutAnimation).toBe(true)
+  })
+
+  it('option 更新走 merge，避免每次选中都让力导向重排（C12）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    clickNode(1)
+    await waitFor(() => {
+      const calls = echartsMock.setOption.mock.calls
+      const withData = calls.filter(call => Array.isArray(call[0]?.series?.[0]?.data))
+      expect(withData.length).toBeGreaterThan(1)
+    })
+
+    // 主 option 的每一次下发都必须传 merge=false 组合（第二参数 false），不能 notMerge
+    const mainCalls = echartsMock.setOption.mock.calls
+      .filter(call => Array.isArray(call[0]?.series?.[0]?.data))
+    expect(mainCalls.every(call => call[1] === false)).toBe(true)
+  })
+
+  it('画布用点阵网格背景，且不新增主题变量（C13）', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+
+    // 内联的 background 简写会重置 background-image，故底色与点阵都交给样式表
+    const canvas = screen.getByTestId('document-graph-canvas')
+    expect(canvas.style.background).toBe('')
+    expect(canvas.getAttribute('style')).not.toContain('background')
   })
 })

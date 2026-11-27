@@ -175,6 +175,8 @@ describe('applyThemeMixVars', () => {
       '--cn-text-primary': '#111827',
       '--cn-text-disabled': '#d1d5db',
       '--cn-border': '#e5e7eb',
+      // 需求 0184 C13：图谱点阵网格用的软边色，必须在场否则该主题不入缓存
+      '--cn-border-soft': '#d1d5db',
       '--cn-brand-color': '#1677ff',
       '--cn-shadow-color': '15 23 42',
       '--cn-code-block-bg': '#f6f8fa',

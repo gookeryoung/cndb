@@ -15,7 +15,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App as AntApp, Button, Checkbox, Input, Select, Slider, Space, Tag, Tooltip, Typography } from 'antd'
+import {
+  Alert,
+  App as AntApp,
+  Button,
+  Checkbox,
+  Collapse,
+  Input,
+  Select,
+  Slider,
+  Space,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd'
 import {
   AimOutlined,
   ApartmentOutlined,
@@ -37,6 +50,7 @@ import { DOC_FORMAT_META, formatMeta } from '@/components/Document/docFormat'
 import { STATUS_LABELS } from './documentDisplay'
 import { useTheme } from '@/theme/ThemeProvider'
 import { SPACE } from '@/theme/tokens'
+import { mixColor } from '@/theme/themeMix'
 import { copyText } from '@/utils/clipboard'
 // 本页样式随 chunk 加载：.cn-graph-* 只被这一页使用，留在 index.css 会让首屏 CSS 白付体积。
 import './DocumentGraphPage.css'
@@ -61,6 +75,34 @@ const ARROW_ZOOM_THRESHOLD = 0.4
 
 /** 边箭头尺寸：series 级与逐边覆盖共用同一常量 */
 const EDGE_SYMBOL_SIZE = 7
+
+/** 节点直径上限：度数再高也不再膨胀，避免单个超级枢纽吃掉整张画布 */
+const MAX_NODE_SIZE = 40
+/** 孤立点直径（C3）：比最小连通节点还小，让「没连线的」在画布上自然退后 */
+const ISOLATED_NODE_SIZE = 10
+/** 选中节点放大倍数（C1）：只做轻微强调，实际尺寸仍受 MAX_NODE_SIZE 夹住 */
+const SELECTED_NODE_SCALE = 1.15
+
+/** 边线宽与透明度（C6）：默认线细且淡，让节点成为视觉主体 */
+const EDGE_WIDTH = 1
+const EDGE_OPACITY = 0.32
+/** 断链线：形状（虚线）与颜色（error）已足够区分，只把透明度提回一点保证可读 */
+const BROKEN_EDGE_OPACITY = 0.6
+/** 选中节点的邻接边：加粗加亮，其余边退到几乎看不见（C2 / C6） */
+const EDGE_EMPHASIS_WIDTH = 1.6
+const EDGE_EMPHASIS_OPACITY = 0.9
+/** 选中后非邻接元素的压暗程度（C2） */
+const DIMMED_NODE_OPACITY = 0.12
+const DIMMED_EDGE_OPACITY = 0.06
+/** 孤立点透明度（C3） */
+const ISOLATED_NODE_OPACITY = 0.35
+
+/** 标签底衬的最小度数（C7）：度数 ≥ 2 才加，避免满屏小方块 */
+const LABEL_BACKPLATE_MIN_DEGREE = 2
+/** 目录节点的高宽比（C9）：方形符号压扁成圆角方块，形状与颜色双编码 */
+const FOLDER_SYMBOL_RATIO = 0.75
+/** 边染色的格式色权重（C5）：剩下的权重交给 --cn-border，压掉饱和色 */
+const EDGE_COLOR_FORMAT_PCT = 45
 /** 枢纽清单取度数的前 N 个（C8） */
 const HUB_TOP_N = 10
 
@@ -73,7 +115,16 @@ export interface ForceParams {
   gravity: number
 }
 
-const DEFAULT_FORCE: ForceParams = { repulsion: 180, edgeLength: 100, gravity: 0.08 }
+const DEFAULT_FORCE: ForceParams = { repulsion: 220, edgeLength: 100, gravity: 0.08 }
+
+/** 力导向边长的分布区间（C12）：单一值会让所有边等长、连成规整网格，给 0.6–1.4 倍留出疏密 */
+const EDGE_LENGTH_RANGE_RATIO = 0.6
+
+/** 把滑轨上的标量边长摊成 [min, max]，保留用户在 0182 C9 面板里的可调性 */
+function edgeLengthRange(edgeLength: number): [number, number] {
+  const min = Math.round(edgeLength * EDGE_LENGTH_RANGE_RATIO)
+  return [min, Math.round(edgeLength * (2 - EDGE_LENGTH_RANGE_RATIO))]
+}
 
 /** 节点标题过长时省略，避免力导向图标签互相压盖 */
 // 标题可能缺失（异常响应 / 空标题文档）：先兜底再取长度，否则 undefined.length 会整页崩溃。
@@ -85,6 +136,8 @@ function nodeLabel(title: string | null | undefined): string {
 /** echarts 的 SVG 属性不解析 CSS 变量：与 ChartView 同口径，先读计算值再注入 option. */
 interface ThemeColors {
   border: string
+  /** 画布容器底色：标签底衬与节点分隔环都读它，让节点/标签从交叉边里「浮」出来（C4 / C7） */
+  container: string
   text: string
   error: string
   warning: string
@@ -99,10 +152,34 @@ function readThemeColors(): ThemeColors {
   }
   return {
     border: read('--cn-border', '#e5e7eb'),
+    container: read('--cn-bg-container', '#ffffff'),
     text: read('--cn-text-primary', '#1f2937'),
     error: read('--cn-error', '#cf1322'),
     warning: read('--cn-warning', '#faad14'),
     primary: read('--cn-primary', '#2563eb'),
+  }
+}
+
+/**
+ * 字号 / 字重（C8）：H29 要求样式只取 token，`fontSize: 11` 这种裸值不能出现在 option 里。
+ * 与 readThemeColors 同源：直接读计算值，主题或字号偏好变化后随 colors 一起重算。
+ */
+interface ThemeMetrics {
+  labelFontSize: number
+  labelFontWeight: number
+}
+
+function readThemeMetrics(): ThemeMetrics {
+  const read = (name: string, fallback: string): string => {
+    if (typeof document === 'undefined') return fallback
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    return value || fallback
+  }
+  const size = Number.parseFloat(read('--cn-text-2xs', '11'))
+  const weight = Number.parseInt(read('--cn-weight-medium', '500'), 10)
+  return {
+    labelFontSize: Number.isFinite(size) && size > 0 ? size : 11,
+    labelFontWeight: Number.isFinite(weight) && weight > 0 ? weight : 500,
   }
 }
 
@@ -192,7 +269,7 @@ export function foldReciprocal(edges: GraphEdge[]): DisplayEdge[] {
 function nodeSize(node: GraphNode, degree: number): number {
   const base = node.broken ? 18 : 14
   const scaled = base + Math.log2(degree + 1) * 8
-  return Math.round(Math.min(40, scaled))
+  return Math.round(Math.min(MAX_NODE_SIZE, scaled))
 }
 
 /**
@@ -304,13 +381,51 @@ export function findHubs(
     .slice(0, limit)
 }
 
+/**
+ * 边的线色（C5）：取**源节点**的格式色，但要压到不抢节点与标签的程度 ——
+ * 直接画 #d4380d 这种饱和色，一张图会变成彩色线团。所以与 `--cn-border`
+ * 按 45:55 混一次（走 themeMix 兼容层：现代内核给 color-mix()，旧内核给字面量）。
+ *
+ * 断链仍由调用方走 `--cn-error` 虚线：形状 + 颜色双通道，不与普通线争权重。
+ * `mixColor` 的入参必须是**已解析的颜色**（不能用 var()），否则 SVG 属性读不到值。
+ */
+function edgeColor(edge: DisplayEdge, source: GraphNode | undefined, colors: ThemeColors): string {
+  if (edge.broken) return colors.error
+  if (!source) return colors.border
+  return mixColor(formatColor(source, colors), EDGE_COLOR_FORMAT_PCT, colors.border)
+}
+
 function buildOption(
   nodes: GraphNode[],
   edges: DisplayEdge[],
   colors: ThemeColors,
+  metrics: ThemeMetrics,
   force: ForceParams,
+  selectedId: number | null = null,
 ): EChartsCoreOption {
   const degree = buildDegrees(nodes, edges)
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
+
+  /**
+   * 选中态常驻邻接聚焦（C1 / C2）：单击后整张图只留「这个节点 + 它的直接邻居」，
+   * 其余压暗而不是消失 —— 保留位置线索，用户仍知道图有多大。
+   * 邻接按折叠后的无向边算：互引只算一条线（与 0183 C3 的口径一致）。
+   */
+  const hasSelection = selectedId != null && nodes.some(node => node.id === selectedId)
+  const adjacent = new Set<number>()
+  if (hasSelection) {
+    adjacent.add(selectedId as number)
+    for (const edge of edges) {
+      if (edge.source === selectedId) adjacent.add(edge.target)
+      if (edge.target === selectedId) adjacent.add(edge.source)
+    }
+  }
+  const isDimmed = (id: number) => hasSelection && !adjacent.has(id)
+  const dimmedEdge = (edge: DisplayEdge) =>
+    hasSelection && edge.source !== selectedId && edge.target !== selectedId
+  const adjacentEdge = (edge: DisplayEdge) =>
+    hasSelection && (edge.source === selectedId || edge.target === selectedId)
+
   return {
     animationDuration: 300,
     // 力导向布局在空中飘：收敛后停住，交互时才继续，避免整页一直抖动
@@ -346,11 +461,15 @@ function buildOption(
         // 缩放时节点尺寸变化幅度（1 = 完全随缩放，0 = 尺寸恒定）
         nodeScaleRatio: 0.4,
         force: {
+          // 从环形初值起步（C12）：随机初值每次收敛结果不同，重建后图形会「换一张脸」
+          initLayout: 'circular',
           repulsion: force.repulsion,
-          edgeLength: force.edgeLength,
+          edgeLength: edgeLengthRange(force.edgeLength),
           gravity: force.gravity,
           friction: 0.2,
         },
+        // 布局变化走动画过渡（C12）：节点小步挪动比瞬间跳到新位置更不易丢失方位感
+        layoutAnimation: true,
         // formatter 的 params.data 是写进 series.data 的原始项：必须带 title，
         // 只写 name 时 p.data.title 为 undefined（曾经的整页崩溃点）。
         label: {
@@ -358,7 +477,8 @@ function buildOption(
           position: 'right',
           distance: 5,
           formatter: (p: { data: GraphNode }) => nodeLabel(p.data?.title),
-          fontSize: 11,
+          fontSize: metrics.labelFontSize,
+          fontWeight: metrics.labelFontWeight,
           color: colors.text,
         },
         labelLayout: { hideOverlap: true },
@@ -366,39 +486,87 @@ function buildOption(
         edgeSymbol: ['none', 'arrow'],
         edgeSymbolSize: EDGE_SYMBOL_SIZE,
         lineStyle: { curveness: 0.06, opacity: 0.55, width: 1.2 },
-        data: nodes.map(node => ({
-          id: String(node.id),
-          name: node.title,
-          title: node.title,
-          value: node.id,
-          is_folder: node.is_folder,
-          itemStyle: {
-            color: formatColor(node, colors),
-            borderColor: colors.border,
-            borderWidth: 1,
-            opacity: 0.95,
-          },
-          symbolSize: nodeSize(node, degree.get(node.id) ?? 0),
-          broken: node.broken,
-        })),
-        links: edges.map(edge => ({
-          source: String(edge.source),
-          target: String(edge.target),
-          // link 级 symbol 逐条覆盖 series 默认：两端箭头即互引（C2），无需拆第二个 series（D2）
-          ...(edge.mutual ? { symbol: ['arrow', 'arrow'] } : {}),
-          lineStyle: {
-            color: edge.broken ? colors.error : colors.border,
-            type: edge.broken ? 'dashed' : 'solid',
-            width: edge.broken ? 1 : 1.2,
-            opacity: edge.broken ? 0.75 : 0.55,
-            curveness: 0.06,
-          },
-          broken: edge.broken,
-          ambiguous: edge.ambiguous,
-          raw: edge.raw,
-          reverseRaw: edge.reverseRaw,
-          mutual: edge.mutual,
-        })),
+        data: nodes.map(node => {
+          const nodeDegree = degree.get(node.id) ?? 0
+          const isSelected = node.id === selectedId
+          // 孤立点（非断链且度 0）：画布上退后，侧栏清单仍可点进来（C3）
+          const isIsolated = !node.broken && nodeDegree === 0 && !isSelected
+          const size = isIsolated
+            ? ISOLATED_NODE_SIZE
+            : isSelected
+              ? Math.min(MAX_NODE_SIZE, Math.round(nodeSize(node, nodeDegree) * SELECTED_NODE_SCALE))
+              : nodeSize(node, nodeDegree)
+          const opacity = isDimmed(node.id)
+            ? DIMMED_NODE_OPACITY
+            : isIsolated
+              ? ISOLATED_NODE_OPACITY
+              : 0.95
+          return {
+            id: String(node.id),
+            name: node.title,
+            title: node.title,
+            value: node.id,
+            is_folder: node.is_folder,
+            itemStyle: {
+              color: formatColor(node, colors),
+              // 选中靠描边与投影表达（H24 选中语义），不用换填充色，格式色仍是主信息
+              borderColor: isSelected ? colors.primary : colors.container,
+              // 分隔环（C4）：容器底色 2px，节点与交叉边之间留一圈留白；选中换成主色
+              borderWidth: 2,
+              shadowBlur: isSelected ? 10 : 0,
+              shadowColor: isSelected ? colors.primary : 'transparent',
+              opacity,
+            },
+            // 目录用圆角方形（C9）：形状与颜色双编码，缩小时颜色糊在一起也能分出文件夹
+            symbol: node.is_folder ? 'roundRect' : 'circle',
+            symbolSize: node.is_folder
+              ? [size, Math.round(size * FOLDER_SYMBOL_RATIO)]
+              : size,
+            broken: node.broken,
+            isolated: isIsolated,
+            selected: isSelected,
+            // 标签底衬（C7）：度数 ≥2 才加，避免满屏小方块压住边。
+            // 不写 show：显隐仍由「标签 / 缩放」那次独立 setOption 统管，逐项 show 会覆盖它。
+            // 孤立点单独关掉标签，画布上只剩一个小圆（侧栏清单仍能点进来，C3）。
+            label: {
+              ...(isIsolated ? { show: false } : {}),
+              backgroundColor:
+                nodeDegree >= LABEL_BACKPLATE_MIN_DEGREE ? colors.container : 'transparent',
+              padding: [2, 4],
+              borderRadius: 3,
+            },
+          }
+        }),
+        links: edges.map(edge => {
+          // 有选中时：邻接边加粗加亮，其余压到几乎看不见（C2 / C6）
+          const emphasized = adjacentEdge(edge)
+          const dimmed = dimmedEdge(edge)
+          return {
+            source: String(edge.source),
+            target: String(edge.target),
+            // link 级 symbol 逐条覆盖 series 默认：两端箭头即互引（C2），无需拆第二个 series（D2）
+            ...(edge.mutual ? { symbol: ['arrow', 'arrow'] } : {}),
+            lineStyle: {
+              // 线色跟源节点格式走（C5）：一眼看出「谁连出去的是哪类文档」
+              color: edgeColor(edge, nodeById.get(edge.source), colors),
+              type: edge.broken ? 'dashed' : 'solid',
+              width: emphasized ? EDGE_EMPHASIS_WIDTH : EDGE_WIDTH,
+              opacity: dimmed
+                ? DIMMED_EDGE_OPACITY
+                : emphasized
+                  ? EDGE_EMPHASIS_OPACITY
+                  : edge.broken
+                    ? BROKEN_EDGE_OPACITY
+                    : EDGE_OPACITY,
+              curveness: 0.06,
+            },
+            broken: edge.broken,
+            ambiguous: edge.ambiguous,
+            raw: edge.raw,
+            reverseRaw: edge.reverseRaw,
+            mutual: edge.mutual,
+          }
+        }),
         // 悬停一个节点时压暗无关部分，只看它的邻接关系
         emphasis: {
           focus: 'adjacency',
@@ -429,6 +597,8 @@ export default function DocumentGraphPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showLabels, setShowLabels] = useState(true)
   const [showArrows, setShowArrows] = useState(true)
+  /** 布局参数折叠区（C10）：从画布浮层搬进 Inspector，默认收起，需要时才展开 */
+  const [forcePanelOpen, setForcePanelOpen] = useState<string[]>([])
 
   const graphQuery = useQuery({
     queryKey: ['document-link-graph', workspaceId],
@@ -485,9 +655,15 @@ export default function DocumentGraphPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [themeMode],
   )
+  const metrics = useMemo(
+    () => readThemeMetrics(),
+    // themeMode 进依赖同 colors：字号偏好随主题档位可能不同，切回后要重读
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [themeMode],
+  )
   const option = useMemo(
-    () => buildOption(visible.nodes, displayEdges, colors, force),
-    [visible.nodes, displayEdges, colors, force],
+    () => buildOption(visible.nodes, displayEdges, colors, metrics, force, selectedId),
+    [visible.nodes, displayEdges, colors, metrics, force, selectedId],
   )
 
   /** 图例条目按「当前可见图里有出现的格式」生成，避免列出 8 个全没节点的格式 */
@@ -561,7 +737,11 @@ export default function DocumentGraphPage() {
     chartRef.current = chart
     // 单击只选中：图谱里点错一下就跳走是首版最被诟病的交互（需求 0182 C6）
     chart.on('click', params => {
-      if (params.dataType !== 'node') return
+      // 点画布空白处取消选中（C2）：选中态会压暗整张图，必须留一条退出的路
+      if (params.dataType !== 'node') {
+        setSelectedId(null)
+        return
+      }
       const data = params.data as { value?: number } | null
       const docId = data?.value
       if (typeof docId !== 'number') return
@@ -595,7 +775,8 @@ export default function DocumentGraphPage() {
   }, [graph, navigate, workspaceId, syncZoomPct])
 
   useEffect(() => {
-    chartRef.current?.setOption(option, true)
+    // merge 而非 notMerge（C12）：全量重建会让力导向重新收敛，选中 / 筛选一次就整张图重排跳动
+    chartRef.current?.setOption(option, false)
   }, [option])
 
   /**
@@ -810,7 +991,6 @@ export default function DocumentGraphPage() {
               minHeight: 420,
               border: '1px solid var(--cn-border)',
               borderRadius: 'var(--cn-radius-base)',
-              background: 'var(--cn-bg-canvas)',
             }}
           />
           <div className="cn-graph-legend" data-testid="graph-legend">
@@ -834,50 +1014,69 @@ export default function DocumentGraphPage() {
               → 引用 · ⇄ 互引
             </span>
           </div>
-          <div className="cn-graph-force" data-testid="graph-force-panel">
-            <div className="cn-graph-force-row">
-              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>斥力</Text>
-              <span style={{ flex: 1 }} data-testid="graph-force-repulsion-wrap">
-                <Slider
-                  min={40}
-                  max={600}
-                  step={20}
-                  value={force.repulsion}
-                  onChange={(value: number) => setForce(prev => ({ ...prev, repulsion: value }))}
-                />
-              </span>
-            </div>
-            <div className="cn-graph-force-row">
-              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>边长</Text>
-              <span style={{ flex: 1 }} data-testid="graph-force-edge-length-wrap">
-                <Slider
-                  min={40}
-                  max={300}
-                  step={10}
-                  value={force.edgeLength}
-                  onChange={(value: number) => setForce(prev => ({ ...prev, edgeLength: value }))}
-                />
-              </span>
-            </div>
-            <div className="cn-graph-force-row">
-              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>向心</Text>
-              <span style={{ flex: 1 }} data-testid="graph-force-gravity-wrap">
-                <Slider
-                  min={0}
-                  max={0.5}
-                  step={0.01}
-                  value={force.gravity}
-                  onChange={(value: number) => setForce(prev => ({ ...prev, gravity: value }))}
-                />
-              </span>
-            </div>
-            <Button size="small" data-testid="graph-force-reset" onClick={() => setForce(DEFAULT_FORCE)}>
-              恢复默认
-            </Button>
-          </div>
         </div>
 
         <aside className="cn-graph-inspector" data-testid="graph-inspector">
+          {/* 布局参数（C10）：原先浮在画布右下角，永久压住一块节点区域；
+              收进 Inspector 顶部折叠区后，画布只剩图本身与图例。 */}
+          <Collapse
+            ghost
+            size="small"
+            className="cn-graph-force-collapse"
+            activeKey={forcePanelOpen}
+            onChange={keys => setForcePanelOpen((Array.isArray(keys) ? keys : [keys]).map(String))}
+            items={[
+              {
+                key: 'force',
+                label: (
+                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                    布局参数
+                  </Text>
+                ),
+                children: <div className="cn-graph-force" data-testid="graph-force-panel">
+                  <div className="cn-graph-force-row">
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>斥力</Text>
+                    <span style={{ flex: 1 }} data-testid="graph-force-repulsion-wrap">
+                      <Slider
+                        min={40}
+                        max={600}
+                        step={20}
+                        value={force.repulsion}
+                        onChange={(value: number) => setForce(prev => ({ ...prev, repulsion: value }))}
+                      />
+                    </span>
+                  </div>
+                  <div className="cn-graph-force-row">
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>边长</Text>
+                    <span style={{ flex: 1 }} data-testid="graph-force-edge-length-wrap">
+                      <Slider
+                        min={40}
+                        max={300}
+                        step={10}
+                        value={force.edgeLength}
+                        onChange={(value: number) => setForce(prev => ({ ...prev, edgeLength: value }))}
+                      />
+                    </span>
+                  </div>
+                  <div className="cn-graph-force-row">
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>向心</Text>
+                    <span style={{ flex: 1 }} data-testid="graph-force-gravity-wrap">
+                      <Slider
+                        min={0}
+                        max={0.5}
+                        step={0.01}
+                        value={force.gravity}
+                        onChange={(value: number) => setForce(prev => ({ ...prev, gravity: value }))}
+                      />
+                    </span>
+                  </div>
+                  <Button size="small" data-testid="graph-force-reset" onClick={() => setForce(DEFAULT_FORCE)}>
+                    恢复默认
+                  </Button>
+                </div>,
+              },
+            ]}
+          />
           {selected ? (
             <div className="cn-graph-inspector-detail" data-testid="graph-inspector-detail">
               <div className="cn-graph-inspector-head">

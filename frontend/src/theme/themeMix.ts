@@ -40,6 +40,8 @@ export const MIX_REGISTRY: Readonly<Record<string, MixSpec>> = {
   'blue-45-transparent': { a: '#3b82f6', aPct: 45, b: 'transparent', bPct: 55 },
   'blue-8-bg-container': { a: '#3b82f6', aPct: 8, b: 'var(--cn-bg-container)', bPct: 92 },
   'border-80-transparent': { a: 'var(--cn-border)', aPct: 80, b: 'transparent', bPct: 20 },
+  // 图谱画布点阵网格（需求 0184 C13）：比 --cn-border 更淡的软边色，只做纹理不抢内容
+  'border-soft-40-transparent': { a: 'var(--cn-border-soft)', aPct: 40, b: 'transparent', bPct: 60 },
   'brand-color-10-transparent': { a: 'var(--cn-brand-color)', aPct: 10, b: 'transparent', bPct: 90 },
   'brand-color-12-bg-container': { a: 'var(--cn-brand-color)', aPct: 12, b: 'var(--cn-bg-container)', bPct: 88 },
   'brand-color-12-transparent': { a: 'var(--cn-brand-color)', aPct: 12, b: 'transparent', bPct: 88 },
