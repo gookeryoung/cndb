@@ -157,9 +157,9 @@ linkGrowthFromValue(value: number, prevValue: number | null): number | null | 's
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地（待人工评审回填 Implemented）
+- 当前阶段：P0-P2 已落地（`Status` 已确认 `Implemented`）
 - 已完成：P0（默认 growth 全空 + version 2 + 首行禁填校验）、P1（chartLinkage 联动 + 设计器禁填 / 联动 / 高亮标记）、P2（教程说明 + e2e spec + CHANGELOG）
-- 下一步：`make flow` 全绿后提交；e2e 按环境可用性跑 critical 分片；人工评审后 Status → Implemented
+- 下一步：无未落地分期（`Status` 已确认 `Implemented`）；e2e 按环境可用性跑 critical 分片
 - 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；JS `Math.round` 与 Python `round` 半值边界舍入差异属可接受显示口径
 - 最近一次全绿：`make flow` @ 3c6bbb86 前置基线（5847 passed）；渲染修复经 render/registry 单测（39 passed）+ 前端 documents 单测验证
 
@@ -286,8 +286,8 @@ growthLinkedDisplay(row: ChartDataRowDraft, prevRow: ChartDataRowDraft | undefin
 
 ### 交接（原 ADR 0059）
 
-- 当前阶段：P0-P2 已落地（待人工评审回填 Implemented）
+- 当前阶段：P0-P2 已落地（`Status` 已确认 `Implemented`）
 - 已完成：P0（growthLinkedDisplay 默认联动态判定）、P1（设计器联动态「(计算)」展示 / 点击进编辑 / Q1 未改动语义）、P2（教程文案 + e2e 扩展 + CHANGELOG）
-- 下一步：`make flow` 全绿后提交；e2e 本地环境就绪后跑 critical 分片；人工评审后 Status → Implemented
+- 下一步：无未落地分期（`Status` 已确认 `Implemented`）；e2e 本地环境就绪后跑 critical 分片
 - 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；联动态展示用 readOnly Input 承载「数值(计算)」，点击切换 InputNumber 编辑态
 - 最近一次全绿：`make flow` @ c75dfadb 前置工作区（5856 passed）

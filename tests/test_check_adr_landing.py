@@ -197,8 +197,12 @@ class TestLifecycle:
         assert any("delete the file and its README index row directly" in item for item in errors)
 
     def _write_index(self, directory: Path, adr_name: str, status: str) -> None:
+        # 编号台账行是必需的：编号不复用（H8），缺失编号必须有交代
         (directory / "README.md").write_text(
             "# ADR 索引\n\n"
+            "- 编号缺口是已删除或只留需求卡片的编号，**不要复用**。\n"
+            "  - **已删除且无卡片**：0001–0006\n"
+            "- **已并入的编号**：0015→0012。\n\n"
             "| 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |\n"
             "|---|---|---|---|---|---|---|\n"
             f"| [0007]({adr_name}) | 测试用 | {status} | P0 已落地 | `code.py` | `test_x.py` | - |\n",
@@ -230,3 +234,103 @@ class TestLifecycle:
         errors, _ = adr_check._check_index([path])
 
         assert errors == []
+
+
+class TestStaleHandoffNote:
+    """Status 已落定，交接仍写「待人工评审回填 Implemented」= 历史残留，必须告警."""
+
+    def test_implemented_with_stale_review_note_warns(self, isolated: Path) -> None:
+        path = _write_adr(
+            isolated,
+            status="Implemented",
+            rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |",
+        )
+        text = path.read_text(encoding="utf-8")
+        assert "- 下一步：补测试" in text
+        path.write_text(
+            text.replace(
+                "- 当前阶段：P0",
+                "- 当前阶段：P0-P2 已落地（待人工评审回填 Implemented）",
+            ),
+            encoding="utf-8",
+        )
+
+        errors, warnings = adr_check._check_file(path, "ADR 0007")
+
+        assert errors == []
+        assert any("stale review note" in item for item in warnings)
+
+    def test_accepted_with_review_note_is_fine(self, isolated: Path) -> None:
+        """Status 还是 Accepted 时，交接写「待评审」是正确状态，不得误报."""
+        path = _write_adr(
+            isolated,
+            status="Accepted",
+            rows="| P0 | 已落地 | `code.py` | `test_x.py` | `0123456` |\n| P1 | 未开始 | — | — | — |",
+        )
+        text = path.read_text(encoding="utf-8").replace(
+            "- 下一步：补测试",
+            "- 下一步：人工评审后 Status 转 `Implemented`",
+        )
+        path.write_text(text, encoding="utf-8")
+
+        errors, warnings = adr_check._check_file(path, "ADR 0007")
+
+        assert errors == []
+        assert warnings == []
+
+
+class TestNumberRegistry:
+    """ADR 编号不复用（H8）：缺失编号必须在 README 台账里有交代，否则会被当成空号复用."""
+
+    def _index(self, directory: Path, deleted: str) -> None:
+        (directory / "README.md").write_text(
+            "# ADR 索引\n\n"
+            "- 编号缺口是已删除或只留需求卡片的编号，**不要复用**。\n"
+            f"  - **已删除且无卡片**：{deleted}\n"
+            "- **已并入的编号**：0015→0012。\n",
+            encoding="utf-8",
+        )
+
+    def _adrs(self, directory: Path, numbers: list[int]) -> list[Path]:
+        out = []
+        for n in numbers:
+            p = directory / f"{n:04d}-sample.md"
+            p.write_text(f"# ADR {n:04d}\n\nStatus: Implemented\n", encoding="utf-8")
+            out.append(p)
+        return out
+
+    def test_registered_gap_passes(self, isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        paths = self._adrs(isolated, [2, 4])
+        self._index(isolated, "0001 / 0003")
+        monkeypatch.setattr(adr_check, "ROOT", isolated)
+
+        problems = adr_check._check_number_registry((isolated / "README.md").read_text(encoding="utf-8"), paths)
+
+        assert problems == []
+
+    def test_unregistered_gap_is_error(self, isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """0003 既无 ADR、也无卡片、也没登记 —— 必须报错，否则会被当成空号复用."""
+        paths = self._adrs(isolated, [2, 4])
+        self._index(isolated, "0001")
+        monkeypatch.setattr(adr_check, "ROOT", isolated)
+
+        problems = adr_check._check_number_registry((isolated / "README.md").read_text(encoding="utf-8"), paths)
+
+        assert any("0003" in p and "no registry entry" in p for p in problems)
+
+    def test_requirement_card_only_gap_passes(self, isolated: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """S1 项有需求卡片、无 ADR，属正常机制，不应报错."""
+        paths = self._adrs(isolated, [2, 4])
+        self._index(isolated, "0001")
+        cards = isolated / "docs" / "requirements"
+        cards.mkdir(parents=True)
+        (cards / "0003-s1-item.md").write_text("# 0003\n", encoding="utf-8")
+        monkeypatch.setattr(adr_check, "ROOT", isolated)
+
+        problems = adr_check._check_number_registry((isolated / "README.md").read_text(encoding="utf-8"), paths)
+
+        assert problems == []
+
+    def test_range_spec_is_expanded(self) -> None:
+        assert adr_check._parse_number_spec("0061–0073") == set(range(61, 74))
+        assert adr_check._parse_number_spec("0032 / 0033") == {32, 33}

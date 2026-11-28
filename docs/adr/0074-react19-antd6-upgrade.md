@@ -168,7 +168,7 @@ Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地（代码待人工评审后回填 `Implemented`）
+- 当前阶段：P0-P2 全部落地（`Status` 已人工评审确认为 `Implemented`，2026-11-28）
 - 已完成：
   - P0：依赖同批升级（react 19.3.1 / antd 6.6.8 / icons 6.3.4 / cssinjs 2.1.2 / @types 19.3.0）；`rc-util` isEqual 补丁迁移重打为 `patches/@rc-component__util.patch`（es + lib 双份，祖先链追踪），`rc-field-form` 摇树补丁删除，`check-patches.mjs` 重定位到 `@rc-component/util` 且 es/lib 双检；React 19 类型收紧修复（`RefObject<T | null>` / `ReactElement` / `ThemeConfig` cssVar 声明移除——antd 6 默认开启）
   - P1：兼容链复核通过（cssinjs v2 仍提供 transformer，`hashPriority` 默认仍 low）；`ThemeProvider.compat.test.tsx` 扩展为运行时样式审计——渲染 Form/Select/DatePicker/Tabs/Table/Modal 代表样本，断言注入 CSS 无 `:where(`、无逻辑属性声明、白名单外（oklch / @layer / light-dark / `:is(` 等）现代特性为零

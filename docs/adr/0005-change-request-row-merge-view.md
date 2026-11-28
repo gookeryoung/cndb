@@ -140,6 +140,6 @@ Related: `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/chan
 
 - 当前阶段：M1-M4 全部落地
 - 已完成：后端分组与冲突检测、行组批量 merge、前端分组视图、冲突裁决页、`usePendingChanges` 聚合收敛（含专属前端用例锁定「聚合端点单次调用、零逐条 get」）
-- 下一步：Status 转 Implemented 待人工确认
+- 下一步：无未落地分期（`Status` 已人工评审确认为 `Implemented`，2026-11-28 人工评审确认）
 - 已知坑：`create` 项不能进行组；冲突字段必须带 `resolutions`，否则 409；delete 互斥需 `row_action` 显式裁决；落库后同行其余 open 申请被置 `stale`，需 `update-base` 刷新
 - 最近一次全绿：`make flow` 通过（2026-10-31，M4 补测提交前）

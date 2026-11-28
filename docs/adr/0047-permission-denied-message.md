@@ -177,6 +177,6 @@ def permission_denied_detail(
 
 - 当前阶段：P0-P2 全部落地，门禁全绿
 - 已完成：P0/P1（唯一文案出口 + Context #1-#6 全部 403 点位收敛）；P2（帮助文档排障条目补新文案示例与提权步骤 + 权限相关 e2e 回归）
-- 下一步：Status 转 Implemented 待人工确认
+- 下一步：无未落地分期（`Status` 已人工评审确认为 `Implemented`，2026-11-28 人工评审确认）
 - 已知坑：`permission_denied_detail` 的 `workspace` 参数类型为 `Workspace`（非 Optional），`db.get(Workspace, id)` 结果须判空后再传
 - 最近一次全绿：`make flow`（本次 P2 收尾提交前）

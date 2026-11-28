@@ -47,6 +47,16 @@ COL_CODE = "代码落点"
 COL_TESTS = "测试"
 COL_COMMIT = "提交"
 
+#: 交接里「状态还没落定」的过时说法；Status 已是 Implemented 时出现即为历史残留。
+#: 只匹配明确的「待评审 / 待改 Status」措辞，不误伤「已确认 Implemented」这类正常表述。
+_STALE_HANDOFF_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"Status\s*转\s*`?Implemented`?\s*待", "Status 转 Implemented 待人工确认"),
+    (r"待人工评审[^\n]{0,12}(回填|转)\s*`?Implemented`?", "待人工评审回填 Implemented"),
+    (r"当前阶段：[^\n]{0,60}?Status\s*(仍为\s*`?Accepted`?|待人工确认)", "Status 仍为 Accepted 待确认"),
+    (r"下一步：[^\n]{0,60}?(人工确认|人工评审)[^\n]{0,20}改\s*`?Status", "下一步等人工确认改 Status"),
+    (r"确认是否将\s*`?Status`?\s*改为", "确认是否将 Status 改为 Implemented"),
+)
+
 
 def _section(text: str, name: str) -> str | None:
     """Return the body between ``## <name>...`` and the next level-2 heading."""
@@ -179,6 +189,15 @@ def _check_file(path: Path, changelog: str) -> tuple[list[str], list[str]]:
         for key in ("当前阶段", "下一步", "已知坑"):
             if key not in handoff:
                 warnings.append(f"the '{HANDOFF_HEADING}' section is missing {key}")
+        # 历次评审后常忘同步交接里的状态文案：Status 已经落定，交接还写「待人工确认后改
+        # Implemented」，下一个人会重复走一遍卡点。只在不一致的组合上报警，不误伤历史记录。
+        if status == "Implemented":
+            for pattern, label in _STALE_HANDOFF_PATTERNS:
+                if re.search(pattern, handoff, re.MULTILINE):
+                    warnings.append(
+                        f"handoff still says '{label}' but Status is already Implemented (stale review note)"
+                    )
+                    break
 
     return errors, warnings
 
@@ -212,7 +231,66 @@ def _check_index(adr_paths: list[Path]) -> tuple[list[str], list[str]]:
             continue
         if not (ADR_DIR / target).exists():
             errors.append(f"README.md link target does not exist: {target}")
+
+    errors.extend(_check_number_registry(text, adr_paths))
     return errors, warnings
+
+
+def _parse_number_spec(spec: str) -> set[int]:
+    """把 `0061–0073` / `0032` 这类编号写法展开成整数集合."""
+    ids: set[int] = set()
+    for token in re.findall(r"\d{4}(?:[–-]\d{4})?", spec):
+        if "–" in token or "-" in token:
+            start, _, end = token.replace("-", "–").partition("–")
+            ids.update(range(int(start), int(end) + 1))
+        else:
+            ids.add(int(token))
+    return ids
+
+
+def _check_number_registry(index_text: str, adr_paths: list[Path]) -> list[str]:
+    """Every missing number must be accounted for in the README registry.
+
+    ADR numbers are never reused (H8), so a silent gap is a real hazard: the next
+    author cannot tell whether e.g. 0032 is free or was deleted. Two legitimate
+    buckets are allowed — "requirement card only" (S1 items have no ADR) and
+    "deleted with no card" (listed explicitly in the README). Anything else is an
+    unregistered gap.
+    """
+    problems: list[str] = []
+    gap_line = next((line for line in index_text.splitlines() if line.startswith("- 编号缺口")), None)
+    if gap_line is None:
+        return ["README.md is missing the '- 编号缺口' line (number registry)"]
+
+    deleted_line = next(
+        (line for line in index_text.splitlines() if line.lstrip().startswith("- **已删除且无卡片**")),
+        None,
+    )
+    if deleted_line is None:
+        return ["README.md number registry is missing the '已删除且无卡片' sub-list"]
+
+    existing = {int(p.name[:4]) for p in adr_paths}
+    registered_deleted = _parse_number_spec(deleted_line) - {int(p.name[:4]) for p in adr_paths}
+    # 缺口清单标题行里列的编号也算显式登记（历史写法）
+    registered_deleted |= _parse_number_spec(gap_line) - {int(p.name[:4]) for p in adr_paths}
+    merged = {
+        int(num)
+        for num in re.findall(
+            r"(\d{4})→", next((line for line in index_text.splitlines() if line.startswith("- **已并入的编号**")), "")
+        )
+    }
+
+    cards_dir = ROOT / "docs" / "requirements"
+    has_card = {int(p.name[:4]) for p in cards_dir.glob("[0-9][0-9][0-9][0-9]-*.md")} if cards_dir.exists() else set()
+
+    for number in range(1, max(existing) + 1):
+        if number in existing or number in registered_deleted or number in merged or number in has_card:
+            continue
+        problems.append(
+            f"ADR number {number:04d} is missing with no requirement card and no registry entry "
+            "(add it to the README number registry; numbers are never reused, H8)"
+        )
+    return problems
 
 
 def main(argv: list[str] | None = None) -> int:

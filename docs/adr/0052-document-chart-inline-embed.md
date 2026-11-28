@@ -263,9 +263,9 @@ Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/compon
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0–P2 代码与测试已落地，Status 待人工确认后由 `Accepted` 转 `Implemented`
+- 当前阶段：P0–P2 代码与测试已落地，`Status` 已由人工评审确认为 `Implemented`
 - 已完成：`charts/inline.py` 判定 / 序列化 / 指纹 / 渲染 + 导出（md / docx / pdf）+ 导入配对图剥离与告警 + 游客 render-preview + alembic 数据迁移；前端 `chartBlock.ts` / `refs.ts` / `ChartEmbed` / 编辑器 / 设计器 editBlock / 插入弹窗；ADR 0048 / 0051 / CONTEXT / 帮助 / CHANGELOG 已同步为内嵌块口径
-- 下一步：人工确认后改 `Status: Implemented`；发布时确保后端迁移与前端同版本上线（正文已无旧语法）
+- 下一步：无未落地分期（`Status` 已确认为 `Implemented`）；发布时确保后端迁移与前端同版本上线（正文已无旧语法）
 - 已知坑：围栏块必须段落独占，行内混排不解析；指纹不含 `legacy_id`；旧 v8 备份的 `{{chart:id}}` 无 id 映射，按原文保留；外存版本（>2MB）迁移需原地重写 `v{n}.md.gz`；FTS 是独立 content 表，需 `INSERT OR REPLACE` 同步；素材库删除不回写正文（定义已复制）；图表块按光标插入，未移动光标时落在正文最前，导出 `.md` 首个非空行是块而非 H1，重导入标题因此取自文件名（e2e 按文件名定位重导入文档）
 - 最近一次全绿：`make check-fast`、`make test`（5806 passed / 17 skipped）、`make check-docs`（48 个 ADR / 0 error / 4 warning）；P2 收尾时另跑过 `make cov`（96.66%，门槛 95%）、`make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.89%）
 - e2e：`frontend/tests/e2e/critical/document-chart-embed.spec.ts` 已在 Windows 本机跑通（Playwright chromium，2 passed），覆盖插入 / 调宽 / 编辑 / 导出 / 游客渲染 / 重导入去重
@@ -369,8 +369,8 @@ Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/compon
 
 ### 交接（原 ADR 0060）
 
-- 当前阶段：P0-P1 已落地（待人工评审回填 Status）
+- 当前阶段：P0-P2 已落地（`Status` 已确认 `Implemented`）
 - 已完成：P0（放大交互 + 预览弹层 + 失败态无入口 + 单测 13/13）；P1（e2e 成员 4.2 段与游客段、教程文档提及）
-- 下一步：人工评审 → Status 改 Implemented；推送后由 CI 补跑 e2e（见已知坑）
+- 下一步：无未落地分期；推送后由 CI 补跑 e2e（见已知坑）
 - 已知坑：本机缺 chromium 系统依赖（libatk-1.0.so.0），e2e 无法本地启动，由 CI 兜底；jsdom 不跑 Modal 离场动画，关闭断言用「不可见」而非「卸载」
 - 最近一次全绿：`make check-fast` + `make test`（后端 5856 passed）@ 3795aeed 之后的工作区（2026-10-28）

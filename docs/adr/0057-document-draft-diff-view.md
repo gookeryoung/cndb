@@ -154,8 +154,8 @@ Related: `src/cndb/plugins/documents/services/drafts.py`、`src/cndb/plugins/doc
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地（待人工评审转 Implemented）
+- 当前阶段：P0-P2 已落地（`Status` 已确认 `Implemented`）
 - 已完成：P0 后端 `draft_diff` + `GET /draft/diff`；P1 前端「查看修改」抽屉（复用 DiffView，stale 提示）；P2 「丢弃草稿」接线（Popconfirm → DELETE → 重置到最新版本并回查看模式）
-- 下一步：CI e2e 分片验证新 spec；人工评审后 Status 转 `Implemented`
+- 下一步：无未落地分期（`Status` 已确认 `Implemented`）；CI e2e 分片验证新 spec
 - 已知坑：本地 e2e 无法运行（Playwright chromium 缺系统库 libatk 且无 sudo 安装权限），新 e2e spec 未经本地浏览器执行，仅过 tsc / eslint / 单测等价验证（与 ADR 0053 会话同款环境限制）
 - 最近一次全绿：`make flow` + `make cov`（96.65%）+ `make frontend-coverage`（双门槛达标）@ 41465823（2026-10-28）
