@@ -96,6 +96,28 @@
 > 为什么圆角要跟随主题：此前 CSS 里的卡片写死 8/10px，而「极简」主题的 antd 组件是 2px 圆角，
 > 同一页面出现两套圆角语言。现在卡片用 `--cn-radius-lg`，极简主题会自动变成 4px。
 
+### 应用外壳原语：顶栏与侧栏（需求 0190）
+
+顶栏与左侧导航是常驻外壳，样式只在 `index.css` 定义一次，不在 `MainLayout.tsx` 里写行内 `style`。
+
+| 类名 | 用途 |
+| --- | --- |
+| `.cn-app-header` | 顶栏容器：高度 `--cn-control-header`(44px)、平面底色 + 1px 底边 |
+| `.cn-header-brand` / `.cn-header-brand-word` | 品牌块（LOGO + 品牌字）；窄屏只留 LOGO |
+| `.cn-header-loc` | 位置控件：团队面包屑 › 工作区切换器合成一个可扫视的复合块 |
+| `.cn-header-nav-item` / `-active` | 一级模块导航；激活态是**胶囊底**（与二级 `.cn-table-tab-active` 同语言），不再用底部墨条 |
+| `.cn-header-btn-outlined` / `.cn-header-btn-ghost` | 顶栏按钮主次分级：管理类描边、工具类静态平面 |
+| `.cn-ws-tab-count` | 计数徽标：中性胶囊，顶栏 / 页签 / 团队页共用一套 |
+| `.cn-app-sider` | 侧栏容器：底色比内容区容器低一档（`--cn-bg-subtle`）+ 1px 右边框 |
+| `.cn-doc-nav` / `-head` / `-filter` / `-tools` / `-tree` | 文档侧栏统一面板：标题行 / 过滤行 / 工具行 / 树，四段共用一条左基线 |
+
+**三层导航的层级语言**（0190 C3）：层级只靠**位置 + 形状**区分，不靠线宽——
+顶栏一级 = 胶囊底；内容区二级 = 墨条 / 胶囊。三层同时用 2px / 3px 墨条区分是历史问题，
+两者肉眼几乎看不出差别，等于没有区分。
+
+**降级策略**（0190 C6）：顶栏窄屏收起由 **CSS 媒体查询**驱动（`.cn-header-compact` / `.cn-header-narrow`），
+不用 JS 布尔条件渲染整块移除元素；`data-compact` 属性保留给单测 / e2e 判定。
+
 ### 线条与描边（GitHub 线型，H25）
 
 - 全站静态边界统一 **1px**：卡片 / 列表 / 表格 / 方盒 / 分割线不再使用 `1.5px` 粗描边。
@@ -225,7 +247,7 @@
 
 | 项 | 现状 | 建议 |
 | --- | --- | --- |
-| 行内 style 收敛 | 1276 处 | 优先收敛「重复出现 ≥3 次」的样式块为 `.cn-*` 类，用 `pnpm lint` + review 拦新增 |
+| 行内 style 收敛 | 需求 0190 已把 `MainLayout.tsx` 的顶栏与文档侧栏段落归零（30 → 21 处，剩余属表导航 / 设置 / 统计侧栏与必要动态值） | 优先收敛「重复出现 ≥3 次」的样式块为 `.cn-*` 类，用 `pnpm lint` + review 拦新增 |
 | `[style*="..."]` 兜底 | 281 条 | 每修一个组件就删掉对应兜底；目标是把深色补丁缩到「第三方组件」范围 |
 | 颜色字面量 | CSS 内约 300 处 | 只保留 `body.theme-*` 变量定义块与认证页固定舞台 `:root` 块（`--cn-auth-bg` / `--cn-auth-ink` / `--cn-auth-accent` / `--cn-auth-accent-alt`，不随主题）里的字面量，其余换 `var(--cn-*)` |
 | 字号档位 | 已统一 | CSS / 行内 `fontSize` 一律用 `var(--cn-text-*)`（可随档位缩放）；`TEXT.*` 仅用于设计标尺与 antd token 基准值 |

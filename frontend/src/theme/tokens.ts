@@ -98,6 +98,8 @@ export const CONTROL = {
   md: 30,
   /** 36px — large 控件 */
   lg: 36,
+  /** 44px — 应用顶栏高度（需求 0190 C6：从 tsx 内联 style 收进标尺） */
+  header: 44,
 } as const
 
 /* ─────────────── 字重（四档，CSS 与 TSX 共用） ─────────────── */
@@ -184,6 +186,7 @@ export const CSS_VARS: Readonly<Record<string, string>> = {
   '--cn-weight-medium': String(WEIGHT.medium),
   '--cn-weight-semibold': String(WEIGHT.semibold),
   '--cn-weight-bold': String(WEIGHT.bold),
+  '--cn-control-header': px(CONTROL.header),
   '--cn-font-sans': FONT.sans,
   '--cn-font-display': FONT.display,
   '--cn-font-mono': FONT.mono,

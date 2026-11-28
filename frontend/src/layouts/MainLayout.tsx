@@ -13,7 +13,7 @@ import {
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
   SafetyCertificateOutlined, ToolOutlined,
   RobotOutlined, SnippetsOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined, PaperClipOutlined,
-  MenuUnfoldOutlined, MenuFoldOutlined,
+  MenuUnfoldOutlined, MenuFoldOutlined, FileAddOutlined,
   LockOutlined, ApartmentOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -285,8 +285,10 @@ export default function MainLayout() {
     retry: false,
   })
 
-  // 顶栏版本小字 —— 与「关于系统」弹窗共用缓存；版本是非关键信息，失败静默不重试
-  const { data: systemAbout } = useQuery({
+  // 「关于系统」弹窗的缓存预热（需求 0190 C2）：版本号已从顶栏移出，
+  // 这份查询仅用于保持与弹窗共享的缓存键，避免打开弹窗时再拉一次。
+  // 版本是非关键信息，失败静默不重试。
+  useQuery({
     queryKey: ['system-about'],
     queryFn: systemApi.about,
     staleTime: 60_000,
@@ -929,18 +931,37 @@ export default function MainLayout() {
     const sortedTree = sortDocTree(docTree, docSort)
     const treeData: DataNode[] = filterDocTree(sortedTree, docTreeKeyword).map(toTreeNode)
     return (
-      <div data-testid="sider-documents" className="cn-table-nav">
-        <div style={{
-          padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
-          color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-xs)', display: 'flex',
-          alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <span>文档</span>
+      /* 统一面板（0190 C7）：标题行 → 过滤行 → 工具行 → 树。
+       * 原先这三段各写行内 style，左内边距分别为 space-lg / space-lg / space-xs，
+       * 靠注释人工对齐；现在左基线由 .cn-doc-nav 一处控制。 */
+      <div data-testid="sider-documents" className="cn-doc-nav">
+        <div className="cn-doc-nav-head">
+          <span className="cn-doc-nav-title">文档</span>
+          {/* 新建入口（0190 C7）：空态与满态都能直接建文档，不用先跑去文档页 */}
+          <Tooltip title="新建文档">
+            <Button
+              size="small"
+              type="text"
+              icon={<FileAddOutlined />}
+              aria-label="新建文档"
+              data-testid="doc-nav-create"
+              onClick={() => navigate(`/w/${wid}/documents?create=1`)}
+            />
+          </Tooltip>
         </div>
         {collapsed ? null : (
           <>
-            {/* 第一行：展开/收起 + 排序 + 标题过滤（左内边距与上方「文档」标题、下方树行首同一基线） */}
-            <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* 过滤行独占一行（0190 C7）：原先与两个图标按钮同排抢宽度，窄侧栏下互相挤 */}
+            <div className="cn-doc-nav-filter">
+              <SearchInput
+                placeholder="过滤标题…"
+                value={docTreeKeyword}
+                onChange={e => setDocTitleFilter(e.target.value)}
+                data-testid="doc-tree-filter"
+              />
+            </div>
+            {/* 工具行：排序 + 展开/收起归组在右，与上方标题、下方树行首同一左基线 */}
+            <div className="cn-doc-nav-tools">
               {/* 展开/收起全部：图标随切换变化，置于排序按钮前面 */}
               <Tooltip title={treeCollapsed ? '展开全部' : '收起全部'}>
                 <Button
@@ -949,7 +970,6 @@ export default function MainLayout() {
                   aria-label={treeCollapsed ? '展开全部文档节点' : '收起全部文档节点'}
                   data-testid="doc-tree-expand-toggle"
                   onClick={toggleTreeExpanded}
-                  style={{ flexShrink: 0 }}
                 />
               </Tooltip>
               <Dropdown
@@ -967,25 +987,26 @@ export default function MainLayout() {
                     icon={<SortAscendingOutlined />}
                     aria-label={`排序方式：${describeSort(docSort)}`}
                     data-testid="doc-tree-sort"
-                    style={{ flexShrink: 0 }}
                   />
                 </Tooltip>
               </Dropdown>
-              <SearchInput
-                placeholder="过滤标题…"
-                value={docTreeKeyword}
-                onChange={e => setDocTitleFilter(e.target.value)}
-                data-testid="doc-tree-filter"
-                style={{ flex: 1, minWidth: 0 }}
-              />
             </div>
             {docsTreeReady && treeData.length === 0 ? (
-              <div className="cn-state">
-                <p>还没有文档，去文档页创建吧</p>
+              <div className="cn-state cn-doc-nav-empty" data-testid="doc-nav-empty">
+                <p>还没有文档</p>
+                {/* 空态带动作（0190 C10）：与知识图谱页空态同口径，不再只给一句话 */}
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<FileAddOutlined />}
+                  data-testid="doc-nav-empty-create"
+                  onClick={() => navigate(`/w/${wid}/documents?create=1`)}
+                >
+                  新建文档
+                </Button>
               </div>
             ) : (
-              // 树容器左内边距 4px：行首箭头中心线落在 12px，与「文档」标题/工具栏按钮左基线对齐
-              <div style={{ padding: '0 var(--cn-space-sm) var(--cn-space-sm) var(--cn-space-xs)' }}>
+              <div className="cn-doc-nav-tree">
                 <Tree
                   blockNode
                   showIcon
@@ -1218,14 +1239,12 @@ export default function MainLayout() {
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       {/* 留白与控件间距走 index.css（桌面基准 + 移动端收窄），不再 JS 分叉（ADR 0123 C7） */}
+      {/* 高度与纵向布局走样式表（0190 C6 / H29）：44px 不再写内联字面量 */}
       <Header
         className={`cn-app-header${compactHeader ? ' cn-header-compact' : ''}${narrowHeader ? ' cn-header-narrow' : ''}`}
         data-compact={compactHeader ? 'true' : undefined}
-        style={{
-        height: 44, lineHeight: '44px', flexShrink: 0,
-        display: 'flex', alignItems: 'center',
-      }}>
-        {/* ── 左区（需求 0081 C1）：品牌 + 工作区切换 + 一级模块导航 ── */}
+      >
+        {/* ── 左区（需求 0081 C1 / 0190 C1）：品牌块 + 位置控件 + 一级模块导航 ── */}
         <div className="cn-header-left">
           {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航；无可渲染侧栏时不显示，避免死按钮 */}
           {isMobile && siderMode !== 'hidden' && (
@@ -1237,56 +1256,41 @@ export default function MainLayout() {
               onClick={() => setMobileNavOpen(true)}
             />
           )}
+          {/* 品牌块（0190 C1 / C2）：LOGO + 品牌字。版本号已移出顶栏（只在「关于系统」展示）：
+              44px 里塞 v0.3.0 这类低变动信息，收益远低于它占掉的横向空间。 */}
           <Tooltip title="主页">
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 4, cursor: 'pointer' }}
-              data-testid="home-logo"
-              onClick={() => navigate('/w')}>
+            <div className="cn-header-brand" data-testid="home-logo" onClick={() => navigate('/w')}>
               <BrandMark size={24} />
-              {!isMobile && !compactHeader && (
-                <>
-                  <span className="cn-brand-word">晶格协同</span>
-                  {systemAbout?.app_version && (
-                    <span
-                      className="cn-brand-version"
-                      data-testid="app-version"
-                      title={`应用版本 v${systemAbout.app_version}`}
-                    >
-                      v{systemAbout.app_version}
-                    </span>
-                  )}
-                </>
-              )}
+              <span className="cn-brand-word cn-header-brand-word">晶格协同</span>
             </div>
           </Tooltip>
 
-          {/* 层级面包屑（需求 0157 C4）：团队名可点回团队页；个人工作区显示「个人」。
-              移动端空间不足，归属信息由切换器分组承担 */}
-          {!isMobile && !compactHeader && currentWs && (
-            currentWs.team ? (
-              <Tooltip title={`返回「${currentWs.team.name}」团队页`}>
-                <button
-                  type="button"
-                  className="cn-header-team-crumb"
-                  data-testid="header-team-crumb"
-                  onClick={() => navigate(`/teams/${currentWs.team!.id}`)}
-                >
-                  <ApartmentOutlined />
-                  <span>{currentWs.team.name}</span>
-                </button>
-              </Tooltip>
-            ) : (
-              <span className="cn-header-team-crumb cn-header-team-crumb-personal" data-testid="header-personal-crumb">
-                <UserOutlined />
-                <span>个人</span>
-              </span>
-            )
-          )}
-          {!isMobile && !compactHeader && currentWs && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
-
-          {/* 主页层级锚点（需求 0157 补充）：/w 无工作区上下文时显示静态「全部工作区」，
-              与工作区内「团队 / 工作区」保持同一层级语法；团队页 / 帮助页 / 管理台不显示。 */}
-          {!isMobile && !compactHeader && !wid && location === '/w' && (
-            <>
+          {/* 位置控件（0190 C1）：团队面包屑 + 分隔符 + 工作区切换器合成**一个**可扫视的复合块，
+              读作「团队 › 工作区 ▾」。原先这三件是平铺的独立元素，视觉上像三件事。 */}
+          <div className="cn-header-loc" data-testid="header-loc">
+            {/* 层级面包屑（需求 0157 C4）：团队名可点回团队页；个人工作区显示「个人」 */}
+            {currentWs && (
+              currentWs.team ? (
+                <Tooltip title={`返回「${currentWs.team.name}」团队页`}>
+                  <button
+                    type="button"
+                    className="cn-header-team-crumb"
+                    data-testid="header-team-crumb"
+                    onClick={() => navigate(`/teams/${currentWs.team!.id}`)}
+                  >
+                    <ApartmentOutlined />
+                    <span>{currentWs.team.name}</span>
+                  </button>
+                </Tooltip>
+              ) : (
+                <span className="cn-header-team-crumb cn-header-team-crumb-personal" data-testid="header-personal-crumb">
+                  <UserOutlined />
+                  <span>个人</span>
+                </span>
+              )
+            )}
+            {/* 主页层级锚点（需求 0157 补充）：/w 无工作区上下文时显示静态「全部工作区」 */}
+            {!currentWs && !wid && location === '/w' && (
               <span
                 className="cn-header-team-crumb cn-header-team-crumb-personal"
                 data-testid="header-all-workspaces-crumb"
@@ -1294,28 +1298,26 @@ export default function MainLayout() {
                 <FolderOpenOutlined />
                 <span>全部工作区</span>
               </span>
-              <span className="cn-header-crumb-sep" aria-hidden>/</span>
-            </>
-          )}
+            )}
+            {currentWs && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
 
-          {/* 团队 / 工作区统一切换器（需求 0157 C2）：分组列出工作区，底部提供团队页入口。
-              完整档的团队名由左侧面包屑承担，切换器只显示工作区名；紧凑档面包屑收起时，
-              用 prefix 以「团队 / 工作区」形式补回归属，二者只出现一处。 */}
-          <ScopeSwitcher
-            teams={teams}
-            workspaces={workspaces}
-            currentWorkspaceId={wid}
-            showLabel={!isMobile}
-            prefix={compactHeader
-              ? (currentWs ? (currentWs.team?.name ?? '个人') : undefined)
-              : undefined}
-            workspaceHref={w => `/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules, landingOrder)}`}
-          />
+            {/* 团队 / 工作区统一切换器（需求 0157 C2）：分组列出工作区，底部提供团队页入口。
+                0190 C1 起面包屑与切换器同处 .cn-header-loc，团队名只由面包屑承担，
+                不再需要 compactHeader 分支用 prefix 补归属（C6 改 CSS 驱动）。 */}
+            <ScopeSwitcher
+              teams={teams}
+              workspaces={workspaces}
+              currentWorkspaceId={wid}
+              showLabel={!isMobile}
+              workspaceHref={w => `/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules, landingOrder)}`}
+            />
+          </div>
 
-          {/* 一级模块导航（需求 0081 C4）—— 数据表 / 文档 / 设计 / 工作区设置上移顶栏；
+          {/* 一级模块导航（需求 0081 C4 / 0190 C3）—— 数据表 / 文档 / 设计 / 统计 / 工作区设置；
               仅桌面端渲染（移动端一级模块维持在下方页签行，C5）。
-              激活态由路由段驱动：表级子页（/tables/:tid/settings 等）一律落在「数据表」，
-              避免表设置页被误判为「工作区设置」；点击导航到对应段。 */}
+              激活态由路由段驱动：表级子页（/tables/:tid/settings 等）一律落在「数据表」。
+              激活形状由底部 2px 墨条改为胶囊底（C3）：三层导航不再靠「线宽 2px vs 3px」区分，
+              层级只靠位置（顶栏 / 内容区上方）+ 形状（胶囊 / 墨条）区分。 */}
           {!isMobile && wid && (
             <nav className="cn-header-nav" data-testid="ws-module-nav" aria-label="工作区一级功能导航">
               {headerNavItems.map(item => {
@@ -1326,14 +1328,16 @@ export default function MainLayout() {
                     type="button"
                     aria-current={active ? 'page' : undefined}
                     aria-label={item.label}
-                    title={compactHeader ? item.label : undefined}
+                    title={item.label}
                     data-testid={`ws-nav-${item.key}`}
                     className={active ? 'cn-header-nav-item cn-header-nav-item-active' : 'cn-header-nav-item'}
                     onClick={() => navigate(`/w/${wid}/${item.key}`)}
                   >
                     {item.icon}
-                    {!compactHeader && <span className="cn-header-nav-label">{item.label}</span>}
-                    {!compactHeader && item.count !== undefined && <span className="cn-ws-tab-count">{item.count}</span>}
+                    <span className="cn-header-nav-label">{item.label}</span>
+                    {item.count !== undefined && (
+                      <span className="cn-ws-tab-count">{item.count}</span>
+                    )}
                   </button>
                 )
               })}
@@ -1351,11 +1355,14 @@ export default function MainLayout() {
             文字说明收进 Tooltip，降低顶栏视觉密度。 */}
         <div className="cn-header-right">
           {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
-          {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
-              移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
-          {!isMobile && !compactHeader && (
+          {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧）。
+              0190 C5：工具类按钮改为无描边（GitHub 顶栏 icon-only 本来就没有边框），
+              与管理类（管理台）区分主次。 */}
+          {!isMobile && (
             <Tooltip title="大模型设置：配置连接、查看调用记录">
               <Button
+                type="text"
+                className="cn-header-btn-ghost cn-header-tool"
                 icon={<RobotOutlined />}
                 aria-label="大模型设置"
                 data-testid="llm-settings-btn"
@@ -1364,9 +1371,11 @@ export default function MainLayout() {
             </Tooltip>
           )}
           {/* 帮助文档入口（ADR 0029）—— 桌面端常驻图标，整页路由；移动端收进用户菜单 */}
-          {!isMobile && !compactHeader && (
+          {!isMobile && (
             <Tooltip title="帮助文档：使用说明、操作教程与新手引导">
               <Button
+                type="text"
+                className="cn-header-btn-ghost cn-header-tool"
                 icon={<QuestionCircleOutlined />}
                 aria-label="帮助文档"
                 data-testid="help-btn"
@@ -1379,9 +1388,9 @@ export default function MainLayout() {
           {isAdmin && (
             <Tooltip title="管理台：账号、空间、备份与实例设置">
               <Button
+                className={`cn-header-btn-outlined${location.includes('/admin') ? ' cn-header-icon-btn-active' : ''}`}
                 icon={<SafetyOutlined />}
                 aria-label="管理台"
-                className={location.includes('/admin') ? 'cn-header-icon-btn-active' : undefined}
                 onClick={() => navigate('/admin')}
               />
             </Tooltip>
@@ -1391,9 +1400,9 @@ export default function MainLayout() {
             <Tooltip title={user?.nickname || user?.username || ''}>
               <Button
                 shape="circle"
+                className="cn-header-btn-outlined cn-header-avatar"
                 aria-label="用户菜单"
                 data-testid="user-menu-trigger"
-                style={{ padding: 0 }}
                 icon={<Avatar size={22} icon={<UserOutlined />} />}
               />
             </Tooltip>
@@ -1418,7 +1427,10 @@ export default function MainLayout() {
             collapsed={siderMode === 'home' ? false : collapsed}
             onCollapse={setCollapsed}
             width={siderWidth} collapsedWidth={60}
-            style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
+            /* 侧栏底比内容区容器底低一档（0190 C9）：原先两边同底色，只靠 1px 线分开，
+               眼睛分不出层次；--cn-bg-subtle 是现成 token，零新增。 */
+            className="cn-app-sider"
+            style={{ flexShrink: 0, overflow: 'auto' }}
           >
             {siderMode === 'admin'
               ? renderAdminNav(false, collapsed)

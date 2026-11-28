@@ -47,11 +47,63 @@ describe('顶栏线条契约（搜索框 / 图标按钮 / 分界线）', () => {
     expect(body).toContain('box-shadow: none')
   })
 
-  it('顶栏图标按钮统一 1px 描边 + 基准圆角，圆形按钮保持正圆', () => {
-    const body = ruleBody('.cn-app-header .ant-btn')
-    expect(body).toContain('border: 1px solid var(--cn-border)')
-    expect(body).toContain('border-radius: var(--cn-radius-base)')
+  it('顶栏按钮分级：默认无描边，只有显式 cn-header-btn-outlined 才描边（0190 C5）', () => {
+    // 默认不再无差别加描边：GitHub 顶栏的 icon-only 按钮本来就没有边框，
+    // 原先每个按钮都被套上 1px 描边，一排下来像一排小方块且主次不分。
+    const base = ruleBody('.cn-app-header .ant-btn')
+    expect(base).toContain('box-shadow: none')
+    expect(base).not.toContain('border:')
+
+    // 管理类（管理台 / 头像）显式声明后才有 1px 中性线
+    const outlined = ruleBody('.cn-app-header .cn-header-btn-outlined')
+    expect(outlined).toContain('border: 1px solid var(--cn-border)')
+    // 圆角 / 文字色由 outlined 与 ghost 的共享规则承担
+    expect(
+      ruleBody('.cn-app-header .cn-header-btn-outlined, .cn-app-header .cn-header-btn-ghost'),
+    ).toContain('border-radius: var(--cn-radius-base)')
+
+    // 工具类（大模型 / 帮助）静态完全平面：与 outlined 共享圆角 / 文字色，
+    // 自己的规则只声明 border + background，故取该选择器的全部声明块。
+    const ghostBodies = allRuleBodies('.cn-app-header .cn-header-btn-ghost')
+    expect(ghostBodies.length).toBeGreaterThan(0)
+    const ghost = ghostBodies.join(' ')
+    expect(ghost).toContain('border: 1px solid transparent')
+    expect(ghost).toContain('background: transparent')
+
+    // 圆形按钮保持正圆
     expect(ruleBody('.cn-app-header .ant-btn-circle')).toContain('border-radius: var(--cn-radius-pill)')
+  })
+
+  it('侧栏选中态与表导航同语言：3px 品牌色左指示条（0190 C8）', () => {
+    // 同一位置（左栏）的两条侧栏原先两种选中语言：表导航有左条，文档树只有一层底色。
+    const nav = ruleBody('.cn-table-nav .ant-menu-item-selected::before')
+    const tree = ruleBody(
+      '.cn-doc-sider-tree .ant-tree-node-content-wrapper.ant-tree-node-selected::before',
+    )
+    for (const body of [nav, tree]) {
+      expect(body).toContain('width: 3px')
+      expect(body).toContain('background: var(--cn-brand-color)')
+    }
+  })
+
+  it('侧栏与内容区分层：底色降一档 + 1px 右边框，把手常态可见（0190 C9）', () => {
+    const sider = ruleBody('.cn-app-sider')
+    expect(sider).toContain('background: var(--cn-bg-subtle)')
+    expect(sider).toContain('border-right: 1px solid var(--cn-border)')
+
+    // 拖拽把手常态就有 1px 中性线（原先透明，用户不知道可拖），hover 才转品牌色
+    expect(ruleBody('.cn-sider-resizer::after')).toContain('background: var(--cn-border)')
+    const hover = ruleBody('.cn-sider-resizer:hover::after, .cn-sider-resizer:focus::after')
+    expect(hover).toContain('background: var(--cn-brand-color)')
+  })
+
+  it('一级导航激活态是胶囊底而非底部墨条（0190 C3）', () => {
+    const active = ruleBody('.cn-header-nav-item-active')
+    // 三层导航不再靠「线宽 2px vs 3px」区分层级
+    expect(active).not.toContain('box-shadow')
+    expect(active).toContain('background: var(--cn-mix-brand-color-12-bg-container)')
+    // 胶囊形状由基类提供（与 .cn-table-tab-active 同一套视觉语言）
+    expect(ruleBody('.cn-header-nav-item')).toContain('border-radius: var(--cn-radius-base)')
   })
 
   it('顶栏搜索框及内部线条同为 1px 统一中性线', () => {

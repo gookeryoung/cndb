@@ -163,6 +163,9 @@ body {
   --cn-weight-semibold: 600;
   --cn-weight-bold: 700;
 
+  /* 控件高度（需求 0190 C6：顶栏高度从内联 style 收进标尺） */
+  --cn-control-header: 44px;
+
   --cn-font-sans: 'Inter', system-ui, sans-serif;
   --cn-font-display: 'Outfit', system-ui, sans-serif;
   --cn-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -562,10 +565,21 @@ body {
 /* ─────────────── 工作区分页导航 tab 数量徽标 ───────────────
  * MainLayout wsTabItems 在 label 内嵌计数 span（0 也显示），
  * 颜色走主题变量，随八套主题自适应。 */
+/* 计数徽标（需求 0190 C4）：中性胶囊，与 .cn-record-pill 同源。
+ * 顶栏一级导航 / 内容区页签 / 团队页共用同一套，原先顶栏那份只是灰字，
+ * 同一层级两种样式。 */
 .cn-ws-tab-count {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
   margin-left: var(--cn-space-sm);
-  font-size: var(--cn-text-xs);
+  padding: 0 var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-bg-subtle);
   color: var(--cn-text-secondary);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--cn-space-xl);
 }
 
 /* tab 内类别徽标（antd Tag 预设色：金色=编辑中锁定、蓝=直接落库、
@@ -585,8 +599,14 @@ body {
 
 /* 顶栏：极简 / GitHub 式平面线条 —— 纯容器底色 + 1px 细边框，无渐变与投影，
  * 顶栏与内容区以一条清晰的分界线隔开（线色随主题明暗取次级描边档位）。
- * 复合选择器抬升优先级，压过 antd Layout Header 运行时注入的单类规则。 */
+ * 复合选择器抬升优先级，压过 antd Layout Header 运行时注入的单类规则。
+ * 需求 0190 C6：高度与纵向布局从 tsx 内联 style 搬到这里（H29）。 */
 .ant-layout-header.cn-app-header {
+  height: var(--cn-control-header);
+  line-height: var(--cn-control-header);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
   background: var(--cn-bg-container);
   border-bottom: 1px solid var(--cn-border);
   box-shadow: none;
@@ -598,26 +618,41 @@ body {
   overflow: hidden;
 }
 
-/* 顶栏控件（搜索框 / 图标按钮）统一线条：1px + 小圆角 + 中性描边，
- * 形状与线宽在所有主题一致，只有描边 / 文字颜色随明暗主题变化。
- * 覆盖 antd Button 的默认边框与 text 型无边框形态，让可点区域边界清晰。 */
+/* 顶栏控件（搜索框 / 图标按钮）统一线条：1px + 小圆角 + 中性描边。
+ * 需求 0190 C5：默认**不再**无差别加描边——GitHub 顶栏的 icon-only 按钮本来就没有边框，
+ * 原先每个按钮都被套上 1px 描边，一排下来像一排小方块且主次不分。
+ * 现在只有显式声明 `cn-header-btn-outlined` 的（管理台 / 头像）才描边；
+ * `cn-header-btn-ghost`（大模型 / 帮助）静态完全平面。两者共享圆角 / 文字色 / hover。 */
 .cn-app-header .ant-btn {
-  border: 1px solid var(--cn-border);
-  border-radius: var(--cn-radius-base);
-  background: var(--cn-bg-container);
-  color: var(--cn-text-secondary);
   box-shadow: none;
 }
 
-.cn-app-header .ant-btn:not(:disabled):hover {
-  border-color: var(--cn-border);
+.cn-app-header .cn-header-btn-outlined,
+.cn-app-header .cn-header-btn-ghost {
+  border-radius: var(--cn-radius-base);
+  color: var(--cn-text-secondary);
+}
+
+.cn-app-header .cn-header-btn-outlined:not(:disabled):hover,
+.cn-app-header .cn-header-btn-ghost:not(:disabled):hover {
   background: var(--cn-bg-subtle);
   color: var(--cn-text-primary);
+}
+
+.cn-app-header .cn-header-btn-outlined {
+  border: 1px solid var(--cn-border);
+  background: var(--cn-bg-container);
+}
+
+.cn-app-header .cn-header-btn-ghost {
+  border: 1px solid transparent;
+  background: transparent;
 }
 
 /* 圆形头像按钮保持正圆：线型统一不改变形状 */
 .cn-app-header .ant-btn-circle {
   border-radius: var(--cn-radius-pill);
+  padding: 0;
 }
 
 /* 顶栏右侧 GitHub 风格图标按钮：管理台入口在 /admin 上下文时的激活态高亮 */
@@ -636,6 +671,24 @@ body {
   align-items: center;
   gap: var(--cn-space-md);
   flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* 品牌块（0190 C1）：LOGO + 品牌字。原先这三段是内联 style（gap 6 / marginRight 4）。 */
+.cn-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* 位置控件（0190 C1）：团队面包屑 › 工作区切换器 合成一个可扫视的复合块。
+ * 原先面包屑 / 斜杠 / 切换器是三个平铺元素，视觉上像三件事。 */
+.cn-header-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-hairline);
   min-width: 0;
 }
 
@@ -664,56 +717,81 @@ body {
   flex-shrink: 1;
 }
 
-/* 顶栏紧凑档（宽度 <1280，由 MainLayout 按实际视口宽度加 class）：
- * 品牌字 / 版本 / 团队面包屑 / 导航文字 / 大模型与帮助按钮收起，
- * 保留 logo、工作区切换、模块图标、搜索与头像，避免窄宽度互相挤压。 */
-.cn-header-compact .cn-header-nav {
-  margin-left: 0;
+/* 顶栏紧凑档（需求 0190 C6：由 CSS 媒体查询驱动，不再靠 JS 布尔条件渲染）。
+ *
+ * 原先 `compactHeader` / `narrowHeader` 两个布尔控制 20 处 `!compactHeader` 条件渲染，
+ * 元素是**整块从 DOM 消失**，没有中间态；现在改为逐级收起（不渲染 → 隐藏），
+ * `data-compact` 属性仍由 MainLayout 按视口宽度输出，供单测 / e2e 判定。
+ * 断点取标尺登记过的 1199.98（xl 下界）/ 1023.98（三栏编辑器下限），
+ * 与 MainLayout 的 compactHeader(<1280) / narrowHeader(<1024) 同向，
+ * 留约 80px 余量避免与 JS 阈值抖动打架。 */
+@media (max-width: 1199.98px) {
+  .cn-header-compact .cn-header-nav {
+    margin-left: 0;
+  }
+
+  .cn-header-compact .cn-header-nav-item {
+    padding: 0 var(--cn-space-sm);
+  }
+
+  /* 品牌字收起，只留 LOGO */
+  .cn-header-compact .cn-header-brand-word {
+    display: none;
+  }
+
+  .cn-header-compact .cn-scope-trigger-label {
+    max-width: 180px;
+  }
+
+  .cn-header-compact .cn-header-search .cn-global-search {
+    max-width: 300px;
+    min-width: 150px;
+  }
+
+  /* 工具类按钮与导航文字收起（入口仍在用户菜单 / aria-label，见 userMenuItems） */
+  .cn-header-compact .cn-header-tool,
+  .cn-header-compact .cn-header-nav-label {
+    display: none;
+  }
 }
 
-.cn-header-compact .cn-header-nav-item {
-  padding: 0 var(--cn-space-sm);
+@media (max-width: 1023.98px) {
+  .cn-header-narrow .cn-scope-trigger-label {
+    max-width: 140px;
+  }
+
+  .cn-header-narrow .cn-header-search .cn-global-search {
+    max-width: 220px;
+    min-width: 140px;
+  }
 }
 
-.cn-header-compact .cn-scope-trigger-label {
-  max-width: 180px;
-}
-
-.cn-header-compact .cn-header-search .cn-global-search {
-  max-width: 300px;
-  min-width: 150px;
-}
-
-.cn-header-narrow .cn-scope-trigger-label {
-  max-width: 140px;
-}
-
-.cn-header-narrow .cn-header-search .cn-global-search {
-  max-width: 220px;
-  min-width: 140px;
-}
-
-/* ── 顶栏一级模块导航（需求 0081 C4）──
- * GitHub 顶栏 nav 风格：默认次级文字色，激活项品牌色 + 内嵌底部墨条
- * （与内容区页签行的墨条激活形状区分层级：一级=顶栏墨条，二级=页签墨条）。 */
+/* ── 顶栏一级模块导航（需求 0081 C4 / 0190 C3）──
+ * GitHub 顶栏 nav 风格：默认次级文字色。
+ * 0190 C3：激活态由「底部 2px 墨条」改为**圆角胶囊底**，与内容区二级胶囊页签同语言；
+ * 三层导航不再靠「线宽 2px vs 3px」区分（几乎看不出差别），
+ * 层级只靠位置（顶栏 / 内容区上方）+ 形状（胶囊 / 墨条）区分。 */
 .cn-header-nav {
   display: flex;
-  align-items: stretch;
-  align-self: stretch;
+  align-items: center;
+  gap: var(--cn-space-hairline);
   margin-left: var(--cn-space-sm);
+  min-width: 0;
 }
 
 .cn-header-nav-item {
   display: inline-flex;
   align-items: center;
   gap: var(--cn-space-xs);
+  height: var(--cn-space-3xl);
   padding: 0 var(--cn-space-md);
   border: 0;
+  border-radius: var(--cn-radius-base);
   background: transparent;
   color: var(--cn-text-secondary);
   font-size: var(--cn-text-sm);
   cursor: pointer;
-  transition: color 0.15s ease, box-shadow 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease;
   /* 受挤时标签单行省略而非竖向折行；图标不收缩避免被裁成半格 */
   min-width: 0;
   overflow: hidden;
@@ -730,17 +808,19 @@ body {
   white-space: nowrap;
 }
 
-.cn-header-nav-item:hover {
+.cn-header-nav-item:not(.cn-header-nav-item-active):hover {
   color: var(--cn-text-primary);
+  background: var(--cn-bg-subtle);
 }
 
+/* 激活态：胶囊底 + 品牌色文字（与 .cn-table-tab-active 同一套视觉语言）。
+ * 用 :not() 把 hover 排除在外，不需要再写一遍 -active:hover 覆盖。 */
 .cn-header-nav-item-active {
-  color: var(--cn-brand-color);
-  box-shadow: inset 0 -2px 0 var(--cn-brand-color);
-}
-
-.cn-header-nav-item-active:hover {
-  color: var(--cn-brand-color);
+  color: var(--cn-mix-brand-color-78-text-primary);
+  color: color-mix(in srgb, var(--cn-brand-color) 78%, var(--cn-text-primary));
+  font-weight: var(--cn-weight-medium);
+  background: var(--cn-mix-brand-color-12-bg-container);
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
 }
 
 /* ── 顶栏工作区搜索（GitHub 风格）：范围选择器 + 分组结果面板 ──
@@ -3995,16 +4075,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
-/* 顶栏版本小字：跟随品牌字右侧，只做次要信息呈现，不继承品牌字字重 / 负字距 */
-.cn-brand-version {
-  font-size: var(--cn-text-xs);
-  font-weight: var(--cn-weight-regular);
-  line-height: 1;
-  letter-spacing: 0;
-  color: var(--cn-text-secondary);
-  white-space: nowrap;
-}
-
 @keyframes cn-rise-in {
   from {
     opacity: 0;
@@ -5295,6 +5365,47 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
+/* ─────────────── 文档侧栏统一面板（需求 0190 C7）───────────────
+ * 标题行 / 过滤行 / 工具行 / 树四段共用一条左基线（--cn-doc-nav-pad），
+ * 不再靠注释人工对齐三处不同的 padding。 */
+.cn-doc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  padding-bottom: var(--cn-space-sm);
+}
+
+.cn-doc-nav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+}
+
+.cn-doc-nav-title {
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-semibold);
+}
+
+.cn-doc-nav-filter,
+.cn-doc-nav-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  padding: 0 var(--cn-space-lg);
+}
+
+/* 工具行靠右：排序 / 展开是次要动作，不与过滤框抢宽度 */
+.cn-doc-nav-tools {
+  justify-content: flex-end;
+}
+
+.cn-doc-nav-tree {
+  padding: 0 var(--cn-space-sm) 0 var(--cn-space-xs);
+}
+
 /* ─────────────── 文档侧栏树（MainLayout Sider / 移动抽屉共用）───────────────
  * 目标：① 长文件名不折行，单行省略号收尾（悬停看全名）；
  * ② 行高压到 26px、缩进 12px/级、箭头 16px、图标列 18px，行内全部垂直居中，
@@ -5322,6 +5433,27 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .cn-doc-sider-tree .ant-tree-indent-unit {
   width: 12px;
+}
+
+/* 选中态左指示条（需求 0190 C8）：与 .cn-table-nav 的选中语言对齐。
+ * 原先同一位置（左栏）的两条侧栏两种选中语言：表导航有 3px 品牌左条，
+ * 文档树只有一层 --cn-bg-selected 底色。只给 content-wrapper 加圆角 + 左条，
+ * 不碰整行（缩进区不染色）。 */
+.cn-doc-sider-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  position: relative;
+  border-radius: var(--cn-radius-sm);
+}
+
+.cn-doc-sider-tree .ant-tree-node-content-wrapper.ant-tree-node-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 var(--cn-radius-sm) var(--cn-radius-sm) 0;
+  background: var(--cn-brand-color);
 }
 
 /* 行内布局改为 flex：iconEle 在 antd 中渲染于 content-wrapper 内部，
@@ -5701,12 +5833,20 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   inset-block: 0;
   left: 50%;
   width: 1px;
-  background: transparent;
+  /* 需求 0190 C9：常态可见 1px 中性线（原先透明，只有 hover 才现形，
+   * 用户不知道这里可拖）；hover / focus 转品牌色。 */
+  background: var(--cn-border);
 }
 
 .cn-sider-resizer:hover::after,
 .cn-sider-resizer:focus::after {
   background: var(--cn-brand-color);
+}
+
+/* 应用侧栏容器（需求 0190 C9）：底色比内容区容器低一档，形成层次；右边框保留 1px。 */
+.cn-app-sider {
+  background: var(--cn-bg-subtle);
+  border-right: 1px solid var(--cn-border);
 }
 
 /* ─────────────── 文档页头（需求 0162）───────────────

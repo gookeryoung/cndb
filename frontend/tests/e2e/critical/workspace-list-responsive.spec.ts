@@ -77,12 +77,15 @@ test.describe("顶栏与外部链接入口的响应式", () => {
       expect(headerFits, `width=${width} 顶栏不应横向溢出`).toBe(true)
 
       if (width < 1280) {
-        // 紧凑档：品牌字 / 导航文字 / 次要操作按钮收起
-        await expect(page.locator(".cn-brand-word")).toHaveCount(0)
-        await expect(page.getByTestId("ws-nav-tables").locator(".cn-header-nav-label")).toHaveCount(0)
-        await expect(page.getByTestId("llm-settings-btn")).toHaveCount(0)
-        await expect(page.getByTestId("help-btn")).toHaveCount(0)
+        // 紧凑档（需求 0190 C6）：降级改由 CSS 媒体查询驱动，元素仍在 DOM 里（不再整块消失），
+        // 断言的是「不可见」而非「不存在」。这是判据迁移而非放宽：可见性仍被硬断言。
+        await expect(page.locator(".cn-brand-word")).not.toBeVisible()
+        await expect(page.getByTestId("ws-nav-tables").locator(".cn-header-nav-label")).not.toBeVisible()
+        await expect(page.getByTestId("llm-settings-btn")).not.toBeVisible()
+        await expect(page.getByTestId("help-btn")).not.toBeVisible()
+        // 可访问名不受收起影响（窄屏只剩图标，仍能被读屏与 title 识别）
         await expect(page.getByTestId("ws-nav-tables")).toHaveAttribute("aria-label", "数据表")
+        await expect(page.getByTestId("ws-nav-tables")).toHaveAttribute("title", "数据表")
       } else {
         await expect(page.locator(".cn-brand-word")).toBeVisible()
         await expect(page.getByTestId("ws-nav-tables").locator(".cn-header-nav-label")).toBeVisible()

@@ -396,24 +396,20 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByText('database_url')).toBeNull()
     })
 
-    it('桌面端品牌字右侧显示应用版本小字', async () => {
+    // 需求 0190 C2：版本号已移出顶栏，只在「关于系统」弹窗展示（那里已有「版本」行）
+    it('桌面端顶栏不再渲染版本小字，品牌字保持可见', async () => {
         renderLayout(mockUser)
 
-        // 版本与「关于系统」共用 msw 的 /system/about（app_version 0.3.0）
-        const version = await screen.findByTestId('app-version')
-        expect(version).toHaveTextContent('v0.3.0')
-        expect(version).toHaveAttribute('title', '应用版本 v0.3.0')
-        expect(version).toHaveClass('cn-brand-version')
-
-        // 位置约束：在 home-logo 内、品牌字「晶格协同」之后
-        const logo = screen.getByTestId('home-logo')
-        expect(logo).toContainElement(version)
-        const brandWord = logo.querySelector('.cn-brand-word')
-        expect(brandWord).not.toBeNull()
-        expect(brandWord!.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        await waitFor(() => {
+            expect(screen.getByTestId('home-logo')).toBeInTheDocument()
+        })
+        // 44px 顶栏里塞 v0.3.0 这类低变动信息收益太低，已移到「关于系统」
+        expect(screen.getByTestId('home-logo').querySelector('.cn-brand-version')).toBeNull()
+        expect(screen.queryByTestId('app-version')).toBeNull()
+        expect(screen.getByTestId('home-logo').querySelector('.cn-brand-word')).not.toBeNull()
     })
 
-    it('版本接口失败时静默不渲染版本小字，顶栏其余功能不受影响', async () => {
+    it('版本接口失败时不影响顶栏其余功能', async () => {
         server.use(
             http.get('/api/v1/system/about', () => new HttpResponse(null, { status: 500 })),
         )
@@ -421,10 +417,6 @@ describe('MainLayout 顶部导航', () => {
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
-        })
-        // 非关键信息：不占位、不弹错，页面照常可用
-        await waitFor(() => {
-            expect(screen.queryByTestId('app-version')).toBeNull()
         })
         expect(screen.getByTestId('tables-page-stub')).toBeVisible()
     })
@@ -1312,6 +1304,55 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         })
     })
 
+    // 需求 0190 C7：三段（标题 / 工具条 / 树）合并为统一面板 .cn-doc-nav
+    it('文档侧栏是统一面板：标题行 / 过滤行 / 工具行 / 树四段各归其位', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        const sider = await screen.findByTestId('sider-documents')
+        expect(sider).toHaveClass('cn-doc-nav')
+
+        // 四段各在面板内、且各占一层（过滤独占一行，不再与图标按钮同排抢宽度）
+        const head = sider.querySelector('.cn-doc-nav-head')
+        const filter = sider.querySelector('.cn-doc-nav-filter')
+        const tools = sider.querySelector('.cn-doc-nav-tools')
+        const tree = sider.querySelector('.cn-doc-nav-tree')
+        for (const el of [head, filter, tools, tree]) expect(el).not.toBeNull()
+
+        // 过滤框在过滤行内，两个图标按钮在工具行内 —— 不在同一父容器
+        expect(filter!.contains(screen.getByTestId('doc-tree-filter'))).toBe(true)
+        expect(tools!.contains(screen.getByTestId('doc-tree-sort'))).toBe(true)
+        expect(tools!.contains(screen.getByTestId('doc-tree-expand-toggle'))).toBe(true)
+        expect(filter!.contains(screen.getByTestId('doc-tree-sort'))).toBe(false)
+
+        // 标题行带新建入口
+        expect(head!.contains(screen.getByTestId('doc-nav-create'))).toBe(true)
+    })
+
+    it('C11：侧栏面板段落不再写行内 style（左基线由样式表统一控制）', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        const sider = await screen.findByTestId('sider-documents')
+        for (const sel of ['.cn-doc-nav-head', '.cn-doc-nav-filter', '.cn-doc-nav-tools', '.cn-doc-nav-tree']) {
+            const el = sider.querySelector(sel)
+            if (!el) continue
+            expect(el.getAttribute('style'), `${sel} 不应有内联 style`).toBeNull()
+        }
+    })
+
+    it('C10：文档树为空时给出空态与「新建文档」动作', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () => HttpResponse.json({ items: [] })),
+        )
+        renderLayout(mockUser, '/w/10/documents')
+
+        const empty = await screen.findByTestId('doc-nav-empty')
+        expect(empty).toHaveTextContent('还没有文档')
+        fireEvent.click(screen.getByTestId('doc-nav-empty-create'))
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('create=1')
+        })
+    })
+
     it('侧栏承载展开/收起 / 树排序 / 标题过滤控件（需求 0065 三次修订）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
@@ -1814,20 +1855,25 @@ describe('MainLayout 顶栏紧凑档（宽度不足）', () => {
 
             const header = document.querySelector('.cn-app-header') as HTMLElement
             expect(header).toHaveClass('cn-header-compact')
-            // 品牌字与版本收起（logo 保留）
-            expect(header.querySelector('.cn-brand-word')).toBeNull()
-            expect(screen.queryByTestId('app-version')).toBeNull()
-            // 一级导航只留图标，标签收起但保留可访问名称
+            expect(header).toHaveAttribute('data-compact', 'true')
+
+            // 需求 0190 C6：降级改由 CSS 媒体查询驱动，元素仍在 DOM 里（不再整块消失），
+            // 由 `.cn-header-compact ... { display: none }` 收起；jsdom 不做布局，
+            // 这里断言的是「仍在 DOM + 命中收起规则的选择器」这一契约本身。
+            // 真实可见性由 e2e workspace-list-responsive.spec.ts 在真实视口下验证。
+            expect(header.querySelector('.cn-brand-word')).not.toBeNull()
+            expect(header.querySelector('.cn-brand-word')).toHaveClass('cn-header-brand-word')
+
+            // 一级导航标签与计数仍在 DOM，收起交给 CSS；可访问名不受影响
             const tablesNav = screen.getByTestId('ws-nav-tables')
-            expect(tablesNav.querySelector('.cn-header-nav-label')).toBeNull()
+            expect(tablesNav.querySelector('.cn-header-nav-label')).not.toBeNull()
             expect(tablesNav).toHaveAttribute('aria-label', '数据表')
             expect(tablesNav).toHaveAttribute('title', '数据表')
-            // 次要操作收进用户菜单，不再占用顶栏
-            expect(screen.queryByTestId('llm-settings-btn')).toBeNull()
-            expect(screen.queryByTestId('help-btn')).toBeNull()
-            // 面包屑收起后由切换器补「个人 / 工作区」，归属信息只出现一处
-            expect(screen.queryByTestId('header-personal-crumb')).toBeNull()
-            await waitFor(() => expect(screen.getByTestId('ws-switch-btn')).toHaveTextContent(/个人\s*\/\s*测试工作区/))
+
+            // 次要操作同样保留在 DOM（收进 CSS），入口不丢
+            expect(screen.queryByTestId('llm-settings-btn')).not.toBeNull()
+            expect(screen.queryByTestId('help-btn')).not.toBeNull()
+            expect(screen.queryByTestId('llm-settings-btn')).toHaveClass('cn-header-tool')
         } finally {
             responsiveState = {
                 deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
