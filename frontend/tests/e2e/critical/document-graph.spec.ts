@@ -100,10 +100,13 @@ function graphLabels(page: Page) {
 test("全图渲染：统计与接口一致，图例按格式列出", async ({ page }) => {
     test.skip(test.info().project.name === "chromium-anon", "anon 项目跳过");
 
-    // 需求 0189 C1：文档区页签称谓统一为「知识图谱」，路由段仍是 graph（C2）
+    const graph = await openGraph(page);
+
+    // 需求 0189 C1：文档区页签称谓统一为「知识图谱」，路由段仍是 graph（C2）。
+    // 注意必须在 openGraph 之后断言：页签只存在于文档上下文页，
+    // 先前放在 goto 之前会让断言在落地页上跑（页面还没进文档区，元素自然找不到）。
     await expect(page.getByTestId("document-tab-graph")).toHaveText("知识图谱");
 
-    const graph = await openGraph(page);
     expect(graph.truncated, "节点数超过上限时本用例的「共 Y」口径不成立").toBeFalsy();
 
     const { shown, total } = await footerCounts(page);

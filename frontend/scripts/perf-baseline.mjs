@@ -85,8 +85,12 @@ const environment = [...environments][0]
  *  - 不进基线：计数类（longTaskCount / eventCount）与单次极值（longTaskMax / eventMax）——
  *    实测 3 轮样本里 eventCount 在 99~115 之间跳动（同一份代码），
  *    写进 ±15% 门禁会把调度抖动判成回归。它们仍写进 journeys.json 供人工观察。
+ *  - **ttfb 也移出门禁**（2026-11-28，真 runner 数据）：webServer 起在本机，
+ *    ttfb 实测恒在 3~6ms 这个个位数量级，±15% 相当于 ±0.5ms，纯噪声；
+ *    实测就报过「实际 6，基线 3」，即使放宽到 +60% 也只有 4ms。
+ *    ttfb 仍写入 journeys.json 供人工观察，只是不参与判定。
  */
-const GATED_METRICS = new Set(['lcp', 'fcp', 'ttfb', 'jsBytes', 'cssBytes', 'fontBytes', 'totalBytes'])
+const GATED_METRICS = new Set(['lcp', 'fcp', 'jsBytes', 'cssBytes', 'fontBytes', 'totalBytes'])
 
 /** 逐指标取中位数；非数值 / 0 值跳过（0 表示该环境无此指标），非门禁指标不写入 */
 function medianMetrics(values) {

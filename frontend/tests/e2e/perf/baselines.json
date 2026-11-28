@@ -4,7 +4,6 @@
     "coldGrid": {
       "lcp": 828,
       "fcp": 432,
-      "ttfb": 5,
       "jsBytes": 1159320,
       "cssBytes": 30676,
       "fontBytes": 112109,
@@ -13,7 +12,6 @@
     "documentView": {
       "lcp": 604,
       "fcp": 604,
-      "ttfb": 3,
       "jsBytes": 824703,
       "cssBytes": 30676,
       "fontBytes": 112109,
@@ -22,7 +20,6 @@
     "gridInteraction": {
       "lcp": 812,
       "fcp": 416,
-      "ttfb": 4,
       "jsBytes": 1159320,
       "cssBytes": 30676,
       "fontBytes": 112109,
@@ -31,7 +28,6 @@
     "gridPaging": {
       "lcp": 820,
       "fcp": 420,
-      "ttfb": 4,
       "jsBytes": 1159320,
       "cssBytes": 30676,
       "fontBytes": 112109,
@@ -40,7 +36,6 @@
     "gridInlineEdit": {
       "lcp": 824,
       "fcp": 424,
-      "ttfb": 4,
       "jsBytes": 1159320,
       "cssBytes": 30676,
       "fontBytes": 112109,
@@ -49,55 +44,50 @@
   },
   "ci": {
     "coldGrid": {
-      "lcp": 812,
-      "fcp": 412,
-      "ttfb": 3,
-      "jsBytes": 1159320,
-      "cssBytes": 30676,
+      "lcp": 532,
+      "fcp": 440,
+      "jsBytes": 1160183,
+      "cssBytes": 30702,
       "fontBytes": 112109,
-      "totalBytes": 1316069
+      "totalBytes": 1316186
     },
     "documentView": {
-      "lcp": 616,
-      "fcp": 616,
-      "ttfb": 3,
-      "jsBytes": 824703,
-      "cssBytes": 30676,
+      "lcp": 672,
+      "fcp": 672,
+      "jsBytes": 827642,
+      "cssBytes": 30702,
       "fontBytes": 112109,
-      "totalBytes": 994573
+      "totalBytes": 996836
     },
     "gridInteraction": {
-      "lcp": 824,
-      "fcp": 424,
-      "ttfb": 4,
-      "jsBytes": 1159320,
-      "cssBytes": 30676,
+      "lcp": 524,
+      "fcp": 444,
+      "jsBytes": 1160183,
+      "cssBytes": 30702,
       "fontBytes": 112109,
-      "totalBytes": 1317211
+      "totalBytes": 1317328
     },
     "gridPaging": {
-      "lcp": 812,
-      "fcp": 412,
-      "ttfb": 4,
-      "jsBytes": 1159320,
-      "cssBytes": 30676,
+      "lcp": 528,
+      "fcp": 440,
+      "jsBytes": 1160183,
+      "cssBytes": 30702,
       "fontBytes": 112109,
-      "totalBytes": 1316069
+      "totalBytes": 1316186
     },
     "gridInlineEdit": {
-      "lcp": 804,
-      "fcp": 412,
-      "ttfb": 3,
-      "jsBytes": 1159320,
-      "cssBytes": 30676,
+      "lcp": 524,
+      "fcp": 448,
+      "jsBytes": 1160183,
+      "cssBytes": 30702,
       "fontBytes": 112109,
-      "totalBytes": 1317965
+      "totalBytes": 1318342
     }
   },
   "_meta": {
     "environment": "ci",
     "runs": 3,
-    "reason": "CI 口径 3 轮中位数（本地复现 runner：CI=true + 隔离后端 + 静态产物）",
-    "updatedAt": "2026-11-27T06:36:39.655Z"
+    "reason": "GitHub runner 连续 3 轮中位数（真 runner 采集）",
+    "updatedAt": "2026-11-28T05:06:24.731Z"
   }
 }

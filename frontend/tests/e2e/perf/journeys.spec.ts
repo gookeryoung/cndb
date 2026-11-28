@@ -19,15 +19,14 @@ import { publishedDocRow, publishedDocUrl } from "./docFixtures"
 const ANON = ["setup", "chromium-anon"]
 const TOLERANCE = 0.15
 /**
- * `ci` 段的时序基线采自「本地 CI=true 复现 runner」，与真实 GitHub runner 存在系统性差异
- * （baselines.json 的 `_meta.reason` 已写明），实测同一代码下 FCP / LCP 高 20%~60%，
- * 而体积指标（jsBytes / cssBytes）完全一致——所以这是环境差，不是回归。
+ * `ci` 段的时序基线曾采自「本地 CI=true 复现 runner」，与真 GitHub runner 差 20%~60%，
+ * 因此 2026-11-28 曾临时放宽 `ci` 时序容差到 +60% 以分离「环境差」与「真回归」。
  *
- * 处置（ADR 0116 已知坑）：时序指标允许单独放宽一档，体积类指标仍严格按容差判；
- * 如果环境确实变慢，硬上限仍会拦住真实回归。放宽倍率只对 `ci` 生效，`local` 不变。
+ * 2026-11-28 晚已用真 runner 重采（`perf-baseline-ci.mjs` 连跑 3 轮取中位数，
+ * 经 `perf-baseline` job 采集），`ci` 段现在是真 runner 读数，故容差收回统一的 +15%。
+ * 若将来又出现「同一代码只有时序指标集体超、体积指标全好」的模式，先查基线
+ * 来源是否又变成了本机复现值，而不是直接放宽容差。
  */
-const CI_TIMING_TOLERANCE = 0.6
-const TIMING_METRICS = new Set(["lcp", "fcp", "ttfb"])
 const OUTPUT_DIR = path.resolve(process.cwd(), "test-results", "perf")
 const BASELINE_PATH = path.resolve(process.cwd(), "tests/e2e/perf", "baselines.json")
 
@@ -163,17 +162,13 @@ function assertWithinBaseline(
   baseline: Partial<JourneyMetrics> | null,
 ): void {
   if (!baseline) return
-  const env = environment()
   for (const [key, expected] of Object.entries(baseline)) {
     if (typeof expected !== "number" || expected <= 0) continue
     const actual = metrics[key as keyof JourneyMetrics]
-    // `ci` 的时序基线来自本地复现 runner，允许放宽到 1.6×（体积指标不放宽）
-    const tolerance = env === "ci" && TIMING_METRICS.has(key) ? CI_TIMING_TOLERANCE : TOLERANCE
-    const limit = Math.ceil(expected * (1 + tolerance))
     expect(
       actual,
-      `${name} ${key} 超出基线：实际 ${actual}，基线 ${expected}（容差 +${tolerance * 100}%）`,
-    ).toBeLessThanOrEqual(limit)
+      `${name} ${key} 超出基线：实际 ${actual}，基线 ${expected}（容差 +${TOLERANCE * 100}%）`,
+    ).toBeLessThanOrEqual(Math.ceil(expected * (1 + TOLERANCE)))
   }
 }
 
