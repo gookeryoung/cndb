@@ -34,6 +34,12 @@ on:
     branches: [main, develop]
     paths: *ci_paths
   workflow_dispatch:  # 手动触发可绕过 paths 过滤跑全量
+    inputs:
+      perf_baseline_runs:
+        description: '性能基线采集：在真 runner 连跑 N 轮并回填 ci 基线（0 = 不采集）'
+        required: false
+        default: '0'
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -524,6 +530,20 @@ jobs:
           CI: "true"
         run: cd frontend && pnpm e2e --project=chromium-authed tests/e2e/perf --workers=1
 
+      # 性能旅程的结构化读数（test-results/perf/journeys.json）必须在**成功时也上传**：
+      # ADR 0116 已知坑要求 `ci` 基线用 CI artifact 的真实读数回填、禁止手改数字，
+      # 而原来的上传步骤限定 `if: failure()`，于是一旦全绿就拿不到回填基线所需的
+      # 数据（2026-11-28 就卡在这里：CI 绿了但 artifacts 里没有 journeys.json）。
+      # 该文件很小（几条 JSON），always() 上传的代价可忽略。
+      - name: Upload perf journey metrics (baseline source of truth)
+        if: matrix.shard == 1 && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-journeys-shard1
+          path: frontend/test-results/perf/journeys.json
+          retention-days: 14
+          if-no-files-found: warn
+
       # dev 模式 E2E（vite dev 源码直出）：生产构建会绕开 rc-field-form 的 es barrel，
       # 登录页崩溃（2026-10-20）那类依赖补丁回归只在 dev 现形，常规 e2e 全绿也发现不了。
       # 无需 build 产物，webServer 自起隔离后端；串行 1 worker，约 1 分钟
@@ -542,3 +562,73 @@ jobs:
             frontend/playwright-report/
             frontend/test-results/
           retention-days: 7
+
+  # ── ci 性能基线采集（手动触发，ADR 0116 已知坑：必须用 CI 读数回填，禁止手改数字）──
+  # `frontend/tests/e2e/perf/baselines.json` 的 `ci` 段原先是「本地 CI=true 复现 runner」
+  # 采的，与真 runner 在 FCP / LCP 上差 20%~60%，导致时序指标长期误报。
+  # 本 job 在真 runner 上连跑 N 轮（默认 10），由 perf-baseline-ci.mjs 取中位数回填。
+  # 产物 baselines.json 作为 artifact 上传，人工 review 后提交（不自动 commit）。
+  perf-baseline:
+    name: Perf baseline (ci)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' && inputs.perf_baseline_runs != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          cache-suffix: perf-baseline
+
+      - name: Sync backend deps
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
+        run: uv sync --frozen --extra dev
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.1
+        with:
+          version: 12.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org/
+        run: cd frontend && pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: cache-playwright-baseline
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package.json', 'frontend/pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        if: steps.cache-playwright-baseline.outputs.cache-hit != 'true'
+        run: cd frontend && npx playwright install --with-deps chromium
+
+      # webServer 读 src/cndb/static，需先出静态产物（与 e2e job 同源）
+      - name: Build frontend static bundle
+        run: cd frontend && pnpm build
+
+      - name: Collect ci baseline（连跑 N 轮取中位数）
+        env:
+          CI: "true"
+        run: cd frontend && pnpm perf:baseline:ci --runs ${{ inputs.perf_baseline_runs }} --reason "GitHub runner 连续 ${{ inputs.perf_baseline_runs }} 轮中位数（真 runner 采集）"
+
+      - name: Upload updated baselines.json
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-baselines-ci
+          path: frontend/tests/e2e/perf/baselines.json
+          retention-days: 30
