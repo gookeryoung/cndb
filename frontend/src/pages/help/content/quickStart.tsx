@@ -11,12 +11,12 @@ import { Bullets, HelpLink, Note, P, Strong } from './primitives'
 const overview: HelpTopic = {
     key: 'overview',
     label: '认识晶格协同',
-    intro: <P>本页你能学到什么：工作区、数据表、视图、文档与成员这几个核心概念怎么串起来。适合谁：第一次打开晶格协同、还没建过工作区的新成员。</P>,
+    intro: <P>本页你能学到什么：工作区、数据表、视图、文档、设计与成员这几个核心概念怎么串起来。适合谁：第一次打开晶格协同、还没建过工作区的新成员。</P>,
     subsections: [
         {
             key: 'concepts',
             label: '核心概念',
-            summary: '先把五个概念分清，后面所有操作都是这五个概念的组合。',
+            summary: '先把六个概念分清，后面所有操作都是这六个概念的组合。',
             items: [
                 {
                     key: 'workspace',
@@ -59,6 +59,17 @@ const overview: HelpTopic = {
                     ),
                 },
                 {
+                    key: 'design',
+                    label: '设计',
+                    body: (
+                        <P>
+                            工作区内的结构设计模块：用 <code>.cnmd</code> 文本 DSL 描述零件与装配（参数、图元、布尔、约束），
+                            保存即编译并实时 3D 预览，可导出 STL / OBJ / GLB 与三视图，
+                            见 <HelpLink section="tutorials" topic="design-dsl">结构设计（DSL）</HelpLink>。
+                        </P>
+                    ),
+                },
+                {
                     key: 'member',
                     label: '成员与角色',
                     body: (
@@ -85,7 +96,7 @@ const overview: HelpTopic = {
                             <Strong>教程&amp;最佳实践</Strong>：具体功能怎么配、怎么用才不出错。
                         </>,
                         <>
-                            <Strong>典型示例</Strong>：两套可下载的业务场景数据，照着练一遍。
+                            <Strong>典型示例</Strong>：三套可下载的示例场景——两套业务数据表 + 一套机械结构设计文件，照着练一遍。
                         </>,
                         <>
                             <Strong>系统配置</Strong>：工作区、个人、数据源、管理台与部署。
@@ -152,7 +163,9 @@ const philosophy: HelpTopic = {
                     body: (
                         <P>
                             复杂能力以「填配置」的方式开放：字段类型决定录入与校验行为；数据同步只需声明请求、解析、
-                            幂等键与调度四要素，即可把外部数据周期性接入同一张表；分析由公式、图表与分组汇总组合而成，无需开发。
+                            幂等键与调度四要素，即可把外部数据周期性接入同一张表；分析由公式、图表与分组汇总组合而成，无需开发；
+                            结构设计则用声明式的 <code>.cnmd</code> DSL 描述零件与装配，保存即编译预览，同样不写程序逻辑，
+                            见 <HelpLink section="tutorials" topic="design-dsl">结构设计（DSL）</HelpLink>。
                         </P>
                     ),
                 },
@@ -188,6 +201,10 @@ const philosophy: HelpTopic = {
                             想沉淀分析结论 → 数据分析出图表，文档引用实时数据表：
                             <HelpLink section="tutorials" topic="analytics" anchor="entry">数据分析与图表</HelpLink>、
                             <HelpLink section="tutorials" topic="documents">文档</HelpLink>。
+                        </>,
+                        <>
+                            想参数化建模零件或装配 → 写声明式结构 DSL，保存即编译预览与导出：
+                            <HelpLink section="tutorials" topic="design-dsl">结构设计（DSL）</HelpLink>。
                         </>,
                         <>
                             想控制谁能改什么 → 三级角色叠加表级授权，越权写入自动转修改申请：

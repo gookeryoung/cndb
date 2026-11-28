@@ -40,6 +40,15 @@
 | 并发冲突与写入幂等 | `/help/tutorials/record-lifecycle#help-concurrency` | 0140、0145 |
 | 导入表头识别与预览 | `/help/tutorials/import-export` | 0018 |
 
+## 结构设计
+
+| 功能 | 帮助路径 | 来源 |
+|---|---|---|
+| 结构设计 DSL（语法 / 编译限制 / 分文件引用 / 约束） | `$T4design-dsl#help-syntax`、`#help-limits` | ADR 0079、0084、0086、0113、0125 |
+| 设计模块工作台（产品列表 ↔ 结构树、草稿与版本） | `$T4design-dsl#help-workflow`、`#help-structure` | ADR 0083、0113、0125 |
+| 复用模块库（跨工作区模块引用） | `$T4design-dsl#help-files` | ADR 0118 |
+| 机械设计示例（`.cnmd` 设计文件下载） | `$T5mechanical` | 0029、0036 |
+
 ## 文档与文件
 
 | 功能 | 帮助路径 | 来源 |
