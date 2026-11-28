@@ -425,6 +425,17 @@ jobs:
           UV_DEFAULT_INDEX: https://pypi.org/simple
         run: uv sync --frozen --extra test --python ${{ matrix.python-version }}
 
+      # PDF 渲染测试断言从 PDF 里抽出的中文文本（如 test_export_numbering 的
+      # "项目基本信息"）。ubuntu runner 默认不带 CJK 字体，缺字体时 PyMuPDF 抽出的
+      # 全是 "■"，测试与本地（Windows 有宋体/微软雅黑）表现不一致。
+      # pdf_fonts.py 扫 /usr/share/fonts，故装到系统字体目录后再刷新缓存。
+      - name: Install CJK fonts (PDF text extraction asserts Chinese)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends fonts-wqy-zenhei fonts-wqy-microhei
+          fc-cache -f >/dev/null
+          fc-list :lang=zh | head -5
+
       # 4 vCPU runner：-n 4 与核数对齐（实测 n4 比 n2 快约 1.6×；再往上受 SQLite 单文件写锁限制，
       # 本机 24 核实测 n8 收益已明显收敛）。
       # 覆盖率阈值只在 pyproject [tool.coverage.report].fail_under 维护，此处不再重复传 --cov-fail-under。
