@@ -100,6 +100,9 @@ function graphLabels(page: Page) {
 test("全图渲染：统计与接口一致，图例按格式列出", async ({ page }) => {
     test.skip(test.info().project.name === "chromium-anon", "anon 项目跳过");
 
+    // 需求 0189 C1：文档区页签称谓统一为「知识图谱」，路由段仍是 graph（C2）
+    await expect(page.getByTestId("document-tab-graph")).toHaveText("知识图谱");
+
     const graph = await openGraph(page);
     expect(graph.truncated, "节点数超过上限时本用例的「共 Y」口径不成立").toBeFalsy();
 
@@ -110,6 +113,14 @@ test("全图渲染：统计与接口一致，图例按格式列出", async ({ pa
     // 图例：新文档都是 markdown，至少这一项必须在且未被隐藏
     await expect(page.getByTestId("graph-legend")).toBeVisible();
     await expect(page.getByTestId("graph-legend-markdown")).toHaveAttribute("aria-pressed", "true");
+
+    // 需求 0189 C6：读数与筛选控件同屏（在筛选条内），不再挂在页面底部
+    await expect(page.getByTestId("graph-filter-bar").getByTestId("graph-footer-stats")).toBeVisible();
+
+    // 需求 0189 C7：画布吃满可用高度（原写死 min(72vh, 720px)）
+    const canvasBox = await page.getByTestId("document-graph-canvas").boundingBox();
+    const viewport = page.viewportSize();
+    expect(canvasBox?.height ?? 0).toBeGreaterThan((viewport?.height ?? 0) * 0.5);
 
     // 画布真的画出了标签（力导向布局需要一帧以上），且本轮两个文档都在
     await expect(graphLabels(page).filter({ hasText: sourceTitle })).toBeVisible({ timeout: 20_000 });

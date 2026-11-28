@@ -744,6 +744,24 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-issues')).toHaveAttribute('aria-selected', 'false')
     })
 
+    // 需求 0189 C1：图谱模块称谓统一为「知识图谱」（路由段仍是 graph，C2）
+    it('图谱页签叫「知识图谱」，落在 /documents/graph 时激活', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        const graphTab = screen.getByTestId('document-tab-graph')
+        expect(graphTab).toHaveTextContent('知识图谱')
+        expect(graphTab).toHaveAttribute('aria-selected', 'false')
+
+        fireEvent.click(graphTab)
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/graph')
+        })
+        expect(screen.getByTestId('document-tab-graph')).toHaveAttribute('aria-selected', 'true')
+    })
+
     it('文档编辑器页仍显示二级导航（无子页激活），点击「质量检查」留在文档上下文并激活', async () => {
         renderLayout(mockUser, '/w/10/documents/2')
 

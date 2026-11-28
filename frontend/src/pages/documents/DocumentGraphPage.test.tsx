@@ -364,8 +364,12 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     for (let i = 0; i < 3; i += 1) fireEvent.click(screen.getByTestId('graph-zoom-out'))
     await waitFor(() => expect(labelShows()).toBe(false))
 
-    fireEvent.click(screen.getByTestId('graph-labels-toggle'))
-    expect(screen.getByTestId('graph-labels-toggle')).toHaveTextContent('显示标签')
+    // 0189 C5：标签开关下沉到画布视图控制簇，用图标按钮 + aria-label 表达状态
+    const labelToggle = screen.getByTestId('graph-labels-toggle')
+    expect(labelToggle).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(labelToggle)
+    expect(screen.getByTestId('graph-labels-toggle')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByTestId('graph-labels-toggle')).toHaveAttribute('aria-label', '显示标签')
   })
 
   it('Inspector 展示选中文档的出链/反链，并可打开文档、设为中心、复制链接（C6）', async () => {
@@ -425,8 +429,8 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     // 需求 0184 C12：默认斥力 220（仍在 0182 C9 的 40–600 滑轨内），边长摊成区间
     expect(forceOf()).toMatchObject({ repulsion: 220, edgeLength: [60, 140], gravity: 0.08 })
 
-    // 需求 0184 C10：力参数面板已从画布浮层移入 Inspector 折叠区，默认收起
-    fireEvent.click(screen.getByText('布局参数'))
+    // 0189 C5 / C9：力参数从 Inspector 搬到画布右下控制簇，由「布局」按钮展开
+    fireEvent.click(screen.getByTestId('graph-force-toggle'))
     const slider = (await screen.findByTestId('graph-force-repulsion-wrap')).querySelector('[role="slider"]') as HTMLElement
     // rc-slider 的键盘处理读 keyCode（antd 6 / rc-slider 11），只给 key 不会触发
     fireEvent.keyDown(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
@@ -637,14 +641,14 @@ describe('图谱单双向边表达（需求 0183）', () => {
 
     const toggle = screen.getByTestId('graph-arrows-toggle')
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    expect(toggle).toHaveTextContent('隐藏箭头')
+    expect(toggle).toHaveAttribute('aria-label', '隐藏箭头')
     await waitFor(() => expect(lastArrowOption()?.edgeSymbol).toEqual(['none', 'arrow']))
 
     fireEvent.click(toggle)
     await waitFor(() => expect(lastArrowOption()?.edgeSymbol).toBe('none'))
     // 关掉箭头时尺寸同时归零，避免只剩无法命中的空 symbol 占位
     expect(lastArrowOption()?.edgeSymbolSize).toBe(0)
-    expect(screen.getByTestId('graph-arrows-toggle')).toHaveTextContent('显示箭头')
+    expect(screen.getByTestId('graph-arrows-toggle')).toHaveAttribute('aria-label', '显示箭头')
 
     // 重新打开后缩放：0.8^5 ≈ 33%，低于 40% 阈值自动收起箭头
     fireEvent.click(screen.getByTestId('graph-arrows-toggle'))
@@ -820,9 +824,136 @@ describe('图谱布局稳定与画布纹理（需求 0184 P2）', () => {
     renderPage()
     await screen.findByTestId('document-graph-canvas')
 
-    // 内联的 background 简写会重置 background-image，故底色与点阵都交给样式表
+    // 0189 C7：画布高度与边框已全部交给样式表，不再有任何内联尺寸 / 边框
     const canvas = screen.getByTestId('document-graph-canvas')
     expect(canvas.style.background).toBe('')
-    expect(canvas.getAttribute('style')).not.toContain('background')
+    expect(canvas.getAttribute('style')).toBeNull()
+  })
+})
+
+/** 需求 0189：版式分层（页头 / 筛选条 / 画布 / Inspector）与空载态 */
+describe('知识图谱版式与空载态（需求 0189）', () => {
+  beforeEach(() => {
+    echartsMock.init.mockClear()
+    echartsMock.setOption.mockClear()
+    echartsMock.on.mockClear()
+    echartsMock.dispose.mockClear()
+    echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(graphPayload)),
+    )
+  })
+
+  it('C4：页头只有身份信息，画布动作全部下沉到画布内控制簇', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+
+    const page = screen.getByTestId('document-graph-page')
+    const head = page.querySelector('.cn-page-head') as HTMLElement
+    expect(head).toBeTruthy()
+    // 页头不再有动作区：6 个视图控件都搬进画布
+    expect(head.querySelector('.cn-page-head-actions')).toBeNull()
+    for (const id of ['graph-zoom-in', 'graph-zoom-out', 'graph-labels-toggle', 'graph-reset', 'graph-force-toggle']) {
+      expect(head.contains(screen.getByTestId(id)), `${id} 不应在页头`).toBe(false)
+    }
+    // 控制簇是画布容器的子节点（浮动在画布右下）
+    const controls = screen.getByTestId('graph-view-controls')
+    expect(controls.closest('.cn-graph-canvas-wrap')).toBeTruthy()
+    expect(controls.contains(screen.getByTestId('graph-zoom-in'))).toBe(true)
+    expect(controls.contains(screen.getByTestId('graph-force-toggle'))).toBe(true)
+  })
+
+  it('C6：读数与筛选控件同屏（筛选条右端），页脚不再重复一份', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+
+    const bar = screen.getByTestId('graph-filter-bar')
+    const stats = screen.getByTestId('graph-footer-stats')
+    expect(bar.contains(stats)).toBe(true)
+    expect(bar.contains(screen.getByTestId('graph-filter-keyword'))).toBe(true)
+    // 全文只有一处读数
+    expect(screen.getAllByTestId('graph-footer-stats')).toHaveLength(1)
+    await waitFor(() => expect(stats).toHaveTextContent('显示 4 / 共 4'))
+  })
+
+  it('C5 / C9：力参数面板在画布控制簇内，不在 Inspector 里', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+
+    // 默认收起
+    expect(screen.queryByTestId('graph-force-panel')).toBeNull()
+    fireEvent.click(screen.getByTestId('graph-force-toggle'))
+    const panel = await screen.findByTestId('graph-force-panel')
+    expect(screen.getByTestId('graph-view-controls').contains(panel)).toBe(true)
+    expect(screen.getByTestId('graph-inspector').contains(panel)).toBe(false)
+
+    // 收起后回到画布本体
+    fireEvent.click(screen.getByTestId('graph-force-toggle'))
+    await waitFor(() => expect(screen.queryByTestId('graph-force-panel')).toBeNull())
+  })
+
+  it('C8：图例可收起，收起后格式 chip 隐藏但显隐状态保留', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    expect(await screen.findByTestId('graph-legend-pdf')).toBeInTheDocument()
+
+    // 先关掉 PDF，再收起图例
+    fireEvent.click(screen.getByTestId('graph-legend-pdf'))
+    await waitFor(() =>
+      expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4'),
+    )
+
+    fireEvent.click(screen.getByTestId('graph-legend-toggle'))
+    await waitFor(() => expect(screen.queryByTestId('graph-legend-pdf')).toBeNull())
+    // 收起不改变筛选结果：PDF 仍然是关掉的
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4')
+    expect(screen.getByTestId('graph-legend-toggle')).toHaveAttribute('aria-expanded', 'false')
+
+    // 再展开：状态延续
+    fireEvent.click(screen.getByTestId('graph-legend-toggle'))
+    const pdf = await screen.findByTestId('graph-legend-pdf')
+    expect(pdf).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('C10：空工作区给出空态与「去新建文档」入口，不是一张空白画布', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () =>
+        HttpResponse.json({ nodes: [], edges: [], truncated: false, total: 0 }),
+      ),
+    )
+    renderPage()
+    const empty = await screen.findByTestId('graph-empty-state')
+    expect(empty).toHaveTextContent('还没有文档')
+    // 空态压在画布上方，画布本身仍挂载（echarts 初始化不受影响）
+    expect(screen.getByTestId('document-graph-canvas')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '去新建文档' }))
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents'))
+  })
+
+  it('C10：请求未返回时给出加载态，数据到达后消失', async () => {
+    renderPage()
+    expect(await screen.findByTestId('graph-loading-state')).toHaveTextContent('正在加载知识图谱')
+    await waitFor(() => expect(screen.queryByTestId('graph-loading-state')).toBeNull())
+    expect(screen.queryByTestId('graph-empty-state')).toBeNull()
+  })
+
+  it('C11：提示条不再自带 marginBottom，纵向节奏交给 .cn-page 的 gap', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () =>
+        HttpResponse.json({ ...graphPayload, truncated: true, total: 612 }),
+      ),
+    )
+    renderPage()
+    const alert = await screen.findByTestId('graph-truncated-alert')
+    expect(alert.getAttribute('style') ?? '').not.toContain('margin')
+  })
+
+  it('C7：页面根容器用 .cn-page + .cn-graph-page 修饰类（高度撑满，不改全局）', async () => {
+    renderPage()
+    const page = await screen.findByTestId('document-graph-page')
+    expect(page).toHaveClass('cn-page')
+    expect(page).toHaveClass('cn-graph-page')
   })
 })

@@ -20,7 +20,6 @@ import {
   App as AntApp,
   Button,
   Checkbox,
-  Collapse,
   Input,
   Select,
   Slider,
@@ -32,10 +31,14 @@ import {
 import {
   AimOutlined,
   ApartmentOutlined,
+  CompressOutlined,
   CopyOutlined,
   FilterOutlined,
+  FontSizeOutlined,
   MinusOutlined,
+  NodeIndexOutlined,
   PlusOutlined,
+  SlidersOutlined,
 } from '@ant-design/icons'
 import * as echarts from 'echarts/core'
 import { GraphChart } from 'echarts/charts'
@@ -597,8 +600,10 @@ export default function DocumentGraphPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [showLabels, setShowLabels] = useState(true)
   const [showArrows, setShowArrows] = useState(true)
-  /** 布局参数折叠区（C10）：从画布浮层搬进 Inspector，默认收起，需要时才展开 */
-  const [forcePanelOpen, setForcePanelOpen] = useState<string[]>([])
+  /** 布局参数折叠区（0189 C5）：随缩放控件一起进画布右下控制簇，默认收起 */
+  const [forcePanelOpen, setForcePanelOpen] = useState(false)
+  /** 图例收起态（0189 C8）：默认展开（保留格式语义与既有 e2e 断言），可按需收起 */
+  const [legendOpen, setLegendOpen] = useState(true)
 
   const graphQuery = useQuery({
     queryKey: ['document-link-graph', workspaceId],
@@ -853,60 +858,138 @@ export default function DocumentGraphPage() {
 
   const hiddenCount = Math.max(0, (graph?.nodes?.length ?? 0) - visible.nodes.length)
 
+  /** 画布视图控制簇（0189 C5）：标签 / 箭头 / 缩放 / 复位 / 布局参数都在这里，
+   * 它们是「怎么摆这张图」的视图级动作，不该与页级动作混在页头（D2 / D4）。 */
+  const viewControls = (
+    <div className="cn-graph-controls" data-testid="graph-view-controls">
+      <Space.Compact size="small" className="cn-graph-controls-group">
+        <Tooltip title={showLabels ? '隐藏标签' : '显示标签'}>
+          <Button
+            size="small"
+            icon={<FontSizeOutlined />}
+            type={showLabels ? 'default' : 'primary'}
+            aria-label={showLabels ? '隐藏标签' : '显示标签'}
+            aria-pressed={showLabels}
+            data-testid="graph-labels-toggle"
+            onClick={() => setShowLabels(v => !v)}
+          />
+        </Tooltip>
+        <Tooltip title={showArrows ? '隐藏箭头' : '显示箭头'}>
+          <Button
+            size="small"
+            icon={<NodeIndexOutlined />}
+            type={showArrows ? 'default' : 'primary'}
+            aria-label={showArrows ? '隐藏箭头' : '显示箭头'}
+            aria-pressed={showArrows}
+            data-testid="graph-arrows-toggle"
+            onClick={() => setShowArrows(v => !v)}
+          />
+        </Tooltip>
+      </Space.Compact>
+      <Space.Compact size="small" className="cn-graph-controls-group">
+        <Button
+          size="small"
+          icon={<MinusOutlined />}
+          aria-label="缩小"
+          disabled={zoomPct <= ZOOM_MIN * 100}
+          data-testid="graph-zoom-out"
+          onClick={() => zoomBy(ZOOM_STEP_OUT)}
+        />
+        <span className="cn-graph-controls-readout" data-testid="graph-zoom-pct">{zoomPct}%</span>
+        <Button
+          size="small"
+          icon={<PlusOutlined />}
+          aria-label="放大"
+          disabled={zoomPct >= ZOOM_MAX * 100}
+          data-testid="graph-zoom-in"
+          onClick={() => zoomBy(ZOOM_STEP_IN)}
+        />
+      </Space.Compact>
+      <Space.Compact size="small" className="cn-graph-controls-group">
+        <Tooltip title="复位视图">
+          <Button
+            size="small"
+            icon={<CompressOutlined />}
+            aria-label="复位视图"
+            data-testid="graph-reset"
+            onClick={reset}
+          />
+        </Tooltip>
+        <Tooltip title="布局参数">
+          <Button
+            size="small"
+            icon={<SlidersOutlined />}
+            type={forcePanelOpen ? 'primary' : 'default'}
+            aria-label="布局参数"
+            aria-pressed={forcePanelOpen}
+            data-testid="graph-force-toggle"
+            onClick={() => setForcePanelOpen(v => !v)}
+          />
+        </Tooltip>
+      </Space.Compact>
+      {forcePanelOpen && (
+        <div className="cn-graph-force" data-testid="graph-force-panel">
+          <div className="cn-graph-force-row">
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>斥力</Text>
+            <span style={{ flex: 1 }} data-testid="graph-force-repulsion-wrap">
+              <Slider
+                min={40}
+                max={600}
+                step={20}
+                value={force.repulsion}
+                onChange={(value: number) => setForce(prev => ({ ...prev, repulsion: value }))}
+              />
+            </span>
+          </div>
+          <div className="cn-graph-force-row">
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>边长</Text>
+            <span style={{ flex: 1 }} data-testid="graph-force-edge-length-wrap">
+              <Slider
+                min={40}
+                max={300}
+                step={10}
+                value={force.edgeLength}
+                onChange={(value: number) => setForce(prev => ({ ...prev, edgeLength: value }))}
+              />
+            </span>
+          </div>
+          <div className="cn-graph-force-row">
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>向心</Text>
+            <span style={{ flex: 1 }} data-testid="graph-force-gravity-wrap">
+              <Slider
+                min={0}
+                max={0.5}
+                step={0.01}
+                value={force.gravity}
+                onChange={(value: number) => setForce(prev => ({ ...prev, gravity: value }))}
+              />
+            </span>
+          </div>
+          <Button size="small" data-testid="graph-force-reset" onClick={() => setForce(DEFAULT_FORCE)}>
+            恢复默认
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+
   return (
-    <div className="cn-page" data-testid="document-graph-page">
+    <div className="cn-page cn-graph-page" data-testid="document-graph-page">
+      {/* 页头只留身份信息（0189 C4）：画布动作全部下沉到画布内控制簇，
+          交互提示（单击选中 / 双击进入 / 拖拽平移）收进副标题（C6）。 */}
       <header className="cn-page-head">
         <div className="cn-page-head-main">
           <span className="cn-page-head-icon" aria-hidden><ApartmentOutlined /></span>
           <div className="cn-page-head-text">
             <h1 className="cn-page-head-title">知识图谱</h1>
             <div className="cn-page-head-sub">
-              工作区内可见文档与 [[双链]] 关系；单击选中、双击进入文档，虚线为断链
+              工作区内可见文档与 [[双链]] 关系 · 单击选中、双击进入文档、拖拽平移、滚轮缩放 · 虚线为断链
             </div>
           </div>
         </div>
-        <div className="cn-page-head-actions">
-          <Space size={SPACE.sm}>
-            <Button
-              size="small"
-              data-testid="graph-labels-toggle"
-              aria-pressed={showLabels}
-              onClick={() => setShowLabels(v => !v)}
-            >
-              {showLabels ? '隐藏标签' : '显示标签'}
-            </Button>
-            <Button
-              size="small"
-              data-testid="graph-arrows-toggle"
-              aria-pressed={showArrows}
-              onClick={() => setShowArrows(v => !v)}
-            >
-              {showArrows ? '隐藏箭头' : '显示箭头'}
-            </Button>
-            <Text type="secondary" data-testid="graph-zoom-pct" style={{ fontSize: 'var(--cn-text-xs)' }}>
-              {zoomPct}%
-            </Text>
-            <Button
-              size="small"
-              icon={<MinusOutlined />}
-              aria-label="缩小"
-              disabled={zoomPct <= ZOOM_MIN * 100}
-              data-testid="graph-zoom-out"
-              onClick={() => zoomBy(ZOOM_STEP_OUT)}
-            />
-            <Button
-              size="small"
-              icon={<PlusOutlined />}
-              aria-label="放大"
-              disabled={zoomPct >= ZOOM_MAX * 100}
-              data-testid="graph-zoom-in"
-              onClick={() => zoomBy(ZOOM_STEP_IN)}
-            />
-            <Button size="small" data-testid="graph-reset" onClick={reset}>复位</Button>
-          </Space>
-        </div>
       </header>
 
+      {/* 三条提示不再各带 marginBottom（0189 C11）：纵向节奏统一由 .cn-page 的 gap 承担 */}
       {graph?.truncated && (
         <Alert
           type="warning"
@@ -916,7 +999,6 @@ export default function DocumentGraphPage() {
               ? `；另有 ${graph.edges_out_of_view} 条关系指向未展示的文档`
               : ''
           }`}
-          style={{ marginBottom: SPACE.lg }}
           data-testid="graph-truncated-alert"
         />
       )}
@@ -930,7 +1012,6 @@ export default function DocumentGraphPage() {
               回到全图
             </Button>
           }
-          style={{ marginBottom: SPACE.lg }}
         />
       )}
       {graphQuery.isError && <Alert type="error" showIcon message="图谱加载失败" />}
@@ -977,24 +1058,50 @@ export default function DocumentGraphPage() {
             中心：{nodeTitleById(focusId) || `#${focusId}`} · {focusDepth} 跳
           </Tag>
         )}
+        {/* 读数跟随筛选（0189 C6）：读数回答的是「这次筛选还剩多少」，必须与筛选控件同屏 */}
+        <Text
+          type="secondary"
+          className="cn-graph-toolbar-stats"
+          style={{ fontSize: 'var(--cn-text-xs)' }}
+          data-testid="graph-footer-stats"
+        >
+          显示 {visible.nodes.length} / 共 {graph?.nodes?.length ?? 0} 个节点 · 关系 {displayEdges.length}
+          {mutualCount > 0 ? `（互引 ${mutualCount}）` : ''}
+          {hiddenCount > 0 ? `（隐藏 ${hiddenCount}）` : ''}
+        </Text>
       </div>
 
       <div className="cn-graph-body">
         <div className="cn-graph-canvas-wrap">
+          {/* 加载态与空态走 .cn-state（0189 C10 / H30）：无提示的空白画布让人以为图坏了 */}
+          {graphQuery.isPending && (
+            <div className="cn-state" data-testid="graph-loading-state">正在加载知识图谱…</div>
+          )}
+          {!graphQuery.isPending && nodes.length === 0 && (
+            <div className="cn-state" data-testid="graph-empty-state">
+              <p>这个工作区还没有文档，所以还没有可画的 [[双链]] 关系。</p>
+              <Button size="small" onClick={() => navigate(`/w/${workspaceId}/documents`)}>
+                去新建文档
+              </Button>
+            </div>
+          )}
           <div
             ref={containerRef}
             data-testid="document-graph-canvas"
             className="cn-graph-canvas"
-            style={{
-              width: '100%',
-              height: 'min(72vh, 720px)',
-              minHeight: 420,
-              border: '1px solid var(--cn-border)',
-              borderRadius: 'var(--cn-radius-base)',
-            }}
           />
+          {/* 图例（0189 C8）：默认展开、可收起；从左上改到左下，避开节点云最密的中心区 */}
           <div className="cn-graph-legend" data-testid="graph-legend">
-            {legend.map(key => {
+            <button
+              type="button"
+              className="cn-graph-legend-toggle"
+              data-testid="graph-legend-toggle"
+              aria-expanded={legendOpen}
+              onClick={() => setLegendOpen(v => !v)}
+            >
+              图例 {legendOpen ? '▾' : '▸'}
+            </button>
+            {legendOpen && legend.map(key => {
               const off = hiddenFormats.has(key)
               return (
                 <button
@@ -1010,73 +1117,17 @@ export default function DocumentGraphPage() {
                 </button>
               )
             })}
-            <span className="cn-graph-legend-note" data-testid="graph-legend-edge-direction">
-              → 引用 · ⇄ 互引
-            </span>
+            {legendOpen && (
+              <span className="cn-graph-legend-note" data-testid="graph-legend-edge-direction">
+                → 引用 · ⇄ 互引
+              </span>
+            )}
           </div>
+          {viewControls}
         </div>
 
         <aside className="cn-graph-inspector" data-testid="graph-inspector">
-          {/* 布局参数（C10）：原先浮在画布右下角，永久压住一块节点区域；
-              收进 Inspector 顶部折叠区后，画布只剩图本身与图例。 */}
-          <Collapse
-            ghost
-            size="small"
-            className="cn-graph-force-collapse"
-            activeKey={forcePanelOpen}
-            onChange={keys => setForcePanelOpen((Array.isArray(keys) ? keys : [keys]).map(String))}
-            items={[
-              {
-                key: 'force',
-                label: (
-                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-                    布局参数
-                  </Text>
-                ),
-                children: <div className="cn-graph-force" data-testid="graph-force-panel">
-                  <div className="cn-graph-force-row">
-                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>斥力</Text>
-                    <span style={{ flex: 1 }} data-testid="graph-force-repulsion-wrap">
-                      <Slider
-                        min={40}
-                        max={600}
-                        step={20}
-                        value={force.repulsion}
-                        onChange={(value: number) => setForce(prev => ({ ...prev, repulsion: value }))}
-                      />
-                    </span>
-                  </div>
-                  <div className="cn-graph-force-row">
-                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>边长</Text>
-                    <span style={{ flex: 1 }} data-testid="graph-force-edge-length-wrap">
-                      <Slider
-                        min={40}
-                        max={300}
-                        step={10}
-                        value={force.edgeLength}
-                        onChange={(value: number) => setForce(prev => ({ ...prev, edgeLength: value }))}
-                      />
-                    </span>
-                  </div>
-                  <div className="cn-graph-force-row">
-                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>向心</Text>
-                    <span style={{ flex: 1 }} data-testid="graph-force-gravity-wrap">
-                      <Slider
-                        min={0}
-                        max={0.5}
-                        step={0.01}
-                        value={force.gravity}
-                        onChange={(value: number) => setForce(prev => ({ ...prev, gravity: value }))}
-                      />
-                    </span>
-                  </div>
-                  <Button size="small" data-testid="graph-force-reset" onClick={() => setForce(DEFAULT_FORCE)}>
-                    恢复默认
-                  </Button>
-                </div>,
-              },
-            ]}
-          />
+          {/* 详情优先（0189 C9）：布局参数已随视图控件下沉到画布，Inspector 第一屏回到「这是什么文档」 */}
           {selected ? (
             <div className="cn-graph-inspector-detail" data-testid="graph-inspector-detail">
               <div className="cn-graph-inspector-head">
@@ -1166,6 +1217,9 @@ export default function DocumentGraphPage() {
             </div>
           ) : (
             <div className="cn-graph-overview" data-testid="graph-overview">
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                选中节点可看详情与关联，也可从下面的清单直接定位。
+              </Text>
               <div className="cn-graph-inspector-section">
                 <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   孤立文档 {isolated.length}（无任何双链）
@@ -1221,12 +1275,6 @@ export default function DocumentGraphPage() {
           )}
         </aside>
       </div>
-
-      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="graph-footer-stats">
-        显示 {visible.nodes.length} / 共 {graph?.nodes?.length ?? 0} 个节点 · 关系 {displayEdges.length}
-        {mutualCount > 0 ? `（互引 ${mutualCount}）` : ''}
-        {hiddenCount > 0 ? `（隐藏 ${hiddenCount}）` : ''}（拖拽平移，滚轮缩放，悬停高亮关联）
-      </Text>
     </div>
   )
 }

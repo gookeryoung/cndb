@@ -1,45 +1,89 @@
-/* 文档知识图谱页（需求 0182 / 0183）——本页由 App.tsx 动态 import（H31），
+/* 知识图谱页（需求 0168 / 0182 / 0189）——本页由 App.tsx 动态 import（H31），
  * 这里的样式随页面 chunk 一起加载，不进主入口 CSS，避免首屏为「点了才出现」的
  * 图谱屏白付体积（docs/BUNDLE_BUDGET.md 第 1 类处置）。
  * 只用 --cn-* token，断点同全局口径（767.98 / 575.98）。 */
 
-/* ── 知识图谱探索器（需求 0182） ─────────────────────────────────────
- * 布局：筛选栏 → 画布 + 右侧 Inspector 两栏；窄屏（<768px）改为上下堆叠，
- * Inspector 退到画布下方，避免 390px 屏上画布被挤到只剩 100px。 */
+/* ── 版式（需求 0189 C5–C9）─────────────────────────────────────────
+ * 三层分工，从上到下：
+ *   1. 页头：只有身份信息（图标 + 标题 + 副标题），不放任何动作（C4）
+ *   2. 筛选条：筛选控件在左、读数在右（C6）
+ *   3. 主体：画布吃满剩余高度（C7），画布内只有图例（左下）+ 视图控制簇（右下）
+ *      Inspector 在右侧，详情优先（C9）
+ * 窄屏（<768px）主体改为上下堆叠：画布在上、Inspector 在下。 */
+
+/* 页面填满内容区高度（C7）：只在本页加修饰类，不改全局 .cn-page（D8） */
+.cn-graph-page {
+  height: 100%;
+  min-height: 0;
+}
+
 .cn-graph-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--cn-space-md);
-  margin-bottom: var(--cn-space-md);
+  flex: none;
+}
+
+/* 读数靠右（C6）：与筛选控件同一行，回答「这次筛选还剩多少」 */
+.cn-graph-toolbar-stats {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .cn-graph-body {
   display: flex;
   gap: var(--cn-space-lg);
-  align-items: flex-start;
-  margin-bottom: var(--cn-space-sm);
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .cn-graph-canvas-wrap {
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 /* 画布底：底色 + 16px 极淡点阵（需求 0184 C13）。点阵用 themeMix 注册项生成，
  * 不新增 --cn-graph-grid 主题变量：10 套主题都要同步、又没有独立语义，成本不值。
- * 底色原先写在 tsx 内联样式里，内联的 background 简写会重置 background-image，故一并搬到这里。 */
+ * 底色原先写在 tsx 内联样式里，内联的 background 简写会重置 background-image，故一并搬到这里。
+ * 高度由 flex 撑满（C7）：原先写死 min(72vh, 720px)，大屏下方留白、小屏还得滚动。 */
 .cn-graph-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
   background-color: var(--cn-bg-canvas);
   background-image: radial-gradient(var(--cn-mix-border-soft-40-transparent) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
+/* 加载态 / 空态压在画布上方（C10）：不占布局位置，画布尺寸不因此跳动 */
+.cn-graph-canvas-wrap > .cn-state {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cn-space-md);
+  background: var(--cn-bg-canvas);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+}
+
+.cn-graph-canvas-wrap > .cn-state p {
+  margin: 0;
+}
+
 .cn-graph-inspector {
   flex: none;
-  width: 260px;
-  max-height: min(72vh, 720px);
+  width: 280px;
+  max-height: 100%;
   overflow: auto;
   padding: var(--cn-space-lg);
   border: 1px solid var(--cn-border);
@@ -90,14 +134,15 @@
   word-break: break-word;
 }
 
-/* 图例浮在画布**左上**角（需求 0184 C10）：横向 chip 行，避开节点云最密的中心区，
- * 也不与顶部工具栏、右下角读数打架。 */
+/* 图例（需求 0189 C8）：移到**左下**，默认展开、可收起。
+ * 原先固定在左上，正好压住力导向图的节点云中心（0184 C10 只挪了浮层没挪位置问题）。 */
 .cn-graph-legend {
   position: absolute;
   left: var(--cn-space-md);
-  top: var(--cn-space-md);
+  bottom: var(--cn-space-md);
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--cn-space-xs);
   max-width: calc(100% - var(--cn-space-2xl));
   padding: var(--cn-space-xs) var(--cn-space-sm);
@@ -105,6 +150,18 @@
   border-radius: var(--cn-radius-base);
   background: var(--cn-bg-container);
   opacity: 0.94;
+}
+
+.cn-graph-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--cn-space-xs);
+  border: none;
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-medium);
+  cursor: pointer;
 }
 
 .cn-graph-legend-item {
@@ -142,12 +199,33 @@
   flex: none;
 }
 
-/* 力参数面板（需求 0184 C10）：从画布右下浮层搬进 Inspector 顶部折叠区。
- * 浮在画布上时它会永久压住一块节点区域，调到一半还得先挪开才能看清结果。 */
+/* 视图控制簇（需求 0189 C5）：画布右下角，控件按语义分三组、组间留空。
+ * 原先这 6 个控件平铺在页头，与页级动作混在同一层，是「乱」的主因。 */
+.cn-graph-controls {
+  position: absolute;
+  right: var(--cn-space-md);
+  bottom: var(--cn-space-md);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--cn-space-xs);
+  max-width: calc(100% - var(--cn-space-2xl));
+}
+
+.cn-graph-controls-group {
+  border-radius: var(--cn-radius-base);
+}
+
+/* 力参数面板（需求 0189 C9）：从 Inspector 搬到控制簇，弹出在图下方、右对齐 */
 .cn-graph-force {
   display: flex;
   flex-direction: column;
   gap: var(--cn-space-xs);
+  width: 220px;
+  padding: var(--cn-space-md);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
 }
 
 .cn-graph-force-row {
@@ -156,18 +234,34 @@
   gap: var(--cn-space-sm);
 }
 
+/* 缩放读数嵌在 − / + 之间，等宽数字避免跳动 */
+.cn-graph-controls-readout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--cn-space-4xl);
+  padding: 0 var(--cn-space-xs);
+  border: 1px solid var(--cn-border);
+  border-left: none;
+  border-right: none;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 767.98px) {
   .cn-graph-body {
     flex-direction: column;
   }
 
+  /* 窄屏画布固定高度：高度撑满会让下方 Inspector 被推到屏幕外 */
+  .cn-graph-canvas {
+    height: 60vh;
+  }
+
   .cn-graph-inspector {
     width: 100%;
     max-height: 320px;
-  }
-
-  .cn-graph-force {
-    display: none;
   }
 }
 
@@ -176,9 +270,41 @@
     gap: var(--cn-space-sm);
   }
 
+  .cn-graph-toolbar-stats {
+    margin-left: 0;
+  }
+
+  /* 窄屏（<576px）图例与控制簇改为画布下方常列：两个浮层在 390px 屏上会叠在一起，
+   * 且浮动控件本身就挡住了本就不多的画布面积。 */
+  .cn-graph-canvas-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cn-space-sm);
+  }
+
+  .cn-graph-legend,
+  .cn-graph-controls {
+    position: static;
+    max-width: 100%;
+    opacity: 1;
+  }
+
   .cn-graph-legend {
-    left: var(--cn-space-xs);
-    top: var(--cn-space-xs);
-    max-width: calc(100% - var(--cn-space-lg));
+    order: 2;
+  }
+
+  .cn-graph-controls {
+    order: 1;
+    align-items: stretch;
+  }
+
+  /* 空 / 载态只盖住画布本体（画布高 60vh），不盖下方落列的图例与控制簇 */
+  .cn-graph-canvas-wrap > .cn-state {
+    bottom: auto;
+    height: 60vh;
+  }
+
+  .cn-graph-force {
+    width: 100%;
   }
 }

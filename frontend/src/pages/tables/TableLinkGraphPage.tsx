@@ -869,7 +869,7 @@ export default function TableLinkGraphPage() {
           <div className="cn-page-head-text">
             <h1 className="cn-page-head-title">关联图</h1>
             <div className="cn-page-head-sub">
-              数据表之间通过「关联」字段的引用关系；单击选中、双击打开表，虚线为目标不可见
+              数据表之间通过「关联」字段的引用关系（不是文档知识图谱）；单击选中、双击打开表，虚线为目标不可见
             </div>
           </div>
         </div>

@@ -89,7 +89,8 @@ const TABLE_LEVEL_TAB_PATHS: Record<string, string> = {
  * 只呈现 document/* 检查动作与规则，不跳到数据表段；其余子页同样导航到 /documents/<key>。 */
 const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
-  { key: 'graph', label: '图谱', icon: <ApartmentOutlined />, to: 'graph' },
+  // 需求 0189 C1：称谓统一为「知识图谱」（页面标题同名），路由段仍是 graph（C2 只改称谓不改契约）
+  { key: 'graph', label: '知识图谱', icon: <ApartmentOutlined />, to: 'graph' },
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
   // 内容模板（需求 0169 / ADR 0177 C3）：从模板新建文档的正文骨架，与导出模板同一页的不同分区
   // 顺序：内容模板在导出模板之前（先写什么、再长什么样）

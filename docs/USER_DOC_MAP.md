@@ -52,7 +52,7 @@
 | 导出模板（文档区页签「导出模板」） | `/help/tutorials/documents#help-export-view--templates` | 0152、0177 |
 | 本文档默认排版模板（单篇指定导出模板） | `/help/tutorials/documents#help-export-view--template-bind` | 0177 |
 | 标题编号为什么不重复了（编号归导出模板，正文不写序号；编号方式三档） | `/help/tutorials/documents#help-export-view--templates` | 0186 |
-| 知识图谱（双链关系图） | `/help/tutorials/documents#help-graph` | 0168 |
+| 知识图谱（双链关系图） | `/help/tutorials/documents#help-graph` | 0168、0189 |
 | 创建副本 | `/help/tutorials/documents#help-duplicate` | 0172 |
 | 附件管理与孤儿回收 | `/help/tutorials/documents#help-attachments` | 0174 |
 | PDF / 图片方向与镜像纠偏 | `/help/tutorials/documents#help-export-view--rotation` | 0164 |
