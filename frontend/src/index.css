@@ -8885,6 +8885,52 @@ body.theme-dark .cn-contrib-cell.out-of-range { background: transparent; }
   position: relative;
 }
 
+/* 求值载入层（需求 0192 C4–C8）：盖在预览画布上方，居中给「正在计算 + 已用时长」。
+ * pointer-events: none —— 骨架可见时用户仍能拖拽旋转（D4）。
+ * 两态：is-empty（无 IR，实心底，避免看到纯黑）/ is-partial（有骨架，半透明）。 */
+.cn-dsl-preview-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-xl);
+  text-align: center;
+  pointer-events: none;
+  border-radius: var(--cn-radius-lg);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: var(--cn-text-xs);
+}
+
+/* 无 IR：实心底，否则用户对着纯黑画布会以为加载失败 */
+.cn-dsl-preview-loading.is-empty {
+  background: var(--cn-bg-canvas);
+}
+
+/* 有骨架：半透明遮罩，骨架与遮罩叠在一起说明「已经有东西了，还在细化」。
+ * 遮罩色取画布底色 72% 不透明（不用品牌色：这里要的是「雾化」而不是「强调」）。 */
+.cn-dsl-preview-loading.is-partial {
+  background: color-mix(in srgb, var(--cn-bg-canvas) 72%, transparent);
+}
+
+.cn-dsl-preview-loading-text {
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-dsl-preview-loading-elapsed {
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-dsl-preview-loading-hint {
+  max-width: 260px;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.5;
+}
+
 /* 视口悬浮工具条：右上胶囊，不占视口布局高度（D4） */
 .cn-dsl-viewport-toolbar {
   position: absolute;

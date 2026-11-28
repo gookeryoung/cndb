@@ -532,6 +532,40 @@ class TestTransformsAndBooleans:
         assert cyl["transform"] == {"ops": [["translate", [2.0, 2.0, -1.0]]]}
 
 
+class TestSlowCsgFnWarning:
+    """需求 0192 C3：参与布尔运算的高分段图元给「预览较慢」warning（只提示不改 fn）."""
+
+    def test_high_fn_inside_boolean_warns(self):
+        result = compile_design("difference { sphere(r=50, fn=96) cyl(d=20, h=100, fn=96) }")
+        assert result.ok  # 只提示，不阻断
+        messages = [d.message for d in result.diagnostics]
+        assert any("fn=96" in m and "预览" in m for m in messages), messages
+        # 不改用户写的 fn（D6：导出精度是用户意图）
+        assert result.ir["nodes"][0]["children"][0]["fn"] == 96
+
+    def test_high_fn_standalone_does_not_warn(self):
+        # 独立图元（不参与布尔）高分段不影响 CSG 求值，不该提示
+        result = compile_design("sphere(r=50, fn=96)\ncyl(d=20, h=100, fn=96)")
+        assert result.ok
+        assert not any("fn=" in d.message for d in result.diagnostics)
+
+    def test_low_fn_inside_boolean_does_not_warn(self):
+        result = compile_design("difference { sphere(r=50, fn=48) cyl(d=20, h=100, fn=48) }")
+        assert result.ok
+        assert not any("fn=" in d.message for d in result.diagnostics)
+
+    def test_threshold_is_inclusive_boundary(self):
+        # 阈值 64：恰好 64 不提示，65 提示
+        at = compile_design("difference { sphere(r=50, fn=64) cyl(d=20, h=100) }")
+        assert not any("fn=" in d.message for d in at.diagnostics)
+        over = compile_design("difference { sphere(r=50, fn=65) cyl(d=20, h=100) }")
+        assert any("fn=65" in d.message for d in over.diagnostics)
+
+    def test_nested_boolean_still_detected(self):
+        result = compile_design("difference { union { box(w=1,h=1,d=1) sphere(r=50, fn=96) } cyl(d=20, h=100) }")
+        assert any("fn=96" in d.message for d in result.diagnostics)
+
+
 # ── 模块 ──────────────────────────────────────────────────
 
 

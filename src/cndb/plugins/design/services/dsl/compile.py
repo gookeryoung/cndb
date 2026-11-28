@@ -181,6 +181,20 @@ def _compile(content: str, overrides: dict[str, float], *, file_kind: str, closu
     )
     nodes, outline, constraint_entries, warnings = emitter.emit_program(program, env)
 
+    # 需求 0192 C3：参与布尔运算的高分段图元提示「预览较慢」（只提示，不改 fn）
+    slow_fns = _collect_slow_csg_fns(nodes)
+    if slow_fns:
+        listed = "/".join(str(value) for value in slow_fns)
+        warnings.append(
+            (
+                "fn",
+                1,
+                1,
+                f"布尔运算中的图元 fn={listed} 超过 {SLOW_CSG_FN_THRESHOLD}，预览求值较慢；"
+                f"可把该图元的 fn 降到 {SLOW_CSG_FN_THRESHOLD} 或以下（导出前再调高提精度）",
+            )
+        )
+
     return {
         "version": IR_VERSION,
         "units": {"length": "mm", "angle": "deg"},
@@ -259,6 +273,43 @@ def _eval_fn(args: dict[str, Expr], env: dict[str, float], primitive: str, line:
     if not MIN_FN <= value <= MAX_FN:
         raise DslEvalError(f"{primitive} 的参数 fn 取值须在 {MIN_FN}~{MAX_FN} 之间（实为 {value}）", line, col)
     return int(value)
+
+
+#: 参与布尔运算时 fn 超过该值会给「预览较慢」提示（需求 0192 C3）。
+#: 只提示不阻断：fn 是用户的导出精度意图，不能因为预览慢就替他改（D6）。
+SLOW_CSG_FN_THRESHOLD: int = 64
+
+#: 布尔算子（含 children 的节点）；与前端 renderTree 的 op 集合一致
+_BOOLEAN_OPS: frozenset[str] = frozenset({"union", "difference", "intersection"})
+
+
+def _collect_slow_csg_fns(nodes: list[dict[str, Any]]) -> list[int]:
+    """收集「参与布尔运算且 fn 超阈值」的图元 fn 值（去重降序）.
+
+    背景（需求 0192）：fn 与 CSG 耗时近似平方关系——实测同一回转体结构
+    fn=32/48/64/96 → 52/54/83/188 ms。高分段图元一旦进入 difference /
+    intersection，预览求值会明显变慢，而 45° FOV 下肉眼看不出三角数差异。
+    这里只负责发现，提示文案由调用方组装。
+    """
+    found: set[int] = set()
+
+    def walk(node: dict[str, Any], in_boolean: bool) -> None:
+        op = node.get("op")
+        if isinstance(op, str) and op in _BOOLEAN_OPS:
+            for child in node.get("children") or []:
+                walk(child, True)
+            return
+        # 图元叶子：只在布尔上下文里才提示（独立图元高分段不影响布尔求值）
+        if in_boolean:
+            fn = node.get("fn")
+            if isinstance(fn, int) and fn > SLOW_CSG_FN_THRESHOLD:
+                found.add(fn)
+        for child in node.get("children") or []:
+            walk(child, in_boolean)
+
+    for node in nodes:
+        walk(node, False)
+    return sorted(found, reverse=True)
 
 
 def _reject_unknown(args: dict[str, Expr], allowed: set[str], primitive: str, line: int, col: int) -> None:
