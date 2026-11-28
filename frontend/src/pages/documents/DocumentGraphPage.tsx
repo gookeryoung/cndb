@@ -19,7 +19,6 @@ import {
   Alert,
   App as AntApp,
   Button,
-  Checkbox,
   Input,
   Select,
   Slider,
@@ -33,6 +32,7 @@ import {
   ApartmentOutlined,
   CompressOutlined,
   CopyOutlined,
+  DisconnectOutlined,
   FilterOutlined,
   FontSizeOutlined,
   MinusOutlined,
@@ -885,6 +885,28 @@ export default function DocumentGraphPage() {
             onClick={() => setShowArrows(v => !v)}
           />
         </Tooltip>
+        <Tooltip title={filters.onlyBroken ? '取消只看断链' : '只看断链'}>
+          <Button
+            size="small"
+            icon={<DisconnectOutlined />}
+            type={filters.onlyBroken ? 'primary' : 'default'}
+            aria-label="只看断链"
+            aria-pressed={filters.onlyBroken}
+            data-testid="graph-filter-broken"
+            onClick={() => setFilters(prev => ({ ...prev, onlyBroken: !prev.onlyBroken }))}
+          />
+        </Tooltip>
+        <Tooltip title={filters.onlyIsolated ? '取消只看孤立点' : '只看孤立点'}>
+          <Button
+            size="small"
+            icon={<AimOutlined />}
+            type={filters.onlyIsolated ? 'primary' : 'default'}
+            aria-label="只看孤立点"
+            aria-pressed={filters.onlyIsolated}
+            data-testid="graph-filter-isolated"
+            onClick={() => setFilters(prev => ({ ...prev, onlyIsolated: !prev.onlyIsolated }))}
+          />
+        </Tooltip>
       </Space.Compact>
       <Space.Compact size="small" className="cn-graph-controls-group">
         <Button
@@ -987,6 +1009,32 @@ export default function DocumentGraphPage() {
             </div>
           </div>
         </div>
+        {/* 标题 / 状态筛选与标题同行（0189 C4 修订）：高频筛选上移到页头右端，
+            低频的断链 / 孤立点开关与读数仍留在筛选条 */}
+        <div className="cn-page-head-actions" data-testid="graph-head-filters">
+          <Input
+            allowClear
+            size="small"
+            placeholder="按标题筛选"
+            prefix={<FilterOutlined />}
+            value={filters.keyword}
+            data-testid="graph-filter-keyword"
+            onChange={e => setFilters(prev => ({ ...prev, keyword: e.target.value }))}
+            style={{ width: 200 }}
+          />
+          <Select
+            allowClear
+            size="small"
+            mode="multiple"
+            placeholder="状态"
+            value={filters.statuses}
+            data-testid="graph-filter-status"
+            onChange={(value: string[]) => setFilters(prev => ({ ...prev, statuses: value }))}
+            options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
+            style={{ minWidth: 140 }}
+            maxTagCount="responsive"
+          />
+        </div>
       </header>
 
       {/* 三条提示不再各带 marginBottom（0189 C11）：纵向节奏统一由 .cn-page 的 gap 承担 */}
@@ -1016,63 +1064,39 @@ export default function DocumentGraphPage() {
       )}
       {graphQuery.isError && <Alert type="error" showIcon message="图谱加载失败" />}
 
-      <div className="cn-graph-toolbar" data-testid="graph-filter-bar">
-        <Input
-          allowClear
-          size="small"
-          placeholder="按标题筛选"
-          prefix={<FilterOutlined />}
-          value={filters.keyword}
-          data-testid="graph-filter-keyword"
-          onChange={e => setFilters(prev => ({ ...prev, keyword: e.target.value }))}
-          style={{ width: 200 }}
-        />
-        <Select
-          allowClear
-          size="small"
-          mode="multiple"
-          placeholder="状态"
-          value={filters.statuses}
-          data-testid="graph-filter-status"
-          onChange={(value: string[]) => setFilters(prev => ({ ...prev, statuses: value }))}
-          options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
-          style={{ minWidth: 140 }}
-          maxTagCount="responsive"
-        />
-        <Checkbox
-          checked={filters.onlyBroken}
-          data-testid="graph-filter-broken"
-          onChange={e => setFilters(prev => ({ ...prev, onlyBroken: e.target.checked }))}
-        >
-          只看断链
-        </Checkbox>
-        <Checkbox
-          checked={filters.onlyIsolated}
-          data-testid="graph-filter-isolated"
-          onChange={e => setFilters(prev => ({ ...prev, onlyIsolated: e.target.checked }))}
-        >
-          只看孤立点
-        </Checkbox>
-        {focusId != null && (
-          <Tag closable data-testid="graph-focus-tag" onClose={() => setFocus(null)}>
-            中心：{nodeTitleById(focusId) || `#${focusId}`} · {focusDepth} 跳
-          </Tag>
-        )}
-        {/* 读数跟随筛选（0189 C6）：读数回答的是「这次筛选还剩多少」，必须与筛选控件同屏 */}
-        <Text
-          type="secondary"
-          className="cn-graph-toolbar-stats"
-          style={{ fontSize: 'var(--cn-text-xs)' }}
-          data-testid="graph-footer-stats"
-        >
-          显示 {visible.nodes.length} / 共 {graph?.nodes?.length ?? 0} 个节点 · 关系 {displayEdges.length}
-          {mutualCount > 0 ? `（互引 ${mutualCount}）` : ''}
-          {hiddenCount > 0 ? `（隐藏 ${hiddenCount}）` : ''}
-        </Text>
-      </div>
-
+      {/* 统计融入图 UI（0189 C6 修订）：读数变成画布右上角的胶囊簇，与图例 / 控制簇同一浮层语言；
+          中心文档 Tag 也收进来，筛选条整体取消 */}
       <div className="cn-graph-body">
         <div className="cn-graph-canvas-wrap">
+          <div className="cn-graph-stats" data-testid="graph-filter-bar">
+            {focusId != null && (
+              <Tag closable data-testid="graph-focus-tag" onClose={() => setFocus(null)}>
+                中心：{nodeTitleById(focusId) || `#${focusId}`} · {focusDepth} 跳
+              </Tag>
+            )}
+            {/* 读数跟随筛选（0189 C6）：读数回答的是「这次筛选还剩多少」；
+                testid 挂在整簇上，节点 / 关系 / 互引 / 隐藏四项都在同一读数内 */}
+            <span className="cn-graph-stats-item" data-testid="graph-footer-stats">
+              <span className="cn-graph-stats-num">{visible.nodes.length}</span>
+              <span className="cn-graph-stats-dim">/ {graph?.nodes?.length ?? 0} 节点</span>
+            </span>
+            <span className="cn-graph-stats-item" data-testid="graph-footer-edges">
+              <span className="cn-graph-stats-num">{displayEdges.length}</span>
+              <span className="cn-graph-stats-dim">关系</span>
+            </span>
+            {mutualCount > 0 && (
+              <span className="cn-graph-stats-item" data-testid="graph-footer-mutual">
+                <span className="cn-graph-stats-num">{mutualCount}</span>
+                <span className="cn-graph-stats-dim">互引</span>
+              </span>
+            )}
+            {hiddenCount > 0 && (
+              <span className="cn-graph-stats-item cn-graph-stats-item-hidden" data-testid="graph-footer-hidden">
+                <span className="cn-graph-stats-num">{hiddenCount}</span>
+                <span className="cn-graph-stats-dim">隐藏</span>
+              </span>
+            )}
+          </div>
           {/* 加载态与空态走 .cn-state（0189 C10 / H30）：无提示的空白画布让人以为图坏了 */}
           {graphQuery.isPending && (
             <div className="cn-state" data-testid="graph-loading-state">正在加载知识图谱…</div>
@@ -1220,6 +1244,7 @@ export default function DocumentGraphPage() {
               <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                 选中节点可看详情与关联，也可从下面的清单直接定位。
               </Text>
+              {/* 孤立文档：只展示前 20 条，清单本身不再自设滚动条（见 .cn-graph-list 注释） */}
               <div className="cn-graph-inspector-section">
                 <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   孤立文档 {isolated.length}（无任何双链）
@@ -1227,11 +1252,12 @@ export default function DocumentGraphPage() {
                 {isolated.length === 0 ? (
                   <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>（全都有连接）</Text>
                 ) : (
-                  <ul className="cn-graph-inspector-list" data-testid="graph-isolated-list">
+                  <ul className="cn-graph-list" data-testid="graph-isolated-list">
                     {isolated.slice(0, HUB_TOP_N * 2).map(node => (
-                      <li key={`iso-${node.id}`}>
+                      <li key={`iso-${node.id}`} className="cn-graph-list-row">
                         <Tooltip title="点击定位">
                           <a
+                            className="cn-graph-list-link"
                             onClick={() => focusNode(node.id)}
                             role="button"
                             tabIndex={0}
@@ -1245,6 +1271,7 @@ export default function DocumentGraphPage() {
                   </ul>
                 )}
               </div>
+              {/* 枢纽文档：排名 + 度数柱，让「谁最中心、第一名领先多少」一眼可比 */}
               <div className="cn-graph-inspector-section">
                 <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   枢纽文档 top {Math.min(HUB_TOP_N, hubs.length)}
@@ -1252,23 +1279,35 @@ export default function DocumentGraphPage() {
                 {hubs.length === 0 ? (
                   <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>（暂无连接）</Text>
                 ) : (
-                  <ul className="cn-graph-inspector-list" data-testid="graph-hub-list">
-                    {hubs.map(node => (
-                      <li key={`hub-${node.id}`}>
-                        <a
-                          onClick={() => focusNode(node.id)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={e => { if (e.key === 'Enter') focusNode(node.id) }}
-                        >
-                          {nodeLabel(node.title)}
-                        </a>
-                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-                          {' '}{degrees.get(node.id) ?? 0}
-                        </Text>
-                      </li>
-                    ))}
-                  </ul>
+                  <ol className="cn-graph-list cn-graph-hub-list" data-testid="graph-hub-list">
+                    {hubs.map((node, index) => {
+                      const degree = degrees.get(node.id) ?? 0
+                      // 度数柱按首位归一：一眼比出「第一名比别人强多少」
+                      const top = hubs[0] ? degrees.get(hubs[0].id) ?? 0 : 0
+                      const ratio = top > 0 ? Math.min(1, degree / top) : 0
+                      return (
+                        <li key={`hub-${node.id}`} className="cn-graph-list-row">
+                          <span className="cn-graph-list-rank" aria-hidden>{index + 1}</span>
+                          <a
+                            className="cn-graph-list-link"
+                            onClick={() => focusNode(node.id)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={e => { if (e.key === 'Enter') focusNode(node.id) }}
+                          >
+                            {nodeLabel(node.title)}
+                          </a>
+                          {/* 度数柱：纯装饰，真实数值仍由右侧数字给出 */}
+                          <span
+                            className="cn-graph-list-bar"
+                            aria-hidden
+                            style={{ '--cn-graph-hub-ratio': ratio } as React.CSSProperties}
+                          />
+                          <span className="cn-graph-list-count">{degree}</span>
+                        </li>
+                      )
+                    })}
+                  </ol>
                 )}
               </div>
             </div>

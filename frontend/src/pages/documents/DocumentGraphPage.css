@@ -17,18 +17,71 @@
   min-height: 0;
 }
 
-.cn-graph-toolbar {
+/* 页头右端的标题 / 状态筛选（高频筛选上移，与标题同行）：
+   全局 .cn-page-head-actions 已给 flex / margin-left:auto，这里只控窄屏回落 */
+@media (max-width: 767.98px) {
+  .cn-page-head .cn-page-head-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .cn-page-head .cn-page-head-actions .ant-select {
+    flex: 1 1 100%;
+  }
+}
+
+/* 统计胶囊簇（0189 C6 修订）：画布右上角浮层，与图例 / 控制簇同一浮层语言；
+   也承担原筛选条的残余职责（中心文档 Tag） */
+.cn-graph-stats {
+  position: absolute;
+  top: var(--cn-space-md);
+  right: var(--cn-space-md);
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--cn-space-md);
-  flex: none;
+  gap: var(--cn-space-xs);
+  max-width: calc(100% - var(--cn-space-2xl));
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  opacity: 0.94;
 }
 
-/* 读数靠右（C6）：与筛选控件同一行，回答「这次筛选还剩多少」 */
-.cn-graph-toolbar-stats {
-  margin-left: auto;
+.cn-graph-stats-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--cn-space-xs);
+  padding: 0 var(--cn-space-xs);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
   white-space: nowrap;
+}
+
+/* 相邻两项用竖线分隔，与控制簇同款 */
+.cn-graph-stats-item + .cn-graph-stats-item {
+  border-left: 1px solid var(--cn-border);
+}
+
+/* 隐藏项弱化，避免与「当前可见」读数混滑 */
+.cn-graph-stats-item-hidden .cn-graph-stats-num {
+  color: var(--cn-text-tertiary);
+}
+
+.cn-graph-stats-num {
+  color: var(--cn-text-primary);
+  font-weight: var(--cn-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-graph-stats-dim {
+  color: var(--cn-text-tertiary);
+}
+
+/* 中心文档 Tag 在胶囊簇里不加垂直 padding，避免撑高浮层 */
+.cn-graph-stats .ant-tag {
+  margin-inline-end: 0;
 }
 
 .cn-graph-body {
@@ -119,6 +172,7 @@
   gap: var(--cn-space-xs);
 }
 
+/* 出链 / 反链明细清单（选中态）：条目数受度数限制，保留自带滚动 */
 .cn-graph-inspector-list {
   margin: 0;
   padding-left: var(--cn-space-xl);
@@ -132,6 +186,105 @@
 .cn-graph-inspector-list a {
   cursor: pointer;
   word-break: break-word;
+}
+
+/* ── 概览清单：孤立文档 / 枢纽 top N（需求 0190 后续）─────────────────
+ * 原先这两个清单自己 max-height:180px + overflow:auto，而外层 .cn-graph-inspector
+ * 也是 overflow:auto —— 一屏里出现**两条嵌套滚动条**，鼠标滚哪个都得先猜。
+ * 现在清单不自设滚动，由 Inspector 统一滚一条；条目数本身有上限
+ * （孤立 20 条 / 枢纽 10 条），不会无限长。 */
+.cn-graph-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+}
+
+/* 排行行：排名 / 标题 / 度数柱 / 数值四列，标题单行省略不撑高 */
+.cn-graph-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+  padding: var(--cn-space-hairline) var(--cn-space-xs);
+  border-radius: var(--cn-radius-sm);
+  transition: background-color 0.15s ease;
+}
+
+.cn-graph-list-row:hover {
+  background: var(--cn-bg-subtle);
+}
+
+/* 排名：定宽等宽数字，前十位数对齐不跳动；非前三用次级文字色避免喧宾夺主 */
+.cn-graph-list-rank {
+  flex: none;
+  width: var(--cn-space-lg);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 前三名给品牌色，一眼看出「这是枢纽里的头部」 */
+.cn-graph-hub-list > .cn-graph-list-row:nth-child(-n+3) .cn-graph-list-rank {
+  color: var(--cn-brand-color);
+  font-weight: var(--cn-weight-semibold);
+}
+
+.cn-graph-list-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cn-text-primary);
+  font-size: var(--cn-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cn-graph-list-link:hover {
+  color: var(--cn-brand-color);
+  text-decoration: underline;
+}
+
+/* 度数柱：按首位归一的比例条，纯装饰（真实数值在右侧），不抢标题宽度 */
+.cn-graph-list-bar {
+  flex: none;
+  width: var(--cn-space-4xl);
+  height: var(--cn-space-xs);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-bg-subtle);
+  overflow: hidden;
+  /* 用伪元素画比例，避免在 CSS 里算 width 百分比（ratio 由内联变量传入） */
+  position: relative;
+}
+
+.cn-graph-list-bar::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: calc(var(--cn-graph-hub-ratio, 0) * 100%);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-mix-brand-color-30-border);
+  background: color-mix(in srgb, var(--cn-brand-color) 30%, var(--cn-bg-subtle));
+}
+
+/* 度数：等宽数字，右对齐，宽度固定避免数字位数变化时抖动 */
+.cn-graph-list-count {
+  flex: none;
+  min-width: var(--cn-space-lg);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 孤立文档行没有排名 / 度数柱：标题占满整行，点击区更大 */
+.cn-graph-list:not(.cn-graph-hub-list) .cn-graph-list-link {
+  padding-left: var(--cn-space-xs);
 }
 
 /* 图例（需求 0189 C8）：移到**左下**，默认展开、可收起。
@@ -266,16 +419,18 @@
 }
 
 @media (max-width: 575.98px) {
-  .cn-graph-toolbar {
-    gap: var(--cn-space-sm);
+  .cn-graph-stats {
+    top: auto;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    max-width: 100%;
+    position: static;
+    opacity: 1;
   }
 
-  .cn-graph-toolbar-stats {
-    margin-left: 0;
-  }
-
-  /* 窄屏（<576px）图例与控制簇改为画布下方常列：两个浮层在 390px 屏上会叠在一起，
-   * 且浮动控件本身就挡住了本就不多的画布面积。 */
+  /* 窄屏（<576px）统计与图例、控制簇改为画布下方常列：
+     浮层在 390px 屏上会叠在一起，且浮动控件本身就挡住了本就不多的画布面积。 */
   .cn-graph-canvas-wrap {
     display: flex;
     flex-direction: column;

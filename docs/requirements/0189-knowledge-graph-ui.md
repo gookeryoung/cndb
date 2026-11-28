@@ -140,9 +140,9 @@
 | C1 统一称谓 | `MainLayout.tsx:92` 页签 label 改「知识图谱」；`help/content/tutorials.tsx` 正文改为「知识图谱」页并补画布控制簇 / 图例收起说明；`CONTEXT.md:44` 与 `docs/USER_DOC_MAP.md` 同步 | `MainLayout.test.tsx` 新增 1 例断言页签文案与激活态；e2e 断言页签文案 |
 | C2 改名边界 | 路由段 `graph`、`graph-*` testid、接口路径、组件 / 文件名零改动 | 既有 e2e 与 34 例单测的 URL / testid 断言零改动通过 |
 | C3 相邻概念 | `TableLinkGraphPage.tsx` 副标题补「不是文档知识图谱」 | 表页 21 例零改动通过 |
-| C4 页头无动作 | 页头只留图标 + 标题 + 副标题；`viewControls` 常量整体移入画布 | 单测：页头不含 `cn-page-head-actions`，5 个 testid 均不在页头内 |
+| C4 页头无视图动作 | 页头：左侧图标 + 标题 + 副标题，右端动作区只有**标题 / 状态**两个筛选控件（后续修订：高频筛选上移与标题同行）；标签 / 箭头 / 缩放 / 复位 / 布局参数全部移入画布 | 单测：页头 `cn-page-head-actions` 只含 `graph-filter-keyword` / `graph-filter-status`，5 个视图控件 testid 均不在页头内 |
 | C5 视图控制簇 | `graph-view-controls`（三组 `Space.Compact`：标签 / 箭头 │ − 100% + │ 复位 / 布局），浮在画布右下 | 单测：控制簇是 `.cn-graph-canvas-wrap` 子节点且含缩放与布局按钮；力参数面板展开后在控制簇内 |
-| C6 读数跟随筛选 | `graph-footer-stats` 移入 `cn-graph-toolbar`（`margin-left: auto`），删页脚行；交互提示并入副标题 | 单测：读数与 `graph-filter-keyword` 同父容器、全文唯一；e2e 同口径 |
+| C6 读数跟随筛选 | `graph-footer-stats` 融入图 UI（后续修订）：读数变成**画布右上角统计胶囊簇**（`cn-graph-stats`，testid `graph-filter-bar`），节点 / 关系 / 互引 / 隐藏四项分隔展示、中心文档 Tag 同簇；窄屏回落画布下方常列；交互提示并入页头副标题 | 单测：读数簇在 `.cn-graph-canvas-wrap` 内、`graph-footer-edges` 全文唯一；e2e：`graph-filter-bar` 含 `graph-footer-stats` |
 | C7 画布吃满高度 | 根容器 `cn-page cn-graph-page`（`height: 100%`）；主体 `flex: 1; min-height: 0`；画布 `height: 100%`，内联 `height` / `border` 移除 | 单测：画布 `getAttribute('style')` 为 `null`、根容器双类名；e2e：画布高度 > 视口 50% |
 | C8 图例可收起 | 图例改左下 + `graph-legend-toggle`（`aria-expanded`）；`<576px` 时图例与控制簇落为画布下方常列 | 单测：收起后 chip 隐藏、再展开状态延续（`aria-pressed=false` 保持） |
 | C9 详情优先 | Inspector 内不再有力参数折叠区；未选中态顶部补一句引导 | 单测：`graph-force-panel` 在控制簇内、不在 Inspector 内 |

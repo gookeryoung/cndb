@@ -191,7 +191,7 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     renderPage()
     expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
     await waitFor(() =>
-      expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 0 / 共 0 个节点 · 关系 0'),
+      expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('0/ 0 节点'),
     )
     await waitFor(() => expect(lastGraphOption()?.data).toEqual([]))
     expect(lastGraphOption()?.links).toEqual([])
@@ -306,7 +306,7 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
 
     // 1 的 1 跳邻域 = {1, 2, -123}：出链与反链都算邻接
-    await waitFor(() => expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4 个节点'))
+    await waitFor(() => expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('3/ 4 节点'))
     expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('甲')
     expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('1 跳')
   })
@@ -315,25 +315,25 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     renderPage('/w/10/documents/graph?focus=999&depth=1')
     expect(await screen.findByText(/作为中心的文档不在当前图谱范围内/)).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('graph-clear-focus'))
-    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('4 节点', { exact: false })).toBeInTheDocument()
     expect(screen.queryByTestId('graph-focus-tag')).not.toBeInTheDocument()
   })
 
   it('筛选栏按关键词与只看断链收敛，页脚同时给出「显示 X / 共 Y」（C5）', async () => {
     renderPage()
     expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
-    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('4 节点', { exact: false })).toBeInTheDocument()
 
     fireEvent.change(screen.getByTestId('graph-filter-keyword'), { target: { value: '资' } })
-    await waitFor(() => expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 1 / 共 4'))
-    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('隐藏 3')
+    await waitFor(() => expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('1/ 4 节点'))
+    expect(screen.getByTestId('graph-footer-hidden').textContent).toMatch(/3/)
 
     fireEvent.change(screen.getByTestId('graph-filter-keyword'), { target: { value: '' } })
-    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('4 节点', { exact: false })).toBeInTheDocument()
 
     // 只看断链：保留断链节点与「指向它的源节点」，否则画出来是一堆孤点
     fireEvent.click(screen.getByTestId('graph-filter-broken'))
-    expect(await screen.findByText('显示 2 / 共 4', { exact: false })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('graph-footer-stats').textContent).toMatch(/2\s*\/\s*4\s*节点/))
     await waitFor(() => expect(lastGraphOption()?.data).toHaveLength(2))
   })
 
@@ -345,10 +345,10 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     expect(screen.getByTestId('graph-legend-pdf')).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByTestId('graph-legend-pdf'))
     await waitFor(() => expect(screen.getByTestId('graph-legend-pdf')).toHaveAttribute('aria-pressed', 'false'))
-    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4')
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('3/ 4 节点')
 
     fireEvent.click(screen.getByTestId('graph-legend-pdf'))
-    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('4 节点', { exact: false })).toBeInTheDocument()
   })
 
   it('标签按缩放倍率淡化，工具栏可整体开关（C7）', async () => {
@@ -399,6 +399,48 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
     vi.unstubAllGlobals()
   })
 
+  it('枢纽清单是排行行：排名 + 度数柱 + 数值，且不再自设滚动条', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+
+    const hubs = await screen.findByTestId('graph-hub-list')
+    // 排行语义用 ol（不是 ul）：屏幕阅读器能读出「第几名」
+    expect(hubs.tagName).toBe('OL')
+    expect(hubs).toHaveClass('cn-graph-hub-list')
+
+    const rows = hubs.querySelectorAll('.cn-graph-list-row')
+    expect(rows.length).toBeGreaterThan(0)
+    // 每行四列：排名 / 标题 / 度数柱 / 数值
+    for (const row of Array.from(rows)) {
+      expect(row.querySelector('.cn-graph-list-rank')).not.toBeNull()
+      expect(row.querySelector('.cn-graph-list-link')).not.toBeNull()
+      expect(row.querySelector('.cn-graph-list-bar')).not.toBeNull()
+      expect(row.querySelector('.cn-graph-list-count')).not.toBeNull()
+    }
+    // 排名从 1 递增
+    const ranks = Array.from(hubs.querySelectorAll('.cn-graph-list-rank')).map(el => el.textContent)
+    expect(ranks[0]).toBe('1')
+    // 度数柱比例按首位归一：首位是 1，其余不超过 1
+    const bars = Array.from(hubs.querySelectorAll('.cn-graph-list-bar')) as HTMLElement[]
+    expect(bars[0].style.getPropertyValue('--cn-graph-hub-ratio')).toBe('1')
+
+    // 单层滚动：清单自身不再 max-height + overflow（原先与外层 Inspector 叠成两条滚动条）
+    const listClass = hubs.className
+    expect(listClass).not.toContain('cn-graph-inspector-list')
+  })
+
+  it('孤岛清单同样走单层滚动，条目多时由 Inspector 统一滚一条', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+
+    const isolated = await screen.findByTestId('graph-isolated-list')
+    expect(isolated).toHaveClass('cn-graph-list')
+    expect(isolated).not.toHaveClass('cn-graph-inspector-list')
+    // 孤立文档没有排名与度数柱，标题独占整行（点击区更大）
+    expect(isolated.querySelector('.cn-graph-list-rank')).toBeNull()
+    expect(isolated.querySelector('.cn-graph-list-count')).toBeNull()
+  })
+
   it('未选中时 Inspector 给出孤岛与枢纽清单，点击可定位（C8）', async () => {
     renderPage()
     expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
@@ -443,7 +485,7 @@ describe('知识图谱页（需求 0168 / 0182）', () => {
   it('编辑器深链：?focus=2 直接以该文档为中心打开', async () => {
     renderPage('/w/10/documents/graph?focus=2&depth=1')
     expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
-    expect(await screen.findByText('显示 2 / 共 4', { exact: false })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('graph-footer-stats').textContent).toMatch(/2\s*\/\s*4\s*节点/))
     expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('乙')
   })
 })
@@ -613,7 +655,8 @@ describe('图谱单双向边表达（需求 0183）', () => {
     expect(tooltip).toContain('互相引用')
     expect(tooltip).toContain('[[甲]]')
 
-    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('关系 2（互引 1）')
+    expect(screen.getByTestId('graph-footer-edges').textContent).toMatch(/2/)
+    expect(screen.getByTestId('graph-footer-mutual').textContent).toMatch(/1/)
   })
 
   it('度数按唯一关联数算：互引不重复计数（C3）', async () => {
@@ -660,7 +703,7 @@ describe('图谱单双向边表达（需求 0183）', () => {
   it('图例给出单双向说明项，且不参与格式显隐（C5）', async () => {
     renderPage()
     // 先等数据落地，否则页脚还是空图的 0 / 0
-    expect(await screen.findByText('显示 4 / 共 4', { exact: false })).toBeInTheDocument()
+    expect(await screen.findByText('4 节点', { exact: false })).toBeInTheDocument()
     expect(await screen.findByTestId('graph-legend-edge-direction')).toBeInTheDocument()
     const note = screen.getByTestId('graph-legend-edge-direction')
     // 说明项不是按钮：点它不应触发任何格式过滤
@@ -668,7 +711,7 @@ describe('图谱单双向边表达（需求 0183）', () => {
     expect(note).not.toHaveAttribute('aria-pressed')
     expect(note).toHaveTextContent('互引')
     fireEvent.click(note)
-    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 4 / 共 4')
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('4/ 4 节点')
   })
 })
 
@@ -853,8 +896,11 @@ describe('知识图谱版式与空载态（需求 0189）', () => {
     const page = screen.getByTestId('document-graph-page')
     const head = page.querySelector('.cn-page-head') as HTMLElement
     expect(head).toBeTruthy()
-    // 页头不再有动作区：6 个视图控件都搬进画布
-    expect(head.querySelector('.cn-page-head-actions')).toBeNull()
+    // 页头动作区只剩标题 / 状态两个筛选（视图控件都搬进画布）
+    const headActions = head.querySelector('.cn-page-head-actions') as HTMLElement
+    expect(headActions).toBeTruthy()
+    expect(headActions.contains(screen.getByTestId('graph-filter-keyword'))).toBe(true)
+    expect(headActions.contains(screen.getByTestId('graph-filter-status'))).toBe(true)
     for (const id of ['graph-zoom-in', 'graph-zoom-out', 'graph-labels-toggle', 'graph-reset', 'graph-force-toggle']) {
       expect(head.contains(screen.getByTestId(id)), `${id} 不应在页头`).toBe(false)
     }
@@ -865,17 +911,22 @@ describe('知识图谱版式与空载态（需求 0189）', () => {
     expect(controls.contains(screen.getByTestId('graph-force-toggle'))).toBe(true)
   })
 
-  it('C6：读数与筛选控件同屏（筛选条右端），页脚不再重复一份', async () => {
+  it('C6：读数是画布右上角统计簇，全文唯一', async () => {
     renderPage()
     await screen.findByTestId('document-graph-canvas')
 
     const bar = screen.getByTestId('graph-filter-bar')
     const stats = screen.getByTestId('graph-footer-stats')
-    expect(bar.contains(stats)).toBe(true)
-    expect(bar.contains(screen.getByTestId('graph-filter-keyword'))).toBe(true)
+    // 统计簇在画布容器内（浮层），中心 Tag 也收进来
+    expect(bar.className).toContain('cn-graph-stats')
+    expect(screen.getByTestId('graph-filter-bar').closest('.cn-graph-canvas-wrap')).toBeTruthy()
+    // 标题 / 状态筛选在页头右端与标题同行，不在筛选条
+    expect(bar.contains(screen.getByTestId('graph-filter-keyword'))).toBe(false)
+    const head = screen.getByTestId('document-graph-page').querySelector('.cn-page-head') as HTMLElement
+    expect(head.contains(screen.getByTestId('graph-filter-keyword'))).toBe(true)
     // 全文只有一处读数
-    expect(screen.getAllByTestId('graph-footer-stats')).toHaveLength(1)
-    await waitFor(() => expect(stats).toHaveTextContent('显示 4 / 共 4'))
+    expect(screen.getAllByTestId('graph-footer-edges')).toHaveLength(1)
+    await waitFor(() => expect(stats).toHaveTextContent('4/ 4 节点'))
   })
 
   it('C5 / C9：力参数面板在画布控制簇内，不在 Inspector 里', async () => {
@@ -902,13 +953,13 @@ describe('知识图谱版式与空载态（需求 0189）', () => {
     // 先关掉 PDF，再收起图例
     fireEvent.click(screen.getByTestId('graph-legend-pdf'))
     await waitFor(() =>
-      expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4'),
+      expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('3/ 4 节点'),
     )
 
     fireEvent.click(screen.getByTestId('graph-legend-toggle'))
     await waitFor(() => expect(screen.queryByTestId('graph-legend-pdf')).toBeNull())
     // 收起不改变筛选结果：PDF 仍然是关掉的
-    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('显示 3 / 共 4')
+    expect(screen.getByTestId('graph-footer-stats')).toHaveTextContent('3/ 4 节点')
     expect(screen.getByTestId('graph-legend-toggle')).toHaveAttribute('aria-expanded', 'false')
 
     // 再展开：状态延续
