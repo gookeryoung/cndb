@@ -1671,6 +1671,8 @@ def set_document_tags(
     services.content.require_editor(db, workspace_id, current_user)
     services.content._apply_tags(db, doc, payload.tag_ids, current_user)
     db.commit()
+    # 标签进图谱节点载荷（需求 0191 C4）：改标签后色组 / tooltip 要写后即见（0182 C1 同口径）
+    services.content.invalidate_link_graph_cache(workspace_id)
     return services.content.serialize_document(db, doc)
 
 

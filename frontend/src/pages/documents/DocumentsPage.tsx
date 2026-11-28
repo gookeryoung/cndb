@@ -596,7 +596,13 @@ export default function DocumentsPage() {
   }
 
   // 命令面板「新建文档」经 URL ?create=1 触发（0067 C3）
-  useCreateParam(() => openCreate('doc'))
+  // 命令面板「新建文档」经 URL ?create=1 触发（0067 C3）；
+  // 知识图谱断链节点「去创建」带 ?title= 预填标题（0191 C5）
+  useCreateParam(params => {
+    openCreate('doc')
+    const prefill = params.get('title')
+    if (prefill) setNewTitle(prefill)
+  })
 
   /** 最近打开（过滤掉已删除/不可见的文档，避免死链） */
   const recentDocs = useMemo(() => {

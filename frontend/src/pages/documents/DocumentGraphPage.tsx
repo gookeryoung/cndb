@@ -51,6 +51,7 @@ import { documentsApi } from '@/api/documents'
 import type { GraphEdge, GraphNode } from '@/api/documents'
 import { DOC_FORMAT_META, formatMeta } from '@/components/Document/docFormat'
 import { STATUS_LABELS } from './documentDisplay'
+import { formatRelativeTime } from '@/utils/datetime'
 import { useTheme } from '@/theme/ThemeProvider'
 import { SPACE } from '@/theme/tokens'
 import { mixColor } from '@/theme/themeMix'
@@ -112,6 +113,7 @@ const HUB_TOP_N = 10
 /** 局部图最大深度（C3）：1 跳是直接引用关系，2 跳已经接近全图噪声 */
 const MAX_FOCUS_DEPTH = 2
 
+
 export interface ForceParams {
   repulsion: number
   edgeLength: number
@@ -119,6 +121,88 @@ export interface ForceParams {
 }
 
 const DEFAULT_FORCE: ForceParams = { repulsion: 220, edgeLength: 100, gravity: 0.08 }
+
+/** 视图偏好 localStorage 键前缀（0191 C2）：按 workspace 隔离，避免 A 区偏好串到 B 区 */
+const VIEW_PREF_PREFIX = 'cndb.graph.view.'
+
+/** 节点着色维度（0191 C4）：类型（默认）/ 标签 / 文件夹 */
+type ColorBy = 'type' | 'tag' | 'folder'
+const COLOR_BY_OPTIONS: { value: ColorBy; label: string }[] = [
+  { value: 'type', label: '按类型' },
+  { value: 'tag', label: '按标签' },
+  { value: 'folder', label: '按文件夹' },
+]
+
+/** 色板（0191 C7）：tag / folder 维度的固定 8 色，中间明度色，浅色深色主题都可读。
+ * 与 docFormat 同源取值，不引入新 token。 */
+const PALETTE = [
+  '#56728f', '#d4380d', '#722ed1', '#389e0d',
+  '#d46b08', '#08979c', '#2f54eb', '#c41d7f',
+]
+const UNCATEGORIZED_KEY = '__uncategorized__'
+
+export interface GraphViewPrefs {
+  labels: boolean
+  arrows: boolean
+  legendOpen: boolean
+  force: ForceParams
+  colorBy: ColorBy
+}
+
+const DEFAULT_VIEW_PREFS: GraphViewPrefs = {
+  labels: true,
+  arrows: true,
+  legendOpen: true,
+  force: DEFAULT_FORCE,
+  colorBy: 'type',
+}
+
+function isForceParams(value: unknown): value is ForceParams {
+  if (typeof value !== 'object' || value == null) return false
+  const v = value as Record<string, unknown>
+  return typeof v.repulsion === 'number' && typeof v.edgeLength === 'number' && typeof v.gravity === 'number'
+}
+
+function isColorBy(value: unknown): value is ColorBy {
+  return value === 'type' || value === 'tag' || value === 'folder'
+}
+
+/** 读视图偏好：字段缺失或类型不合规逐项回退默认（JSON 容错，0191 C2） */
+function loadViewPrefs(workspaceId: string): GraphViewPrefs {
+  if (typeof window === 'undefined') return DEFAULT_VIEW_PREFS
+  try {
+    const raw = window.localStorage.getItem(VIEW_PREF_PREFIX + workspaceId)
+    if (!raw) return DEFAULT_VIEW_PREFS
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return {
+      labels: typeof parsed.labels === 'boolean' ? parsed.labels : DEFAULT_VIEW_PREFS.labels,
+      arrows: typeof parsed.arrows === 'boolean' ? parsed.arrows : DEFAULT_VIEW_PREFS.arrows,
+      legendOpen: typeof parsed.legendOpen === 'boolean' ? parsed.legendOpen : DEFAULT_VIEW_PREFS.legendOpen,
+      force: isForceParams(parsed.force) ? parsed.force : DEFAULT_VIEW_PREFS.force,
+      colorBy: isColorBy(parsed.colorBy) ? parsed.colorBy : DEFAULT_VIEW_PREFS.colorBy,
+    }
+  } catch {
+    return DEFAULT_VIEW_PREFS
+  }
+}
+
+function saveViewPrefs(workspaceId: string, prefs: GraphViewPrefs): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(VIEW_PREF_PREFIX + workspaceId, JSON.stringify(prefs))
+  } catch {
+    // 隐私模式 / 配额满：偏好不可持久化，不阻断页面
+  }
+}
+
+function clearViewPrefs(workspaceId: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(VIEW_PREF_PREFIX + workspaceId)
+  } catch {
+    // 同上：删除失败不阻断
+  }
+}
 
 /** 力导向边长的分布区间（C12）：单一值会让所有边等长、连成规整网格，给 0.6–1.4 倍留出疏密 */
 const EDGE_LENGTH_RANGE_RATIO = 0.6
@@ -194,25 +278,32 @@ function formatKey(node: GraphNode): string {
   return DOC_FORMAT_META[key] ? key : 'markdown'
 }
 
-function formatColor(node: GraphNode, colors: ThemeColors): string {
-  if (node.broken) return colors.error
-  if (node.is_folder) return colors.warning
-  const color = DOC_FORMAT_META[node.content_type]?.color ?? DOC_FORMAT_META.markdown.color
-  // 格式映射里 folder 等个别项是 var(--cn-*)，SVG 属性无法解析，回退到已读取的主色
-  return color.startsWith('var(') ? colors.primary : color
+/** 色组维度键（0191 C4）：tag / folder 档的节点归组键 */
+function colorGroupKey(node: GraphNode, colorBy: ColorBy): string {
+  if (colorBy === 'tag') return node.tag || UNCATEGORIZED_KEY
+  if (colorBy === 'folder') return node.is_folder ? 'folder' : 'doc'
+  return formatKey(node)
 }
 
-/** 图例项：格式键 → 展示名，颜色同一取 formatColor，避免图例与节点两套色 */
-function legendLabel(key: string): string {
-  if (key === 'broken') return '断链'
-  return DOC_FORMAT_META[key]?.label ?? formatMeta(key).label
-}
-
-function legendColor(key: string, colors: ThemeColors): string {
-  if (key === 'broken') return colors.error
-  if (key === 'folder') return colors.warning
+/** 维度键 → 展示名与颜色：tag 档用色板哈希分配，folder 档固定两色 */
+function colorGroupMeta(key: string, colorBy: ColorBy, colors: ThemeColors): { label: string; color: string } {
+  if (colorBy === 'tag') {
+    if (key === UNCATEGORIZED_KEY) return { label: '未分类', color: colors.border }
+    let hash = 0
+    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+    return { label: key, color: PALETTE[hash % PALETTE.length] }
+  }
+  if (colorBy === 'folder') {
+    if (key === 'folder') return { label: '文件夹', color: colors.warning }
+    return { label: '文档', color: colors.primary }
+  }
+  if (key === 'broken') return { label: '断链', color: colors.error }
+  if (key === 'folder') return { label: '文件夹', color: colors.warning }
   const color = DOC_FORMAT_META[key]?.color ?? DOC_FORMAT_META.markdown.color
-  return color.startsWith('var(') ? colors.primary : color
+  return {
+    label: DOC_FORMAT_META[key]?.label ?? formatMeta(key).label,
+    color: color.startsWith('var(') ? colors.primary : color,
+  }
 }
 
 /** 节点度数：同类应用按连接数放大节点，孤立文档保持小尺寸，一眼能看出枢纽与孤岛 */
@@ -385,17 +476,18 @@ export function findHubs(
 }
 
 /**
- * 边的线色（C5）：取**源节点**的格式色，但要压到不抢节点与标签的程度 ——
+ * 边的线色（C5）：取**源节点**的维度色，但要压到不抢节点与标签的程度 ——
  * 直接画 #d4380d 这种饱和色，一张图会变成彩色线团。所以与 `--cn-border`
  * 按 45:55 混一次（走 themeMix 兼容层：现代内核给 color-mix()，旧内核给字面量）。
  *
  * 断链仍由调用方走 `--cn-error` 虚线：形状 + 颜色双通道，不与普通线争权重。
  * `mixColor` 的入参必须是**已解析的颜色**（不能用 var()），否则 SVG 属性读不到值。
  */
-function edgeColor(edge: DisplayEdge, source: GraphNode | undefined, colors: ThemeColors): string {
+function edgeColor(edge: DisplayEdge, source: GraphNode | undefined, colors: ThemeColors, colorBy: ColorBy): string {
   if (edge.broken) return colors.error
   if (!source) return colors.border
-  return mixColor(formatColor(source, colors), EDGE_COLOR_FORMAT_PCT, colors.border)
+  const key = colorGroupKey(source, colorBy)
+  return mixColor(colorGroupMeta(key, colorBy, colors).color, EDGE_COLOR_FORMAT_PCT, colors.border)
 }
 
 function buildOption(
@@ -405,6 +497,7 @@ function buildOption(
   metrics: ThemeMetrics,
   force: ForceParams,
   selectedId: number | null = null,
+  colorBy: ColorBy = 'type',
 ): EChartsCoreOption {
   const degree = buildDegrees(nodes, edges)
   const nodeById = new Map(nodes.map(node => [node.id, node]))
@@ -448,9 +541,15 @@ function buildOption(
           return `${raw || '双链引用'}${hints.length ? `（${hints.join('；')}）` : ''}`
         }
         const node = data as GraphNode
-        const suffix = node.broken ? '（断链目标）' : node.is_folder ? '（文件夹）' : ''
+        const suffix = node.broken ? '（断链目标，尚未创建）' : node.is_folder ? '（文件夹）' : ''
         const links = degree.get(node.id) ?? 0
-        return `${nodeLabel(node.title)}${suffix}<br/>关联 ${links} 条`
+        const lines = [`${nodeLabel(node.title)}${suffix}`]
+        // 需求 0191 C3：状态 / 标签 / 更新时间，悬停即看
+        if (!node.broken && node.status) lines.push(`状态：${STATUS_LABELS[node.status] ?? node.status}`)
+        if (node.tag) lines.push(`标签：${node.tag}`)
+        if (node.updated_at) lines.push(`更新：${formatRelativeTime(node.updated_at)}`)
+        lines.push(`关联 ${links} 条`)
+        return lines.join('<br/>')
       },
     },
     series: [
@@ -504,6 +603,8 @@ function buildOption(
             : isIsolated
               ? ISOLATED_NODE_OPACITY
               : 0.95
+          // 需求 0191 C4：节点色跟著着色维度走；0191 C5：断链虚拟节点用虚线边框 + 淡色
+          const groupColor = colorGroupMeta(colorGroupKey(node, colorBy), colorBy, colors).color
           return {
             id: String(node.id),
             name: node.title,
@@ -511,11 +612,15 @@ function buildOption(
             value: node.id,
             is_folder: node.is_folder,
             itemStyle: {
-              color: formatColor(node, colors),
-              // 选中靠描边与投影表达（H24 选中语义），不用换填充色，格式色仍是主信息
+              color: groupColor,
+              // 选中靠描边与投影表达（H24 选中语义），不用换填充色，维度色仍是主信息
               borderColor: isSelected ? colors.primary : colors.container,
               // 分隔环（C4）：容器底色 2px，节点与交叉边之间留一圈留白；选中换成主色
               borderWidth: 2,
+              // 断链虚拟节点（0191 C5）：虚线边框 + 半透明填充，视觉上与已创建文档区分
+              ...(node.broken
+                ? { borderType: 'dashed' as const, borderColor: colors.error, opacity: 0.55 }
+                : {}),
               shadowBlur: isSelected ? 10 : 0,
               shadowColor: isSelected ? colors.primary : 'transparent',
               opacity,
@@ -550,8 +655,8 @@ function buildOption(
             // link 级 symbol 逐条覆盖 series 默认：两端箭头即互引（C2），无需拆第二个 series（D2）
             ...(edge.mutual ? { symbol: ['arrow', 'arrow'] } : {}),
             lineStyle: {
-              // 线色跟源节点格式走（C5）：一眼看出「谁连出去的是哪类文档」
-              color: edgeColor(edge, nodeById.get(edge.source), colors),
+              // 线色跟源节点维度走（0191 C4）：一眼看出「谁连出去的是哪类文档」
+              color: edgeColor(edge, nodeById.get(edge.source), colors, colorBy),
               type: edge.broken ? 'dashed' : 'solid',
               width: emphasized ? EDGE_EMPHASIS_WIDTH : EDGE_WIDTH,
               opacity: dimmed
@@ -596,14 +701,19 @@ export default function DocumentGraphPage() {
   const [zoomPct, setZoomPct] = useState(100)
   const [filters, setFilters] = useState<GraphFilters>(EMPTY_FILTERS)
   const [hiddenFormats, setHiddenFormats] = useState<Set<string>>(() => new Set())
-  const [force, setForce] = useState<ForceParams>(DEFAULT_FORCE)
+  // 需求 0191 C2：标签 / 箭头 / 图例 / 力参数 / 着色维度是稳定偏好，挂载时从 localStorage 恢复。
+  // workspaceId 路由段在页面生命周期内不变，只在挂载读一次（刻意不进依赖）
+  const initialPrefs = useMemo(() => loadViewPrefs(workspaceId), []) // eslint-disable-line react-hooks/exhaustive-deps
+  const [force, setForce] = useState<ForceParams>(initialPrefs.force)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [showLabels, setShowLabels] = useState(true)
-  const [showArrows, setShowArrows] = useState(true)
-  /** 布局参数折叠区（0189 C5）：随缩放控件一起进画布右下控制簇，默认收起 */
+  const [showLabels, setShowLabels] = useState(initialPrefs.labels)
+  const [showArrows, setShowArrows] = useState(initialPrefs.arrows)
+  /** 布局参数折叠区（0189 C5）：随缩放控件一起进画布右下控制簇，默认收起（会话态，不持久化） */
   const [forcePanelOpen, setForcePanelOpen] = useState(false)
-  /** 图例收起态（0189 C8）：默认展开（保留格式语义与既有 e2e 断言），可按需收起 */
-  const [legendOpen, setLegendOpen] = useState(true)
+  /** 图例收起态（0189 C8）：默认展开，可按需收起；收起态属稳定偏好（0191 C2） */
+  const [legendOpen, setLegendOpen] = useState(initialPrefs.legendOpen)
+  /** 着色维度（0191 C4）：类型（默认）/ 标签 / 文件夹 */
+  const [colorBy, setColorBy] = useState<ColorBy>(initialPrefs.colorBy)
 
   const graphQuery = useQuery({
     queryKey: ['document-link-graph', workspaceId],
@@ -667,20 +777,35 @@ export default function DocumentGraphPage() {
     [themeMode],
   )
   const option = useMemo(
-    () => buildOption(visible.nodes, displayEdges, colors, metrics, force, selectedId),
-    [visible.nodes, displayEdges, colors, metrics, force, selectedId],
+    () => buildOption(visible.nodes, displayEdges, colors, metrics, force, selectedId, colorBy),
+    [visible.nodes, displayEdges, colors, metrics, force, selectedId, colorBy],
   )
 
-  /** 图例条目按「当前可见图里有出现的格式」生成，避免列出 8 个全没节点的格式 */
+  /** 视图偏好变更写回 localStorage（0191 C2）：集中一处，避免每个 setter 各写一遍 */
+  useEffect(() => {
+    saveViewPrefs(workspaceId, { labels: showLabels, arrows: showArrows, legendOpen, force, colorBy })
+  }, [workspaceId, showLabels, showArrows, legendOpen, force, colorBy])
+
+  /** 图例条目按「当前着色维度 + 当前可见图里有出现的组」生成（0191 C4：图例随维度联动） */
   const legend = useMemo(() => {
     const keys = new Set<string>()
     for (const node of nodes) {
       if (scope && !scope.has(node.id)) continue
-      keys.add(formatKey(node))
+      keys.add(colorGroupKey(node, colorBy))
     }
-    return ['markdown', 'folder', 'pdf', 'image', 'xlsx', 'pptx', 'mhtml', 'word', 'broken']
-      .filter(key => keys.has(key))
-  }, [nodes, scope])
+    if (colorBy === 'type') {
+      return ['markdown', 'folder', 'pdf', 'image', 'xlsx', 'pptx', 'mhtml', 'word', 'broken']
+        .filter(key => keys.has(key))
+    }
+    // tag / folder 档：按出现顺序列出，未分类固定在最后
+    const ordered = [...keys]
+    const at = ordered.indexOf(UNCATEGORIZED_KEY)
+    if (at >= 0) {
+      ordered.splice(at, 1)
+      ordered.push(UNCATEGORIZED_KEY)
+    }
+    return ordered
+  }, [nodes, scope, colorBy])
 
   const isolated = useMemo(() => findIsolated(nodes, degrees), [nodes, degrees])
   const hubs = useMemo(() => findHubs(nodes, degrees), [nodes, degrees])
@@ -801,12 +926,19 @@ export default function DocumentGraphPage() {
     })
   }, [labelsVisible, arrowsVisible, option])
 
-  /** 复位：'restore' 会把 option 重置回初始提交态，同时让力导向重新收敛 */
+  /** 复位：'restore' 会把 option 重置回初始提交态，同时让力导向重新收敛；
+   * 需求 0191 C2：复位同时清空持久化偏好，回到默认视图 */
   const reset = useCallback(() => {
     zoomRef.current = 1
     syncZoomPct()
     chartRef.current?.dispatchAction({ type: 'restore' })
-  }, [syncZoomPct])
+    setShowLabels(DEFAULT_VIEW_PREFS.labels)
+    setShowArrows(DEFAULT_VIEW_PREFS.arrows)
+    setLegendOpen(DEFAULT_VIEW_PREFS.legendOpen)
+    setForce(DEFAULT_VIEW_PREFS.force)
+    setColorBy(DEFAULT_VIEW_PREFS.colorBy)
+    clearViewPrefs(workspaceId)
+  }, [syncZoomPct, workspaceId])
 
   /** 定位到某个节点：echarts 没有「把节点移到中心」的公开能力，用它自带的邻接聚焦代替 */
   const focusNode = useCallback((nodeId: number) => {
@@ -928,6 +1060,17 @@ export default function DocumentGraphPage() {
         />
       </Space.Compact>
       <Space.Compact size="small" className="cn-graph-controls-group">
+        {/* 本地图谱（0191 C1）：选中节点后一键进入局部图；复用 ?focus=&depth= 深链，不新增模式 */}
+        <Tooltip title={selectedId != null ? '以选中为中心看局部图' : '先单击选中一个文档'}>
+          <Button
+            size="small"
+            icon={<ApartmentOutlined />}
+            aria-label="本地图谱"
+            data-testid="graph-local-focus"
+            disabled={selectedId == null}
+            onClick={() => selectedId != null && setFocus(selectedId, 1)}
+          />
+        </Tooltip>
         <Tooltip title="复位视图">
           <Button
             size="small"
@@ -948,6 +1091,16 @@ export default function DocumentGraphPage() {
             onClick={() => setForcePanelOpen(v => !v)}
           />
         </Tooltip>
+        {/* 着色维度（0191 C4）：类型（默认）/ 标签 / 文件夹；切维度不重置力布局 */}
+        <Select
+          size="small"
+          value={colorBy}
+          aria-label="着色维度"
+          data-testid="graph-color-by"
+          options={COLOR_BY_OPTIONS}
+          onChange={value => setColorBy(value)}
+          style={{ width: 92 }}
+        />
       </Space.Compact>
       {forcePanelOpen && (
         <div className="cn-graph-force" data-testid="graph-force-panel">
@@ -1127,6 +1280,7 @@ export default function DocumentGraphPage() {
             </button>
             {legendOpen && legend.map(key => {
               const off = hiddenFormats.has(key)
+              const meta = colorGroupMeta(key, colorBy, colors)
               return (
                 <button
                   key={key}
@@ -1136,8 +1290,8 @@ export default function DocumentGraphPage() {
                   aria-pressed={!off}
                   onClick={() => toggleFormat(key)}
                 >
-                  <span className="cn-graph-legend-dot" style={{ background: legendColor(key, colors) }} />
-                  {legendLabel(key)}
+                  <span className="cn-graph-legend-dot" style={{ background: meta.color }} />
+                  {meta.label}
                 </button>
               )
             })}
@@ -1211,24 +1365,42 @@ export default function DocumentGraphPage() {
                 )}
               </div>
               <Space wrap size={SPACE.xs}>
-                <Button
-                  size="small"
-                  type="primary"
-                  data-testid="graph-inspector-open"
-                  disabled={selected.broken || selected.id <= 0}
-                  onClick={() => openDocument(selected)}
-                >
-                  打开文档
-                </Button>
-                <Button
-                  size="small"
-                  icon={<AimOutlined />}
-                  data-testid="graph-inspector-focus"
-                  disabled={selected.broken || selected.id <= 0}
-                  onClick={() => setFocus(selected.id, focusDepth)}
-                >
-                  设为中心
-                </Button>
+                {selected.broken ? (
+                  /* 断链虚拟节点（0191 C5）：目标尚未创建，给「去创建」预填标题 */
+                  <Button
+                    size="small"
+                    type="primary"
+                    data-testid="graph-inspector-create"
+                    onClick={() =>
+                      navigate(
+                        `/w/${workspaceId}/documents?create=1&title=${encodeURIComponent(selected.title)}`,
+                      )
+                    }
+                  >
+                    去创建「{selected.title}」
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="small"
+                      type="primary"
+                      data-testid="graph-inspector-open"
+                      disabled={selected.id <= 0}
+                      onClick={() => openDocument(selected)}
+                    >
+                      打开文档
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<AimOutlined />}
+                      data-testid="graph-inspector-focus"
+                      disabled={selected.id <= 0}
+                      onClick={() => setFocus(selected.id, focusDepth)}
+                    >
+                      设为中心
+                    </Button>
+                  </>
+                )}
                 <Button
                   size="small"
                   icon={<CopyOutlined />}

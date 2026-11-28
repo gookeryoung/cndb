@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.documents.models import (
     Document,
+    DocumentTag,
     DocumentVersion,
+    Tag,
 )
 from cndb.plugins.documents.services import parse
 
@@ -75,6 +77,7 @@ def build_link_graph(
     - 解析唯一复用 ``parse.iter_wikilinks``，与 /links、/backlinks 同源；
     - 断链目标是虚拟节点（负 id，``broken=true``）；同名多命中取首个并标
       ``ambiguous``；自环过滤、边按 (源, 目标) 去重；
+    - 需求 0191：节点带 ``updated_at`` 与首个标签名 ``tag``（tooltip / 色组用）；
     - H33：draft/archived 仅创建者与 OWNER/超管可见，不可见文档不进节点与边；
     - C6：节点数上限按 updated_at 取最近 N，超出时 ``truncated=true``；
       聚合结果按 (工作区, 可见性身份) 缓存 30s。
@@ -132,9 +135,26 @@ def build_link_graph(
             "status": doc.status,
             "is_folder": bool(doc.is_folder),
             "broken": False,
+            # 需求 0191 C3/C4：tooltip 展示更新时间、按标签着色。
+            # 标签可能多值，图谱只取首个（主标签语义，见 0191 D3）。
+            "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
         }
         for doc in docs
     ]
+    # 首个标签（按 DocumentTag.tag_id 最小者）：一条聚合查询替代逐文档 N+1。
+    first_tag: dict[int, str] = {}
+    if docs:
+        tag_rows = db.execute(
+            select(DocumentTag.document_id, Tag.name)
+            .join(Tag, Tag.id == DocumentTag.tag_id)
+            .where(DocumentTag.document_id.in_([doc.id for doc in docs]))
+            .order_by(DocumentTag.document_id, DocumentTag.tag_id)
+        ).all()
+        for doc_id, tag_name in tag_rows:
+            if doc_id not in first_tag:
+                first_tag[doc_id] = tag_name
+    for node in nodes:
+        node["tag"] = first_tag.get(node["id"])
     broken_ids: set[int] = set()
     # 需求 0182 C2：节点被截断时，指向「存在但落在窗口外」文档的边会被丢掉，
     # 不统计的话中心文档看起来像孤立点。按 (源, 目标标题) 去重计数。
@@ -180,6 +200,9 @@ def build_link_graph(
                             "status": "broken",
                             "is_folder": False,
                             "broken": True,
+                            # 断链目标不存在：无更新时间、无标签（0191 C3/C4）
+                            "updated_at": None,
+                            "tag": None,
                         }
                     )
             elif target_id == doc.id:

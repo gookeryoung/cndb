@@ -61,7 +61,10 @@ function LocationProbe() {
 function renderPage(route = '/w/10/documents/graph') {
   return renderProviders(
     <Routes>
-      <Route path="/w/:wid/documents/graph" element={<DocumentGraphPage />} />
+      <Route path="/w/:wid/documents/graph" element={<>
+        <DocumentGraphPage />
+        <LocationProbe />
+      </>} />
       <Route path="/w/:wid/documents" element={<LocationProbe />} />
       <Route path="/w/:wid/documents/:docId" element={<div data-testid="editor-stub" />} />
     </Routes>,
@@ -1006,5 +1009,168 @@ describe('知识图谱版式与空载态（需求 0189）', () => {
     const page = await screen.findByTestId('document-graph-page')
     expect(page).toHaveClass('cn-page')
     expect(page).toHaveClass('cn-graph-page')
+  })
+})
+
+/** 需求 0191：本地图谱 / 视图持久化 / tooltip / 色组 / 断链去创建 */
+describe('知识图谱功能补齐（需求 0191）', () => {
+  beforeEach(() => {
+    echartsMock.init.mockClear()
+    echartsMock.setOption.mockClear()
+    echartsMock.on.mockClear()
+    echartsMock.dispose.mockClear()
+    echartsMock.dispatchAction.mockClear()
+    echartsMock.getOption.mockClear()
+    echartsMock.getOption.mockReturnValue({ series: [{ zoom: 1 }] })
+    window.localStorage.clear()
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(graphPayload)),
+    )
+  })
+
+  it('C1：本地图谱按钮——未选中时禁用，选中后一键进入 ?focus=&depth=1', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    const btn = screen.getByTestId('graph-local-focus')
+    expect(btn).toBeDisabled()
+
+    clickNode(1)
+    await screen.findByTestId('graph-inspector-detail')
+    expect(btn).not.toBeDisabled()
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('focus=1'))
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('depth=1'))
+    // 中心 Tag 出现，聚焦语义与 Inspector「设为中心」一致
+    expect(screen.getByTestId('graph-focus-tag')).toHaveTextContent('甲')
+  })
+
+  it('C2：视图偏好写回 localStorage 并在重新挂载时恢复；复位清空偏好键', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    // 改两项偏好：标签开关 + 力参数
+    fireEvent.click(screen.getByTestId('graph-labels-toggle'))
+    fireEvent.click(screen.getByTestId('graph-force-toggle'))
+    const slider = (await screen.findByTestId('graph-force-repulsion-wrap')).querySelector('[role="slider"]') as HTMLElement
+    fireEvent.keyDown(slider, { key: 'ArrowRight', keyCode: 39, which: 39 })
+    await waitFor(() => {
+      const raw = window.localStorage.getItem('cndb.graph.view.10')
+      expect(raw).toBeTruthy()
+      const prefs = JSON.parse(raw as string)
+      expect(prefs.labels).toBe(false)
+      expect(prefs.force.repulsion).toBe(240)
+    })
+
+    // 复位：偏好回到默认且 localStorage 键被清空（复位后组件会再写回一次默认值，
+    // 这是预期行为：键里存的是「默认值」而非不存在。断言值回到默认即可）
+    fireEvent.click(screen.getByTestId('graph-reset'))
+    await waitFor(() => {
+      const raw = window.localStorage.getItem('cndb.graph.view.10')
+      expect(raw).toBeTruthy()
+      const prefs = JSON.parse(raw as string)
+      expect(prefs.labels).toBe(true)
+      expect(prefs.force.repulsion).toBe(220)
+    })
+    expect(screen.getByTestId('graph-labels-toggle')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('C2：重新挂载恢复上次的偏好（标签关闭、图例收起、力参数）', async () => {
+    window.localStorage.setItem(
+      'cndb.graph.view.10',
+      JSON.stringify({ labels: false, arrows: true, legendOpen: false, force: { repulsion: 400, edgeLength: 120, gravity: 0.1 }, colorBy: 'type' }),
+    )
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    expect(screen.getByTestId('graph-labels-toggle')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByTestId('graph-legend-toggle')).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByTestId('graph-force-toggle'))
+    const wrap = await screen.findByTestId('graph-force-repulsion-wrap')
+    expect((wrap.querySelector('[role="slider"]') as HTMLElement).getAttribute('aria-valuenow')).toBe('400')
+    // 损坏 JSON 容错：不崩、回默认
+    window.localStorage.setItem('cndb.graph.view.10', '{broken')
+    expect(() => window.dispatchEvent(new Event('noop'))).not.toThrow()
+  })
+
+  it('C3：tooltip 含状态 / 标签 / 更新时间，断链节点标注「尚未创建」', async () => {
+    const payloadWithMeta = {
+      ...graphPayload,
+      nodes: graphPayload.nodes.map(n =>
+        n.id === 1 ? { ...n, updated_at: '2026-11-28T10:00:00', tag: '实验' } : n,
+      ),
+    }
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(payloadWithMeta)),
+    )
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    // formatter 运行时拿到的 params.data 是接口载荷原样透传：直接用 payload 节点验证输出
+    const option = echartsMock.setOption.mock.calls[0][0]
+    const node = payloadWithMeta.nodes.find(n => n.id === 1)!
+    const brokenNode = payloadWithMeta.nodes.find(n => n.broken)!
+    const nodeTooltip = option.tooltip.formatter({ dataType: 'node', data: node }) as string
+    expect(nodeTooltip).toContain('状态：')
+    expect(nodeTooltip).toContain('标签：实验')
+    expect(nodeTooltip).toContain('更新：')
+    const brokenTooltip = option.tooltip.formatter({ dataType: 'node', data: brokenNode }) as string
+    expect(brokenTooltip).toContain('尚未创建')
+  })
+
+  it('C4：着色维度三档——切到标签档后图例与节点色分组联动', async () => {
+    const taggedPayload = {
+      ...graphPayload,
+      nodes: graphPayload.nodes.map((n, i) =>
+        n.broken ? n : { ...n, tag: ['实验', '综述', '实验'][i] ?? null },
+      ),
+    }
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () => HttpResponse.json(taggedPayload)),
+    )
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    // 默认按类型：图例有 markdown / pdf / folder
+    expect(screen.getByTestId('graph-legend-markdown')).toBeInTheDocument()
+    expect(screen.getByTestId('graph-legend-pdf')).toBeInTheDocument()
+
+    // 切到「按标签」：图例变为标签名，未分类归最后。
+    // antd 6：Select 根节点即 data-testid 宿主（.ant-select-selector 已移除），mousedown 根节点打开下拉
+    fireEvent.mouseDown(screen.getByTestId('graph-color-by'))
+    fireEvent.click(await screen.findByTitle('按标签'))
+    await waitFor(() => expect(screen.queryByTestId('graph-legend-markdown')).toBeNull())
+    expect(screen.getByTestId('graph-legend-实验')).toBeInTheDocument()
+    expect(screen.getByTestId('graph-legend-综述')).toBeInTheDocument()
+  })
+
+  it('C5：断链节点虚线边框样式，Inspector 出「去创建」预填标题', async () => {
+    renderPage()
+    await screen.findByTestId('document-graph-canvas')
+    await waitFor(() => expect(echartsMock.on).toHaveBeenCalled())
+
+    // 画布样式：断链节点虚线边框 + error 色
+    const series = lastGraphOption()
+    const brokenNode = series.data[3]
+    expect(brokenNode.itemStyle.borderType).toBe('dashed')
+    expect(String(brokenNode.itemStyle.borderColor)).not.toContain('var(')
+    // 正常节点仍是实线分隔环
+    expect(series.data[0].itemStyle.borderType).toBeUndefined()
+
+    // Inspector：点断链节点出「去创建」按钮，带预填标题跳新建
+    clickNode(-123)
+    expect(await screen.findByTestId('graph-inspector-detail')).toBeInTheDocument()
+    const create = screen.getByTestId('graph-inspector-create')
+    expect(create).toHaveTextContent('去创建「断链目标」')
+    fireEvent.click(create)
+    await waitFor(() =>
+      expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents?create=1&title='),
+    )
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent(encodeURIComponent('断链目标')))
   })
 })

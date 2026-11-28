@@ -231,6 +231,56 @@ class TestLinkGraph:
         assert payload["edges_out_of_view"] == 0
         assert {n["title"] for n in payload["nodes"]} == {"已发布"}
 
+    def test_node_payload_carries_updated_at_and_first_tag(self, client, auth_headers, db):
+        """需求 0191 C3/C4：节点带 updated_at 与首个标签名，tooltip / 色组数据源."""
+        from cndb.plugins.documents.models import Tag
+
+        wid = _ws(client, auth_headers, "图谱载荷")
+        a = _create(client, wid, auth_headers, "带标签甲", "正文 [[乙]]")
+        tag1 = Tag(workspace_id=wid, name="主标签")
+        tag2 = Tag(workspace_id=wid, name="次要标签")
+        db.add_all([tag1, tag2])
+        db.commit()
+        r = client.patch(
+            f"{API.format(wid=wid)}/{a['id']}",
+            json={"tag_ids": [tag2.id, tag1.id]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        _reset_cache()
+
+        payload = client.get(API.format(wid=wid) + "/links/graph", headers=auth_headers).json()
+        node_a = next(n for n in payload["nodes"] if n["id"] == a["id"])
+        # 首个标签按 tag_id 最小者（主标签语义），不是传入顺序
+        assert node_a["tag"] == "主标签"
+        assert node_a["updated_at"]
+        # 断链虚拟节点无时间与标签
+        broken = next(n for n in payload["nodes"] if n["broken"])
+        assert broken["updated_at"] is None
+        assert broken["tag"] is None
+
+    def test_set_tags_invalidates_graph_cache(self, client, auth_headers, db):
+        """需求 0191 C4：改标签后图谱写后即见（0182 C1 教训，不靠 30s TTL）."""
+        from cndb.plugins.documents.models import Tag
+
+        wid = _ws(client, auth_headers, "图谱标签失效")
+        a = _create(client, wid, auth_headers, "标签失效甲", "正文")
+        tag = Tag(workspace_id=wid, name="失效标签")
+        db.add(tag)
+        db.commit()
+        _reset_cache()
+
+        first = client.get(API.format(wid=wid) + "/links/graph", headers=auth_headers).json()
+        assert next(n for n in first["nodes"] if n["id"] == a["id"])["tag"] is None
+
+        client.post(
+            f"{API.format(wid=wid)}/{a['id']}/tags",
+            json={"tag_ids": [tag.id]},
+            headers=auth_headers,
+        )
+        second = client.get(API.format(wid=wid) + "/links/graph", headers=auth_headers).json()
+        assert next(n for n in second["nodes"] if n["id"] == a["id"])["tag"] == "失效标签"
+
     def test_folder_node_marked(self, client, auth_headers):
         """文件夹也是节点（链接目标可为文件夹），前端据此跳目录列表而非编辑器."""
         wid = _ws(client, auth_headers, "图谱文件夹")

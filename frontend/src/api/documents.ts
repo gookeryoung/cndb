@@ -159,6 +159,10 @@ export interface GraphNode {
   /** 文件夹节点：点击进入其文档列表而非编辑器 */
   is_folder: boolean
   broken: boolean
+  /** 最近更新时间（需求 0191 C3，tooltip 用）；断链虚拟节点为 null */
+  updated_at?: string | null
+  /** 首个标签名（需求 0191 C4，色组 / tooltip 用）；无标签或断链为 null */
+  tag?: string | null
 }
 
 /** 知识图谱边：source/target 为节点 id，ambiguous 表示同名多文档 */
