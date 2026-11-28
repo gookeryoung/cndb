@@ -16,7 +16,7 @@
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Drawer, Dropdown, Empty, Popconfirm, Segmented, Select, Skeleton, Space, Tag, Tooltip,
+  Alert, App as AntApp, Button, Drawer, Dropdown, Empty, Popconfirm, Segmented, Select, Skeleton, Space, Spin, Tag, Tooltip,
   Typography,
 } from 'antd'
 import type { InputNumberProps } from 'antd'
@@ -37,7 +37,9 @@ import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
 import DesignParamsPanel from './DesignParamsPanel'
 import type { DslLibraryOption, DslPartOption } from './designCompletion'
-import { collectNodeIndices, resolveOutlinePath } from './designOutline'
+import { collectHiddenNodeIndices, collectNodeIndices, resolveOutlinePath } from './designOutline'
+import { clearHiddenKeys, useDesignHiddenKeys } from './designVisibility'
+import { EyeInvisibleOutlined } from '@ant-design/icons'
 import { useDesignPreview } from './useDesignPreview'
 import type { PreviewStats, ViewportApi } from './PreviewCanvas'
 import { VIEW_PRESETS, type ViewOrientation } from './viewOrient'
@@ -176,6 +178,13 @@ export default function DesignEditorPage() {
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(readCollapsed)
   const narrow = useNarrow()
   const [stats, setStats] = useState<PreviewStats>({ nodes: 0, triangles: 0 })
+  // ── 载入态（需求 0192 C4–C8）────────────────────────────────────
+  // firstFrameReady：视口已铺出可看几何（骨架完成即置真，不等 Worker 精确替换，D3）
+  const [firstFrameReady, setFirstFrameReady] = useState(false)
+  // 已用时长（秒）：从「进入等待」起算，用于超时文案分级（C8）
+  const [waitSeconds, setWaitSeconds] = useState(0)
+  // 等待起点：compiling 或 IR 变更时重置
+  const waitStartedAt = useRef<number | null>(null)
   const [gridVisible, setGridVisible] = useState(true)
   const viewportApiRef = useRef<ViewportApi | null>(null)
   /** 待高亮的源行（api 未就绪或 IR 未到达时暂存，就绪后补一次） */
@@ -453,6 +462,46 @@ export default function DesignEditorPage() {
   /** 树↔视口联动（C7）：按大纲归属把源行映射到顶层 nodes 下标并高亮 */
   const irRef = useRef(preview.ir)
   irRef.current = preview.ir
+
+  // ── 载入态派生（需求 0192 C4 / C5 / C7 / C8）──────────────────────
+  /** 需要展示载入层：正在编译，或 IR 已到但视口还没铺出可看几何 */
+  const previewLoading = preview.compiling || !firstFrameReady
+
+  // IR 变化（含首次到达）→ 重新进入等待：旧骨架已清空，新几何尚未就绪
+  useEffect(() => {
+    setFirstFrameReady(false)
+  }, [preview.ir])
+
+  // 等待计时：previewLoading 为真时每 500ms 刷新一次已用秒数，供超时文案分级（C8）
+  useEffect(() => {
+    if (!previewLoading) {
+      waitStartedAt.current = null
+      setWaitSeconds(0)
+      return
+    }
+    waitStartedAt.current ??= performance.now()
+    const started = waitStartedAt.current
+    const timer = window.setInterval(() => {
+      setWaitSeconds(Math.floor((performance.now() - started) / 1000))
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [previewLoading])
+
+  // 结构树勾选显隐（需求 0193 C1/C3）：单一来源在 designVisibility store（侧栏树与
+  // 编辑器视口共用），这里派生隐藏下标并下发视口；无 outline / v4 旧快照为空集合
+  const hiddenKeys = useDesignHiddenKeys(designId)
+  const hiddenIndices = useMemo(() => {
+    const outline = preview.ir?.outline?.children
+    if (!outline || hiddenKeys.size === 0) return []
+    return collectHiddenNodeIndices(outline, Number(designId), hiddenKeys).indices
+  }, [preview.ir, designId, hiddenKeys])
+
+  // 视口就绪或隐藏集合变化：整集合替换语义下发（IR 重编译后也由 onViewportApi / 本 effect 补发）
+  const hiddenIndicesRef = useRef(hiddenIndices)
+  hiddenIndicesRef.current = hiddenIndices
+  useEffect(() => {
+    viewportApiRef.current?.setVisible(hiddenIndices)
+  }, [hiddenIndices])
   const runHighlight = useCallback((line: number | undefined) => {
     const outline = irRef.current?.outline?.children
     const api = viewportApiRef.current
@@ -484,6 +533,8 @@ export default function DesignEditorPage() {
     viewportApiRef.current = api
     if (!api) return
     api.setGridVisible(gridVisible)
+    // 视口刚就绪（含 IR 重编译后组件重建）：补发当前显隐集合（0193 C3）
+    api.setVisible(hiddenIndicesRef.current)
     if (pendingHighlightLine.current != null) runHighlight(pendingHighlightLine.current)
   }, [gridVisible, runHighlight])
 
@@ -851,8 +902,43 @@ export default function DesignEditorPage() {
           <div className="cn-dsl-viewport">
             <div className="cn-dsl-preview-host">
               <Suspense fallback={<Skeleton active style={{ height: '100%' }} />}>
-                <PreviewCanvas ir={preview.ir} onStats={setStats} onViewportApi={onViewportApi} />
+                <PreviewCanvas
+                  ir={preview.ir}
+                  onStats={setStats}
+                  onViewportApi={onViewportApi}
+                  onFirstFrame={() => setFirstFrameReady(true)}
+                />
               </Suspense>
+              {/* 求值载入层（需求 0192 C4–C8）：CSG 求值期间给明确反馈，避免黑底空画布被误认为出错。
+                  三态：无 IR（实心）/ 骨架中（半透明，几何已在后台逐帧出现）/ 完成（卸载）。
+                  pointer-events: none —— 骨架可见时用户仍能拖拽旋转（D4），「能操作」比进度条更能消解疑虑。 */}
+              {previewLoading && (
+                <div
+                  className={`cn-dsl-preview-loading${preview.ir ? ' is-partial' : ' is-empty'}`}
+                  data-testid="design-preview-loading"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Spin size="small" />
+                  <span className="cn-dsl-preview-loading-text" data-testid="design-preview-loading-text">
+                    {preview.ir ? '正在计算几何…' : '正在编译…'}
+                  </span>
+                  <span className="cn-dsl-preview-loading-elapsed" data-testid="design-preview-loading-elapsed">
+                    {waitSeconds} s
+                  </span>
+                  {/* 超时文案分级（C8）：不做假进度条（D5），只给「为什么慢 + 能做什么」 */}
+                  {waitSeconds >= 5 && (
+                    <span className="cn-dsl-preview-loading-hint" data-testid="design-preview-loading-hint">
+                      复杂模型首次计算较慢，可先查看结构树
+                    </span>
+                  )}
+                  {waitSeconds >= 15 && (
+                    <span className="cn-dsl-preview-loading-hint" data-testid="design-preview-loading-hint-slow">
+                      可降低布尔运算中图元的 fn 分段数或简化布尔层级
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             {/* 视口悬浮工具条（C3）：七向定向 / 布满 / 网格 */}
             <div className="cn-dsl-viewport-toolbar" data-testid="design-viewport-toolbar">
@@ -888,9 +974,29 @@ export default function DesignEditorPage() {
                 />
               </Tooltip>
             </div>
-            {/* 视口状态条（C4）：单位取 IR 显式声明（D5），统计来自 onStats */}
+            {/* 视口状态条（C4）：单位取 IR 显式声明（D5），统计来自 onStats；
+                隐藏非空时追加「隐藏 N · 全部显示」入口（0193 C4） */}
             <div className="cn-dsl-statusbar" data-testid="design-statusbar">
-              {preview.ir?.units.length ?? '—'} · 节点 {stats.nodes} · 三角 {stats.triangles}
+              {/* 求值中显示「计算中…」而非「节点 0 · 三角 0」（0192 C7）：后者会被读成「模型是空的」 */}
+              {previewLoading
+                ? `${preview.ir?.units.length ?? '—'} · 计算中…`
+                : `${preview.ir?.units.length ?? '—'} · 节点 ${stats.nodes} · 三角 ${stats.triangles}`}
+              {hiddenIndices.length > 0 && (
+                <>
+                  {' · '}
+                  <span className="cn-dsl-statusbar-hidden" data-testid="design-hidden-count">隐藏 {hiddenIndices.length}</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    className="cn-dsl-statusbar-showall"
+                    icon={<EyeInvisibleOutlined />}
+                    data-testid="design-show-all"
+                    onClick={() => clearHiddenKeys(designId)}
+                  >
+                    全部显示
+                  </Button>
+                </>
+              )}
             </div>
           </div>
           <DesignParamsPanel

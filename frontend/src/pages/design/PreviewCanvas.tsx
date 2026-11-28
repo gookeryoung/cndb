@@ -12,7 +12,6 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { DesignIR } from '@/api'
 import {
   approximatePrimitives,
-  buildIRMeshes,
   deserializeGeometry,
   evalNode,
   type SerializedGeometry,
@@ -48,6 +47,9 @@ export interface ViewportApi {
   setGridVisible: (visible: boolean) => void
   /** 树↔视口联动高亮（D8）：顶层 nodes 下标集合，emissive tint 3s 渐隐 */
   highlight: (indices: number[]) => void
+  /** 结构树勾选显隐（需求 0193 C2）：顶层 nodes 下标集合持久显隐；
+   * 传空集合 = 全部显示。切 IR 后由编辑器页重发当前集合。 */
+  setVisible: (hiddenIndices: number[]) => void
 }
 
 interface PreviewCanvasProps {
@@ -56,6 +58,9 @@ interface PreviewCanvasProps {
   onStats?: (stats: PreviewStats) => void
   /** 视口能力就绪回调（挂载后调用一次；卸载时回调 null） */
   onViewportApi?: (api: ViewportApi | null) => void
+  /** 首帧可看几何就绪（需求 0192 C5）：骨架构建完成即回调，不等 Worker 精确替换。
+   * IR 变更后重新进入「未就绪」，由编辑器页据此开关载入层（D3）。 */
+  onFirstFrame?: () => void
 }
 
 /** 高亮渐隐时长（ms）：常亮 2.4s 后 0.6s 线性淡出（D8） */
@@ -110,13 +115,15 @@ export function frameCamera(camera: THREE.PerspectiveCamera, box: THREE.Box3, fi
   return true
 }
 
-export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCanvasProps) {
+export default function PreviewCanvas({ ir, onStats, onViewportApi, onFirstFrame }: PreviewCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const groupRef = useRef<THREE.Group | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const statsRef = useRef(onStats)
   statsRef.current = onStats
+  const firstFrameRef = useRef(onFirstFrame)
+  firstFrameRef.current = onFirstFrame
   const viewportApiRef = useRef(onViewportApi)
   viewportApiRef.current = onViewportApi
   // 最新 IR：高亮按所需下标即时求值单个节点（不额外常驻几何，ADR 0103 D8）
@@ -125,21 +132,37 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
   const [unsupported, setUnsupported] = useState(false)
   // 高亮中的实体数：写进宿主 data 属性，供 e2e 断言联动（canvas 内部状态无法外部观测）
   const [highlightCount, setHighlightCount] = useState(0)
+  // 隐藏中的实体数（0193 C2）：同上，data-hidden-nodes 供测试 / 观测
+  const [hiddenCount, setHiddenCount] = useState(0)
   // Worker（C8）：惰性创建一次；消息处理经 handlerRef 转发到最新 IR effect
   const workerRef = useRef<Worker | null>(null)
   const handlerRef = useRef<((event: MessageEvent) => void) | null>(null)
   const genRef = useRef(0)
   const nodeGroupsRef = useRef<Map<number, THREE.Group>>(new Map())
+  // 每节点几何缓存（0193 C2）：CSG 合并成静态网格后仍能按节点重建显隐；随 IR effect 清理
+  const nodeGeometriesRef = useRef<Map<number, THREE.BufferGeometry[]>>(new Map())
+  // 当前隐藏集合（0193 C2）：IR 重建 / Worker 替换后按此恢复显隐
+  const hiddenRef = useRef<Set<number>>(new Set())
   const trianglesRef = useRef(0)
   const lastStatsAtRef = useRef(0)
 
-  // 统一统计上报：nodes 固定为顶层节点数，triangles 取当前已挂载几何合计。
+  // 统一统计上报：nodes 只计可见节点（0193 C2，隐藏的不计入读数），triangles 取当前已挂载几何合计。
   // 节流：渐进替换期间每个节点都会变化，限频 200ms 防止整页 React 重渲染风暴
   const reportStats = (ir: DesignIR | null, force = false) => {
     const now = performance.now()
     if (!force && now - lastStatsAtRef.current < 200) return
     lastStatsAtRef.current = now
-    statsRef.current?.({ nodes: ir?.nodes.length ?? 0, triangles: trianglesRef.current })
+    const visibleNodes = ir ? Math.max(0, ir.nodes.length - hiddenRef.current.size) : 0
+    statsRef.current?.({ nodes: visibleNodes, triangles: trianglesRef.current })
+  }
+
+  /** 显隐应用（0193 C2）：按 nodeGroupsRef（index → Group）置 visible；
+   * 静态合并网格场景在 rebuildStaticMesh 里按 hiddenRef 排除，这里只负责分组态 */
+  const applyGroupVisibility = () => {
+    for (const [index, nodeGroup] of nodeGroupsRef.current) {
+      nodeGroup.visible = !hiddenRef.current.has(index)
+    }
+    setHiddenCount(hiddenRef.current.size)
   }
 
   // ── WebGL 场景：仅挂载一次（上下文创建失败降级为提示块，不抛错） ──
@@ -290,6 +313,7 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
       fit,
       setGridVisible: (visible: boolean) => { grid.visible = visible },
       highlight,
+      setVisible: setVisibleFromApi,
     })
 
     const resize = () => {
@@ -328,6 +352,8 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
       })
       scene.clear()
     }
+    // setVisibleFromApi 只读写 ref / setState，挂载后引用稳定，不进依赖数组
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Worker 生命周期：挂载创建、卸载终止 ──
@@ -349,6 +375,66 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
     }
   }, [])
 
+  /** 重建静态合并网格（0193 C2）：按缓存几何合并可见节点为单一 mesh；
+   * 无缓存几何（Worker 结果未回齐）时不动，等 done 消息后再合并 */
+  const rebuildStaticMesh = () => {
+    const group = groupRef.current
+    if (!group) return
+    // 清掉旧网格（分组或旧静态）
+    for (const nodeGroup of nodeGroupsRef.current.values()) {
+      nodeGroup.traverse(obj => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose()
+      })
+    }
+    nodeGroupsRef.current.clear()
+    group.clear()
+    trianglesRef.current = 0
+    let mergedAny = false
+    for (const [index, geometries] of nodeGeometriesRef.current) {
+      if (hiddenRef.current.has(index)) continue
+      const nodeGroup = new THREE.Group()
+      for (const geometry of geometries) {
+        nodeGroup.add(new THREE.Mesh(geometry, getMaterial()))
+        trianglesRef.current += Math.floor(geometry.getAttribute('position').count / 3)
+      }
+      nodeGroupsRef.current.set(index, nodeGroup)
+      group.add(nodeGroup)
+      mergedAny = true
+    }
+    // 无隐藏时才合并：draw call 收益只在「全显示」这个绝大多数时间所处的状态下拿（C9）
+    if (mergedAny && hiddenRef.current.size === 0 && nodeGeometriesRef.current.size > 1) {
+      const flat: THREE.BufferGeometry[] = []
+      for (const geometries of nodeGeometriesRef.current.values()) flat.push(...geometries)
+      try {
+        const merged = mergeGeometries(flat.map(toMergable), false)
+        if (merged) {
+          merged.computeVertexNormals()
+          group.clear()
+          nodeGroupsRef.current.clear()
+          group.add(new THREE.Mesh(merged, getMaterial()))
+          trianglesRef.current = 0
+          const position = merged.getAttribute('position')
+          trianglesRef.current = Math.floor(position.count / 3)
+        }
+      } catch {
+        // 合并失败保留分组态
+      }
+    }
+    setHiddenCount(hiddenRef.current.size)
+  }
+
+  /** 显隐 API（0193 C2）：整集合替换语义；静态网格态需要重建，分组态只翻 visible */
+  const setVisibleFromApi = (indices: number[]) => {
+    hiddenRef.current = new Set(indices)
+    const cached = nodeGeometriesRef.current.size
+    const grouped = nodeGroupsRef.current.size
+    // 有静态网格（nodeGroups 只有 1 个 mesh 或为空且缓存齐）→ 重建；否则只翻分组 visible
+    const isStatic = grouped === 0 && cached > 1
+    if (isStatic) rebuildStaticMesh()
+    else applyGroupVisibility()
+    reportStats(irRef.current, true)
+  }
+
   // ── IR 变更：首帧同步近似骨架，CSG 精确几何由 Worker 渐进替换（ADR 0086 C8） ──
   useEffect(() => {
     const group = groupRef.current
@@ -362,6 +448,8 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
       })
     }
     nodeGroupsRef.current.clear()
+    nodeGeometriesRef.current.clear()
+    hiddenRef.current = new Set(hiddenRef.current)  // 引用不变，内容交由 setVisible 重发（编辑器页在 IR 后重发）
     group.clear()
     trianglesRef.current = 0
     if (!ir || ir.nodes.length === 0) {
@@ -371,19 +459,25 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
 
     const worker = workerRef.current
     if (!worker) {
-      // 回退路径（无 Worker 环境）：主线程同步全量求值（原行为）
-      const meshes = buildIRMeshes(ir)
-      for (const mesh of meshes) {
-        group.add(mesh)
-        const position = mesh.geometry.getAttribute('position')
-        trianglesRef.current += Math.floor(position.count / 3)
+      // 回退路径（无 Worker 环境）：主线程同步全量求值；按节点分组以便显隐（0193 C2）
+      for (let index = 0; index < ir.nodes.length; index += 1) {
+        const geometry = evalNode(ir.nodes[index])
+        if (!geometry) continue
+        const nodeGroup = new THREE.Group()
+        nodeGroup.add(new THREE.Mesh(geometry, getMaterial()))
+        nodeGroupsRef.current.set(index, nodeGroup)
+        nodeGeometriesRef.current.set(index, [geometry])
+        group.add(nodeGroup)
+        trianglesRef.current += Math.floor(geometry.getAttribute('position').count / 3)
       }
+      applyGroupVisibility()
       const box = new THREE.Box3().setFromObject(group)
       if (frameCamera(camera, box) && controls) {
         controls.target.copy(box.getCenter(new THREE.Vector3()))
         controls.update()
       }
-      statsRef.current?.({ nodes: meshes.length, triangles: trianglesRef.current })
+      reportStats(ir, true)
+      firstFrameRef.current?.() // 无 Worker 回退：同步求值完成即可看（0192 C5）
       return
     }
 
@@ -409,6 +503,8 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
             merged = null
           }
         }
+        // 缓存每节点几何（0193 C2）：显隐切换重建静态网格时不再重新求值
+        nodeGeometriesRef.current.set(index, geometries)
         if (merged) {
           for (const geometry of geometries) geometry.dispose()
           merged.computeVertexNormals()
@@ -422,6 +518,7 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
         }
         nodeGroupsRef.current.set(index, nodeGroup)
         group.add(nodeGroup)
+        nodeGroup.visible = !hiddenRef.current.has(index)
       }
       const box = new THREE.Box3().setFromObject(group)
       if (frameCamera(camera, box) && controls) {
@@ -433,6 +530,9 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
         window.requestAnimationFrame(buildBatch)
       } else {
         reportStats(ir, true) // 骨架构建完成：强制上报一次最终统计
+        // 首帧可看（0192 C5 / D3）：骨架已铺满，用户能拖拽旋转即可关载入层，
+        // 不等 Worker 的 CSG 精确替换（那一步可能还要几百 ms，但已有可看的轮廓）。
+        firstFrameRef.current?.()
       }
     }
     buildBatch()
@@ -450,36 +550,19 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
         nodeGroup.clear()
         if (message.geometry) {
           const geometry = deserializeGeometry(message.geometry)
+          nodeGeometriesRef.current.set(message.index, [geometry])
           nodeGroup.add(new THREE.Mesh(geometry, getMaterial()))
           trianglesRef.current += Math.floor(geometry.getAttribute('position').count / 3)
+        } else {
+          nodeGeometriesRef.current.delete(message.index)
         }
         reportStats(ir)
       } else if (message.type === 'done' && message.gen === gen) {
         // 全部节点替换完成：合并为单一静态网格（draw call 200 → 1，
-        // 软渲染 / 低端 GPU 上每帧代价与 draw call 线性相关，C9）
-        const geometries: THREE.BufferGeometry[] = []
-        for (const nodeGroup of nodeGroupsRef.current.values()) {
-          nodeGroup.traverse(obj => {
-            if (obj instanceof THREE.Mesh) geometries.push(obj.geometry)
-          })
-        }
-        let staticMesh: THREE.Mesh | null = null
-        if (geometries.length > 1) {
-          try {
-            const merged = mergeGeometries(geometries.map(toMergable), false)
-            if (merged) {
-              for (const geometry of geometries) geometry.dispose()
-              staticMesh = new THREE.Mesh(merged, getMaterial())
-            }
-          } catch {
-            staticMesh = null
-          }
-        }
-        if (staticMesh) {
-          group.clear()
-          nodeGroupsRef.current.clear()
-          group.add(staticMesh)
-        }
+        // 软渲染 / 低端 GPU 上每帧代价与 draw call 线性相关，C9）；
+        // 有隐藏节点时保留分组态（0193 C2：逐节点 visible 才能承载显隐）
+        if (hiddenRef.current.size === 0) rebuildStaticMesh()
+        applyGroupVisibility()
         reportStats(ir, true) // CSG 替换完成：强制上报最终统计
         handlerRef.current = null
       }
@@ -507,6 +590,7 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
       ref={hostRef}
       data-testid="design-preview-host"
       data-highlight-nodes={highlightCount > 0 ? highlightCount : undefined}
+      data-hidden-nodes={hiddenCount > 0 ? hiddenCount : undefined}
       style={{ width: '100%', height: '100%', minHeight: 320 }}
     />
   )

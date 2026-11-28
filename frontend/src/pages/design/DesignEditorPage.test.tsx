@@ -17,6 +17,7 @@ import { startCompletion } from '@codemirror/autocomplete'
 import { Routes, Route } from 'react-router-dom'
 import DesignEditorPage, { PARAMS_COLLAPSED_KEY, SPLIT_KEY } from './DesignEditorPage'
 import { renderProviders } from '@/test/render-providers'
+import { clearHiddenKeys, getHiddenKeys, setHiddenKeys } from './designVisibility'
 import { mockWorkspace, server } from '@/test/msw'
 import type {
   DesignDetail, DesignIR, DesignPreviewResult, DesignVersionDetail, DesignVersionItem,
@@ -28,27 +29,37 @@ const viewport = vi.hoisted(() => ({
   orientTo: vi.fn(),
   fit: vi.fn(),
   setGridVisible: vi.fn(),
+  // 0193 C2：结构树显隐（另一会话的改动已把该能力加进 ViewportApi，stub 需跟上）
+  setVisible: vi.fn(),
   stats: [] as Array<{ nodes: number; triangles: number }>,
 }))
 
 vi.mock('./PreviewCanvas', () => ({
   default: function PreviewCanvasStub({
-    ir, onStats, onViewportApi,
+    ir, onStats, onViewportApi, onFirstFrame,
   }: {
     ir: DesignIR | null
     onStats?: (stats: { nodes: number; triangles: number }) => void
     onViewportApi?: (api: typeof viewport | null) => void
+    onFirstFrame?: () => void
   }) {
     // 等价真实组件挂载：上报统计与暴露视口 API（在 effect 中，避免渲染期改父状态）
     useEffect(() => {
       onStats?.({ nodes: ir?.nodes.length ?? 0, triangles: 42 })
     }, [ir, onStats])
+    // 首帧回调（0192 C5）：有 IR 即视为骨架就绪；previewFirstFrameGate 为假时模拟「还在算」。
+    // 测试可通过 previewFirstFrameGate.release() 在断言后放行。
+    useEffect(() => {
+      if (ir && previewFirstFrameGate.value) onFirstFrame?.()
+      previewFirstFrameGate.release = () => onFirstFrame?.()
+    }, [ir, onFirstFrame])
     useEffect(() => {
       onViewportApi?.({
         highlight: viewport.highlight,
         orientTo: viewport.orientTo,
         fit: viewport.fit,
         setGridVisible: viewport.setGridVisible,
+        setVisible: viewport.setVisible,
         stats: [],
       })
       return () => onViewportApi?.(null)
@@ -58,6 +69,11 @@ vi.mock('./PreviewCanvas', () => ({
 }))
 
 const moreMenu = vi.hoisted(() => vi.fn())
+/** 首帧闸门（0192 C5）：默认放行；置 false 可模拟「IR 已到但几何还在算」 */
+const previewFirstFrameGate = vi.hoisted(() => ({
+  value: true,
+  release: () => {},
+}))
 vi.mock('./DesignMoreMenu', () => ({
   default: function DesignMoreMenuStub({ ir, title, onHistory }: {
     ir: DesignIR | null
@@ -193,6 +209,56 @@ async function waitForEditorReady(container: HTMLElement) {
 }
 
 describe('DesignEditorPage 编辑器主流程', () => {
+  // ── 求值载入态（需求 0192 C4–C8）────────────────────────────────
+  it('C4/C5：首帧未就绪时显示载入层，骨架就绪后消失', async () => {
+    previewFirstFrameGate.value = false // 模拟「IR 已到但几何还在算」
+    try {
+      useDefaultHandlers()
+      renderPage()
+      // 载入层出现，且文案说明是在算几何（不是空白画布）
+      const loading = await screen.findByTestId('design-preview-loading')
+      expect(loading).toHaveAttribute('role', 'status')
+      expect(await screen.findByTestId('design-preview-loading-text')).toHaveTextContent('正在计算几何')
+      // 已用时长可见（避免用户不知道等了多久）
+      expect(screen.getByTestId('design-preview-loading-elapsed')).toBeInTheDocument()
+
+      // 放行首帧 → 载入层消失
+      previewFirstFrameGate.value = true
+      act(() => { previewFirstFrameGate.release() })
+      await waitFor(() => expect(screen.queryByTestId('design-preview-loading')).toBeNull())
+    } finally {
+      previewFirstFrameGate.value = true
+    }
+  })
+
+  it('C7：求值中状态条显示「计算中…」而不是「节点 0 · 三角 0」', async () => {
+    previewFirstFrameGate.value = false
+    try {
+      useDefaultHandlers()
+      renderPage()
+      const statusbar = await screen.findByTestId('design-statusbar')
+      await waitFor(() => expect(statusbar).toHaveTextContent('计算中'))
+      // 不该被读成「模型是空的」
+      expect(statusbar).not.toHaveTextContent('节点 0 · 三角 0')
+    } finally {
+      previewFirstFrameGate.value = true
+    }
+  })
+
+  it('C6：载入层用 is-empty / is-partial 区分有无骨架', async () => {
+    previewFirstFrameGate.value = false
+    try {
+      useDefaultHandlers()
+      renderPage()
+      const loading = await screen.findByTestId('design-preview-loading')
+      // IR 已到 → 半透明遮罩（骨架可见），不是实心
+      await waitFor(() => expect(loading.className).toContain('is-partial'))
+      expect(loading.className).not.toContain('is-empty')
+    } finally {
+      previewFirstFrameGate.value = true
+    }
+  })
+
   it('展示标题、版本号、源码与预览 IR', async () => {
     useDefaultHandlers()
     const { container } = renderPage()
@@ -841,5 +907,50 @@ describe('DesignEditorPage 编辑器主流程', () => {
     fireEvent.click(screen.getByTestId('design-library-upgrade-7'))
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]!.content).toBe('use "lib:flange@2"')
+  })
+})
+
+describe('结构树勾选显隐贯通（需求 0193 C2 / C3 / C4）', () => {
+  it('store 变化 → 派生隐藏下标 → 视口 setVisible（C3 单一状态源）', async () => {
+    useDefaultHandlers()
+    renderPage()
+    expect(await screen.findByTestId('preview-canvas-stub')).toBeInTheDocument()
+
+    // IR outline: box 零件 node_index 0；隐藏 key design-20-0 → indices [0]
+    setHiddenKeys(20, new Set(['design-20-0']))
+    await waitFor(() => {
+      expect(viewport.setVisible).toHaveBeenLastCalledWith([0])
+    })
+    clearHiddenKeys(20)
+    await waitFor(() => {
+      expect(viewport.setVisible).toHaveBeenLastCalledWith([])
+    })
+  })
+
+  it('隐藏非空时状态条出现「隐藏 N · 全部显示」，点击后清空（C4）', async () => {
+    useDefaultHandlers()
+    renderPage()
+    expect(await screen.findByTestId('design-statusbar')).toBeInTheDocument()
+    expect(screen.queryByTestId('design-show-all')).toBeNull()
+
+    setHiddenKeys(20, new Set(['design-20-0']))
+    expect(await screen.findByTestId('design-hidden-count')).toHaveTextContent('隐藏 1')
+    fireEvent.click(screen.getByTestId('design-show-all'))
+    await waitFor(() => {
+      expect(getHiddenKeys(20).size).toBe(0)
+      expect(screen.queryByTestId('design-show-all')).toBeNull()
+    })
+  })
+
+  it('v4 旧快照无 node_index：派生隐藏为空，不触发 setVisible 非空下发', async () => {
+    useDefaultHandlers(() => ({ ok: true, ir: { ...IR, outline: undefined }, diagnostics: [] }))
+    renderPage()
+    expect(await screen.findByTestId('preview-canvas-stub')).toBeInTheDocument()
+    setHiddenKeys(20, new Set(['design-20-0']))
+    await waitFor(() => {
+      // 空集合 = 全显示语义（初始化下发），隐藏集合不产生非空下发
+      expect(viewport.setVisible).toHaveBeenLastCalledWith([])
+    })
+    clearHiddenKeys(20)
   })
 })

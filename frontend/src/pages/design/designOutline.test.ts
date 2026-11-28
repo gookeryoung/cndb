@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import type { DesignOutlineNode } from '@/api'
 import {
-  collectNodeIndices, countParts, designEditorPath, groupLabel, outlineKeyPath, outlineToTree,
-  primitiveLabel, resolveOutlinePath,
+  collectHiddenNodeIndices, collectNodeIndices, countParts, designEditorPath, groupLabel,
+  outlineKeyPath, outlineToTree, primitiveLabel, resolveOutlinePath,
 } from './designOutline'
 
 const OUTLINE: DesignOutlineNode[] = [
@@ -242,5 +242,48 @@ describe('collectNodeIndices / outlineKeyPath', () => {
 
   it('空路径返回空 key 列表', () => {
     expect(outlineKeyPath(INDEXED, [], 20)).toEqual([])
+  })
+})
+
+describe('collectHiddenNodeIndices（需求 0193 C1：勾选显隐下钻）', () => {
+  it('取消勾选组件：子树全部 node_index 进入隐藏集合', () => {
+    // 取消勾选 chassis（design-20-0-0）：其子树含 box / cyl（共享下标 0）
+    const result = collectHiddenNodeIndices(INDEXED, 20, new Set(['design-20-0-0']))
+    expect(result.keys).toEqual(['design-20-0-0'])
+    expect(result.indices).toEqual([0])
+  })
+
+  it('取消勾选系统根：全部下标隐藏', () => {
+    const result = collectHiddenNodeIndices(INDEXED, 20, new Set(['design-20-0']))
+    expect(result.indices).toEqual([0, 1])
+  })
+
+  it('多 key 合并去重并升序', () => {
+    // sphere（design-20-0-1）与 chassis（design-20-0-0，下标 0）→ 去重后 [0, 1]
+    const result = collectHiddenNodeIndices(
+      INDEXED, 20, new Set(['design-20-0-0', 'design-20-0-1']),
+    )
+    expect(result.indices).toEqual([0, 1])
+    expect(result.keys).toHaveLength(2)
+  })
+
+  it('取消勾选父节点后不再下探子树（子 key 不重复命中）', () => {
+    // 取消系统根 + 其下 chassis：只收一次 keys（根已覆盖）
+    const result = collectHiddenNodeIndices(
+      INDEXED, 20, new Set(['design-20-0', 'design-20-0-0']),
+    )
+    expect(result.keys).toEqual(['design-20-0'])
+    expect(result.indices).toEqual([0, 1])
+  })
+
+  it('空集合 / 未知 key：隐藏为空', () => {
+    expect(collectHiddenNodeIndices(INDEXED, 20, new Set())).toEqual({ indices: [], keys: [] })
+    expect(collectHiddenNodeIndices(INDEXED, 20, new Set(['nope']))).toEqual({ indices: [], keys: [] })
+  })
+
+  it('v4 旧快照无 node_index：收集为空（与高亮同一静默降级口径）', () => {
+    const result = collectHiddenNodeIndices(OUTLINE, 20, new Set(['design-20-0']))
+    expect(result.keys).toEqual(['design-20-0'])
+    expect(result.indices).toEqual([])
   })
 })

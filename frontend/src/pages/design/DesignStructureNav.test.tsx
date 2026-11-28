@@ -10,6 +10,7 @@ import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 import DesignStructureNav from './DesignStructureNav'
+import { clearHiddenKeys, getHiddenKeys, setHiddenKeys } from './designVisibility'
 import { renderProviders } from '@/test/render-providers'
 import { mockWorkspace, server } from '@/test/msw'
 import type { DesignDetail, DesignListItem, DesignOutlineNode } from '@/api'
@@ -449,5 +450,90 @@ describe('设计侧栏 · 复用模块库（ADR 0118 P1）', () => {
     await waitFor(() => {
       expect(screen.getByTestId('location-probe')).toHaveTextContent(/^\/w\/10\/design$/)
     })
+  })
+})
+
+const SEL_CHECKBOX = '.' + 'ant-tree-checkbox'
+const SEL_CHECKBOX_IND = SEL_CHECKBOX + '-indeterminate'
+const SEL_TREENODE = '.' + 'ant-tree-treenode'
+
+describe('设计侧栏 · 结构树勾选显隐（需求 0193 C1 / C4）', () => {
+  it('默认全勾（checkable 树渲染勾选框），取消勾选写入 store', async () => {
+    useListHandler()
+    useOutlineHandler()
+    renderNav('/w/10/design/20')
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+
+    const tree = screen.getByTestId('design-outline-tree')
+    expect(tree.querySelector('.ant-tree-checkbox')).toBeTruthy()
+
+    // 展开 chassis 并取消勾选
+    await expandNode('design-outline-node-design-20-0')
+    const checkbox = screen.getByTestId('design-outline-node-design-20-0')
+      .closest('.ant-tree-treenode')
+      ?.querySelector(SEL_CHECKBOX) as HTMLElement
+    expect(checkbox).toBeTruthy()
+    fireEvent.click(checkbox)
+    await waitFor(() => {
+      // chassis 子树全部下推隐藏（chassis + group + box + cyl）
+      const keys = [...getHiddenKeys(20)]
+      expect(keys).toEqual(expect.arrayContaining([
+        'design-20-0', 'design-20-0-0', 'design-20-0-0-0', 'design-20-0-0-0-0', 'design-20-0-0-0-1',
+        'design-20-0-1',
+      ]))
+    })
+    clearHiddenKeys(20)
+  })
+
+  it('重新勾选：隐藏集合清空恢复全显（C1）', async () => {
+    useListHandler()
+    useOutlineHandler()
+    setHiddenKeys(20, new Set(['design-20-0']))
+    renderNav('/w/10/design/20')
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+
+    await expandNode('design-outline-node-design-20-0')
+    const checkbox = screen.getByTestId('design-outline-node-design-20-0')
+      .closest(SEL_TREENODE)
+      ?.querySelector(SEL_CHECKBOX) as HTMLElement
+    fireEvent.click(checkbox)
+    await waitFor(() => {
+      expect(getHiddenKeys(20).size).toBe(0)
+    })
+  })
+
+  it('半选态：部分子件隐藏时父节点呈 indeterminate（C1）', async () => {
+    useListHandler()
+    useOutlineHandler()
+    // 只隐藏顶层 sphere（design-20-0-1）→ rover 系统根半选
+    setHiddenKeys(20, new Set(['design-20-0-1']))
+    renderNav('/w/10/design/20')
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+    await waitFor(() => {
+      // rover（chassis 全勾 + sphere 取消）呈半选
+      const roverCheckbox = screen.getByTestId('design-outline-node-design-20-0')
+        .closest(SEL_TREENODE)
+        ?.querySelector(SEL_CHECKBOX)
+      expect(roverCheckbox?.classList.contains('ant-tree-checkbox-indeterminate')).toBe(true)
+    })
+    clearHiddenKeys(20)
+  })
+
+  it('刷新（重新挂载）后隐藏集合按 store 记忆保留、测试间互不串扰', async () => {
+    useListHandler()
+    useOutlineHandler()
+    setHiddenKeys(20, new Set(['design-20-0-1']))
+    renderNav('/w/10/design/20')
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+    // sphere 勾选框呈未勾态（子树 key 在隐藏集合中）
+    await waitFor(() => {
+      // 球体在树中可见（未展开时不渲染），用 rover 的半选间接证明 store 已接入
+      expect(
+        screen.getByTestId('design-outline-node-design-20-0')
+          .closest(SEL_TREENODE)
+          ?.querySelector(SEL_CHECKBOX_IND),
+      ).toBeTruthy()
+    })
+    clearHiddenKeys(20)
   })
 })

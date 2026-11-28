@@ -189,6 +189,38 @@ export function collectNodeIndices(node: DesignOutlineNode): number[] {
   return [...indices]
 }
 
+/** 取消勾选的树 key → 隐藏的顶层 nodes 下标集合（需求 0193 C1）.
+ *
+ * key 口径与 `outlineToTree` 一致（`parentKey-index` 路径）：每个取消勾选的 key
+ * 在树里定位到对应子树，收集其内部全部 `node_index`。v4 及更早快照无 `node_index`
+ * → 收集结果为空 = 不隐藏（与高亮的 I2 静默降级同一口径）。
+ * 返回按大纲子树归属分组的数组：每项 `{ indices, keys }`，keys 为命中的取消勾选 key
+ * （供测试 / 观测），indices 去重排序。
+ */
+export function collectHiddenNodeIndices(
+  nodes: DesignOutlineNode[],
+  designId: number,
+  hiddenKeys: ReadonlySet<string>,
+): { indices: number[]; keys: string[] } {
+  if (hiddenKeys.size === 0) return { indices: [], keys: [] }
+  const indices = new Set<number>()
+  const keys: string[] = []
+  const walk = (level: DesignOutlineNode[], key: string) => {
+    for (let index = 0; index < level.length; index += 1) {
+      const node = level[index]
+      const nodeKey = `${key}-${index}`
+      if (hiddenKeys.has(nodeKey)) {
+        keys.push(nodeKey)
+        collectNodeIndices(node).forEach(i => indices.add(i))
+        continue // 子树已整体取消勾选，不再下探
+      }
+      if (node.kind !== 'part') walk(node.children, nodeKey)
+    }
+  }
+  walk(nodes, `design-${designId}`)
+  return { indices: [...indices].sort((a, b) => a - b), keys }
+}
+
 /** 大纲节点同一定位判定：接口来源不同（/outline 与 /ir 快照）时对象身份不同，按位置签名比较 */
 function sameOutlineNode(a: DesignOutlineNode, b: DesignOutlineNode): boolean {
   if (a.kind !== b.kind || a.line !== b.line || a.col !== b.col) return false

@@ -31,6 +31,7 @@ import { usePersistedState } from '@/utils/persistedState'
 import {
   designEditorPath, latestDesignId, outlineKeyPath, outlineToTree, resolveOutlinePath,
 } from './designOutline'
+import { toggleHiddenKey, useDesignHiddenKeys } from './designVisibility'
 import { entryToTreeNode, type DesignTreeDataNode } from './designTree'
 import {
   DEFAULT_ASSEMBLY_CONTENT, DEFAULT_PART_CONTENT,
@@ -352,6 +353,44 @@ export default function DesignStructureNav({
 
   const activeDesign = designs.find(item => item.id === activeDesignId) ?? null
 
+  // 结构树勾选显隐（需求 0193 C1）：状态单一来源在 designVisibility store（与编辑器视口共用）。
+  // 隐藏集合存「取消勾选」的 key（空 = 全勾 = 全显示）；勾/取消父节点级联下推整棵子树（CAD 惯例）。
+  // 勾选框是唯一持久显隐入口：本页不读 hiddenKeys 渲染受控勾选态（虚拟滚动 + 受控
+  // checkedKeys 需要全量子树 key 集，读 store 的收益为零），onCheck 直接写 store，
+  // 视口侧（编辑器页）订阅同一 store 生效——状态源仍是单一的（0193 C3）。
+  const onOutlineCheck: TreeProps['onCheck'] = (_checked, info) => {
+    if (activeDesignId === undefined || !outline) return
+    const node = info.node as DesignTreeDataNode
+    const key = String(node.key)
+    const hidden = !info.checked
+    toggleHiddenKey(activeDesignId, key, hidden)
+    // 级联下推：父节点勾/取消时，其全部后代 key 同步加入/移出隐藏集合
+    if (node.meta?.type === 'part') return
+    const locate = (level: DesignOutlineNode[], base: string): DesignOutlineNode | null => {
+      for (let index = 0; index < level.length; index += 1) {
+        const candidate = level[index]
+        const candidateKey = `${base}-${index}`
+        if (candidateKey === key) return candidate
+        if (candidate.kind !== 'part') {
+          const found = locate(candidate.children as DesignOutlineNode[], candidateKey)
+          if (found) return found
+        }
+      }
+      return null
+    }
+    const target = locate(outline.nodes, `design-${activeDesignId}`)
+    if (!target) return
+    const cascade = (level: DesignOutlineNode[], base: string) => {
+      level.forEach((child, index) => {
+        const childKey = `${base}-${index}`
+        toggleHiddenKey(activeDesignId, childKey, hidden)
+        if (child.kind !== 'part') cascade(child.children as DesignOutlineNode[], childKey)
+      })
+    }
+    const targetChildren: DesignOutlineNode[] = 'children' in target ? target.children : []
+    cascade(targetChildren, key)
+  }
+
   const treeData = useMemo<DesignTreeDataNode[]>(() => {
     if (!outline || activeDesignId === undefined) return []
     const entries = outlineToTree(outline.nodes, activeDesignId)
@@ -365,6 +404,56 @@ export default function DesignStructureNav({
       children: entries.map(entryToTreeNode),
     }]
   }, [outline, activeDesignId, activeDesign])
+
+  // 隐藏集合（0193 C1）：与编辑器视口同一 store（C3 单一状态源）
+  const hiddenKeys = useDesignHiddenKeys(activeDesignId)
+
+  // 受控勾选态（0193 C1）：隐藏集合存「取消勾选」的 key —— 节点自身或任一后代在集合中
+  // 即未勾（视觉整体隐藏）；部分后代被取消则半选。root 设计节点永远不隐藏，恒勾。
+  const checkedKeys = useMemo<string[]>(() => {
+    const root = treeData[0]
+    if (!root) return []
+    // 全勾快路径（空集合 = 全显示，C1 默认态）：平铺全部 key
+    if (hiddenKeys.size === 0) {
+      const keys: string[] = []
+      const flat = (node: DesignTreeDataNode) => {
+        keys.push(String(node.key))
+        node.children?.forEach(flat)
+      }
+      flat(root)
+      return keys
+    }
+    const keys: string[] = []
+    const walk = (node: DesignTreeDataNode): boolean => {
+      const children = node.children ?? []
+      const anyChildUnchecked = children.some(child => walk(child))
+      const selfUnchecked = hiddenKeys.has(String(node.key))
+      const unchecked = selfUnchecked || (children.length > 0 && anyChildUnchecked)
+      if (!unchecked) keys.push(String(node.key))
+      return unchecked
+    }
+    walk(root)
+    return keys
+  }, [treeData, hiddenKeys])
+
+  const halfCheckedKeys = useMemo<string[]>(() => {
+    if (hiddenKeys.size === 0 || !treeData[0]) return []
+    const keys: string[] = []
+    const walk = (node: DesignTreeDataNode): 'all' | 'none' | 'some' => {
+      const children = node.children ?? []
+      if (children.length === 0) {
+        return hiddenKeys.has(String(node.key)) ? 'none' : 'all'
+      }
+      const states = children.map(child => walk(child))
+      const anySome = states.some(state => state === 'some')
+      const mixed = anySome || (states.includes('all') && states.includes('none'))
+      if (mixed && String(node.key) !== `design-${activeDesignId}`) keys.push(String(node.key))
+      if (anySome || mixed) return 'some'
+      return states[0]!
+    }
+    if (treeData[0]) walk(treeData[0])
+    return keys
+  }, [treeData, hiddenKeys, activeDesignId])
 
   /** 反向定位：源行 → 大纲节点路径 → 树 key 路径（ADR 0103 C1② / D9） */
   const revealKeyPath = useMemo(() => {
@@ -511,6 +600,12 @@ export default function DesignStructureNav({
                   key={reloadKey}
                   blockNode
                   showIcon
+                  checkable
+                  // checkStrictly：勾选态完全由 hidden 集合派生（父子不自动级联），
+                  // 级联下推在 onOutlineCheck 里显式做 —— 否则 antd 会按 checked 数组
+                  // 重算父节点勾选态，覆盖半选语义（0193 C1）
+                  checkStrictly
+                  checkedKeys={{ checked: checkedKeys, halfChecked: halfCheckedKeys }}
                   className="cn-doc-sider-tree"
                   treeData={treeData}
                   virtual
@@ -519,6 +614,7 @@ export default function DesignStructureNav({
                   selectedKeys={revealKeyPath.length > 0
                     ? [revealKeyPath[revealKeyPath.length - 1]!]
                     : [`design-${activeDesignId}`]}
+                  onCheck={onOutlineCheck}
                   onExpand={keys => setExpandedKeys(keys as string[])}
                   onSelect={onSelectNode}
                 />

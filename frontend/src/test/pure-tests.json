@@ -1,6 +1,6 @@
 {
   "_comment": "由 frontend/scripts/pure-tests.mjs 生成：这些用例不碰 DOM，跑 node 环境（快约 7 倍）。改代码后请运行 pnpm test:pure:sync 重新生成。",
-  "total": 295,
+  "total": 296,
   "pure": [
     "src/compat/polyfills.test.ts",
     "src/components/DiffView/diffModel.test.ts",
